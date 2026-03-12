@@ -99,4 +99,4 @@ docker compose up -d
 
 ## LICENSE
 
-Copyright © 2026, linzixuanzz. Released under the [MIT](LICENSE).
+Copyright © 2026, [linzixuanzz](https://github.com/linzixuanzz). Released under the [MIT](LICENSE).
