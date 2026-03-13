@@ -7,6 +7,7 @@ export const systemApi = {
   version: () => request.get('/system/version'),
   publicVersion: () => request.get('/system/public-version'),
   checkUpdate: () => request.get('/system/check-update'),
+  updatePanel: () => request.post('/system/update'),
   panelLog: (params?: { lines?: number; keyword?: string }) =>
     request.get('/system/panel-log', { params }),
   backup: (password?: string) => request.post('/system/backup', { password }),

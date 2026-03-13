@@ -6,7 +6,7 @@ import { configApi } from '@/api/system'
 import { securityApi } from '@/api/security'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import QRCode from 'qrcode'
 import {
   Plus, Refresh, Download, Delete, Upload,
@@ -198,14 +198,58 @@ async function handleCheckUpdate() {
     const res = await systemApi.checkUpdate()
     updateInfo.value = res.data
     if (res.data.has_update) {
-      ElMessage.success(`发现新版本 v${res.data.latest}`)
+      ElMessageBox.confirm(
+        `发现新版本可用！\n\n当前版本：v${res.data.current}\n最新版本：v${res.data.latest}\n\n是否立即更新？更新过程中服务将短暂中断。`,
+        '发现新版本',
+        {
+          confirmButtonText: '立即更新',
+          cancelButtonText: '稍后手动更新',
+          type: 'success',
+          center: true
+        }
+      ).then(async () => {
+        await handleUpdatePanel()
+      }).catch(() => {
+        ElMessage.info('您可以稍后在 GitHub Releases 页面手动下载更新')
+      })
     } else {
-      ElMessage.success('当前已是最新版本')
+      ElMessage.success(`当前版本 v${res.data.current} 已经是最新版了`)
     }
-  } catch {
-    ElMessage.error('检查更新失败')
+  } catch (err: any) {
+    const msg = err?.response?.data?.error || '检查更新失败，请稍后重试'
+    ElMessage.error(msg)
   } finally {
     checkingUpdate.value = false
+  }
+}
+
+async function handleUpdatePanel() {
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在拉取最新镜像，请稍候...',
+    background: 'rgba(0, 0, 0, 0.7)'
+  })
+  try {
+    await systemApi.updatePanel()
+    loading.close()
+    ElMessageBox.alert(
+      '镜像拉取已开始，容器将在拉取完成后自动重启。\n\n页面将在 10 秒后自动刷新，如未恢复请手动刷新。',
+      '更新进行中',
+      {
+        confirmButtonText: '知道了',
+        type: 'success',
+        showClose: false,
+        closeOnClickModal: false,
+        closeOnPressEscape: false
+      }
+    )
+    setTimeout(() => {
+      window.location.reload()
+    }, 10000)
+  } catch (err: any) {
+    loading.close()
+    const msg = err?.response?.data?.error || '更新失败，请手动更新'
+    ElMessage.error(msg)
   }
 }
 
@@ -457,7 +501,10 @@ function handleSecurityTabChange(tab: string) {
 }
 
 function openGitHub() {
-  window.open('https://github.com/linzixuanzz/daidai-panel', '_blank')
+  const url = updateInfo.value?.has_update && updateInfo.value?.release_url
+    ? updateInfo.value.release_url
+    : 'https://github.com/linzixuanzz/daidai-panel/releases'
+  window.open(url, '_blank')
 }
 
 onMounted(() => {

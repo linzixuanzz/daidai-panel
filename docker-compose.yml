@@ -10,5 +10,8 @@ services:
       - "5700:5700"
     volumes:
       - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - TZ=Asia/Shanghai
+      - CONTAINER_NAME=daidai-panel
+      - IMAGE_NAME=linzixuanzz/daidai-panel:latest

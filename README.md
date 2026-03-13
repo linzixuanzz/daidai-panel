@@ -118,8 +118,11 @@ services:
       - "5700:5700"
     volumes:
       - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock  # 支持面板内一键更新
     environment:
       - TZ=Asia/Shanghai
+      - CONTAINER_NAME=daidai-panel
+      - IMAGE_NAME=linzixuanzz/daidai-panel:latest
 ```
 
 ```bash
@@ -134,7 +137,10 @@ docker run -d \
   --restart unless-stopped \
   -p 5700:5700 \
   -v $(pwd)/data:/app/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -e TZ=Asia/Shanghai \
+  -e CONTAINER_NAME=daidai-panel \
+  -e IMAGE_NAME=linzixuanzz/daidai-panel:latest \
   linzixuanzz/daidai-panel:latest
 ```
 
@@ -142,11 +148,19 @@ docker run -d \
 
 首次使用需要初始化管理员账号。
 
+> **说明**：挂载 `/var/run/docker.sock` 是为了支持面板内一键更新功能。如果不需要此功能，可以移除该挂载。
+
 ## 多架构支持
 
 镜像同时支持 `linux/amd64` 和 `linux/arm64`，可在 x86 服务器和 ARM 设备（如树莓派、Oracle ARM 云服务器）上直接运行。
 
 ## 更新方法
+
+### 方式一：面板内一键更新（推荐）
+
+进入「系统设置」→「概览」，点击「检查系统更新」，如有新版本会提示一键更新。
+
+### 方式二：手动更新
 
 ```bash
 docker pull linzixuanzz/daidai-panel:latest

@@ -26,7 +26,8 @@ RUN apk add --no-cache \
     nginx \
     python3 py3-pip \
     nodejs npm \
-    git openssh-client
+    git openssh-client \
+    docker-cli
 
 RUN mkdir -p /app/data/scripts /app/data/logs /app/data/backups /run/nginx
 

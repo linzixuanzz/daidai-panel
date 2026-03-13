@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -211,13 +212,13 @@ func (h *SystemHandler) Version(c *gin.Context) {
 func (h *SystemHandler) PublicVersion(c *gin.Context) {
 	response.Success(c, gin.H{
 		"data": gin.H{
-			"version": "0.2.0",
+			"version": Version,
 		},
 	})
 }
 
 func (h *SystemHandler) CheckUpdate(c *gin.Context) {
-	currentVersion := "0.2.0"
+	currentVersion := Version
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get("https://api.github.com/repos/linzixuanzz/daidai-panel/releases/latest")
@@ -256,6 +257,38 @@ func (h *SystemHandler) CheckUpdate(c *gin.Context) {
 			"release_url":   release.HTMLURL,
 			"release_notes": release.Body,
 			"published_at":  release.PublishedAt,
+		},
+	})
+}
+
+func (h *SystemHandler) UpdatePanel(c *gin.Context) {
+	containerName := os.Getenv("CONTAINER_NAME")
+	if containerName == "" {
+		containerName = "daidai-panel"
+	}
+
+	imageName := os.Getenv("IMAGE_NAME")
+	if imageName == "" {
+		imageName = "linzixuanzz/daidai-panel:latest"
+	}
+
+	go func() {
+		time.Sleep(1 * time.Second)
+
+		pullCmd := exec.Command("docker", "pull", imageName)
+		if err := pullCmd.Run(); err != nil {
+			return
+		}
+
+		time.Sleep(1 * time.Second)
+
+		restartCmd := exec.Command("docker", "restart", containerName)
+		restartCmd.Run()
+	}()
+
+	response.Success(c, gin.H{
+		"data": gin.H{
+			"message": "更新任务已启动，正在拉取最新镜像",
 		},
 	})
 }
@@ -309,6 +342,7 @@ func (h *SystemHandler) RegisterRoutes(r *gin.RouterGroup) {
 		sys.GET("/stats", h.Stats)
 		sys.GET("/version", h.Version)
 		sys.GET("/check-update", h.CheckUpdate)
+		sys.POST("/update", middleware.RequireAdmin(), h.UpdatePanel)
 		sys.GET("/panel-log", h.PanelLog)
 		sys.POST("/backup", middleware.RequireAdmin(), h.Backup)
 		sys.GET("/backups", middleware.RequireAdmin(), h.BackupList)
