@@ -73,7 +73,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	locked, remaining := service.CheckLoginLock(ip, req.Username)
 	if locked {
 		service.RecordLoginLog(0, req.Username, ip, ua, 1, "账号已锁定")
-		response.TooManyRequests(c, fmt.Sprintf("账号已锁定，请 %.0f 分钟后重试", remaining.Minutes()))
+		remainSec := int(remaining.Seconds())
+		c.JSON(429, gin.H{
+			"error":             fmt.Sprintf("账号已锁定，请 %.0f 分钟后重试", remaining.Minutes()),
+			"locked":            true,
+			"remaining_seconds": remainSec,
+		})
 		return
 	}
 
@@ -160,7 +165,12 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, gin.H{"message": "密码修改成功"})
+	user, _ := h.authService.GetUser(username.(string))
+	if user != nil {
+		service.RevokeAllUserSessions(user.ID)
+	}
+
+	response.Success(c, gin.H{"message": "密码修改成功，请重新登录"})
 }
 
 func (h *AuthHandler) CaptchaConfig(c *gin.Context) {

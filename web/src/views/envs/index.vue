@@ -508,7 +508,7 @@ function copyExport() {
 }
 
 .env-name {
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--dd-font-mono);
   font-size: 13px;
   color: var(--el-color-primary);
 }
@@ -534,7 +534,7 @@ function copyExport() {
   background: var(--el-bg-color-page);
   border-radius: 6px;
   padding: 16px;
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--dd-font-mono);
   font-size: 13px;
   line-height: 1.6;
   max-height: 400px;

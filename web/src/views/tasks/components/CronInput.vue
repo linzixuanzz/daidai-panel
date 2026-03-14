@@ -250,7 +250,7 @@ const groupedTemplates = computed(() => {
     }
 
     .time-value {
-      font-family: 'Consolas', 'Monaco', monospace;
+      font-family: var(--dd-font-mono);
       font-size: 11px;
     }
 
@@ -326,7 +326,7 @@ const groupedTemplates = computed(() => {
     .card-expr {
       font-size: 11px;
       color: var(--el-text-color-secondary);
-      font-family: 'Consolas', 'Monaco', monospace;
+      font-family: var(--dd-font-mono);
       background: var(--el-fill-color-light);
       padding: 4px 6px;
       border-radius: 4px;
@@ -466,7 +466,7 @@ const groupedTemplates = computed(() => {
       .item-expr {
         font-size: 12px;
         color: var(--el-text-color-secondary);
-        font-family: 'Consolas', 'Monaco', monospace;
+        font-family: var(--dd-font-mono);
         background: var(--el-fill-color-light);
         padding: 6px 8px;
         border-radius: 4px;

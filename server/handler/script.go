@@ -33,11 +33,12 @@ var allowedExtensions = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".svg": true,
 	".ico": true, ".bmp": true, ".webp": true, ".log": true, ".htm": true,
 	".html": true, ".css": true, ".sql": true, ".bat": true, ".cmd": true, ".ps1": true,
+	".so": true,
 }
 
 var binaryExtensions = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true,
-	".ico": true, ".bmp": true, ".webp": true,
+	".ico": true, ".bmp": true, ".webp": true, ".so": true,
 }
 
 var filenamePattern = regexp.MustCompile(`^[\w\x{4e00}-\x{9fff}\-./]+$`)
@@ -730,9 +731,24 @@ func (h *ScriptHandler) DebugRun(c *gin.Context) {
 
 	startTime := time.Now()
 
+	scanDone := make(chan struct{})
+
+	go func() {
+		scanner := bufio.NewScanner(pipeReader)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			run.mu.Lock()
+			run.Logs = append(run.Logs, line)
+			run.mu.Unlock()
+		}
+		close(scanDone)
+	}()
+
 	go func() {
 		err := cmd.Wait()
 		pipeWriter.Close()
+		<-scanDone
 		elapsed := time.Since(startTime).Seconds()
 
 		run.mu.Lock()
@@ -748,22 +764,20 @@ func (h *ScriptHandler) DebugRun(c *gin.Context) {
 		run.Done = true
 		if exitCode == 0 {
 			run.Status = "success"
+			run.Logs = append(run.Logs, fmt.Sprintf("[进程结束, 退出码: %d, 耗时: %.2f秒]", exitCode, elapsed))
 		} else {
 			run.Status = "failed"
+			errMsg := ""
+			if err != nil {
+				errMsg = err.Error()
+			}
+			if errMsg != "" {
+				run.Logs = append(run.Logs, fmt.Sprintf("[进程异常退出, 退出码: %d, 错误: %s, 耗时: %.2f秒]", exitCode, errMsg, elapsed))
+			} else {
+				run.Logs = append(run.Logs, fmt.Sprintf("[进程异常退出, 退出码: %d, 耗时: %.2f秒]", exitCode, elapsed))
+			}
 		}
-		run.Logs = append(run.Logs, fmt.Sprintf("[进程结束, 退出码: %d, 耗时: %.2f秒]", exitCode, elapsed))
 		run.mu.Unlock()
-	}()
-
-	go func() {
-		scanner := bufio.NewScanner(pipeReader)
-		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			line := scanner.Text()
-			run.mu.Lock()
-			run.Logs = append(run.Logs, line)
-			run.mu.Unlock()
-		}
 	}()
 
 	response.Created(c, gin.H{"message": "脚本已启动", "run_id": runID})

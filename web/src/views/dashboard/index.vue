@@ -185,9 +185,9 @@ const statCards = computed(() => {
 const resourceBars = computed(() => {
   const s = sysInfo.value
   return [
-    { label: 'CPU', value: Number(s.cpu_percent) || 0, color: '#fa541c', detail: `${s.num_cpu || '-'} 核心` },
-    { label: '内存', value: Number(s.memory_percent) || 0, color: '#409EFF', detail: `${formatBytes(s.memory_used)} / ${formatBytes(s.memory_total)}` },
-    { label: '磁盘', value: Number(s.disk_percent) || 0, color: '#67C23A', detail: `${formatBytes(s.disk_used)} / ${formatBytes(s.disk_total)}` },
+    { label: 'CPU', value: Number(s.cpu_usage) || 0, color: '#fa541c', detail: `${s.num_cpu || '-'} 核心` },
+    { label: '内存', value: Number(s.memory_usage) || 0, color: '#409EFF', detail: `${formatBytes(s.memory_used)} / ${formatBytes(s.memory_total)}` },
+    { label: '磁盘', value: Number(s.disk_usage) || 0, color: '#67C23A', detail: `${formatBytes(s.disk_used)} / ${formatBytes(s.disk_total)}` },
   ]
 })
 

@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
+import { systemApi } from '@/api/system'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const isCollapsed = ref(false)
+const panelTitle = ref('呆呆面板')
+const panelIcon = ref('')
 
 const menuItems = computed(() => [
   { index: '/dashboard', title: '仪表板', icon: 'Odometer' },
@@ -34,14 +37,24 @@ function handleMenuSelect(index: string) {
 async function handleLogout() {
   await authStore.logout()
 }
+
+async function loadPanelSettings() {
+  try {
+    const res = await systemApi.panelSettings() as any
+    if (res.data?.panel_title) panelTitle.value = res.data.panel_title
+    if (res.data?.panel_icon) panelIcon.value = res.data.panel_icon
+  } catch {}
+}
+
+onMounted(loadPanelSettings)
 </script>
 
 <template>
   <el-container class="layout-container">
     <el-aside :width="isCollapsed ? '64px' : '220px'" class="layout-aside">
       <div class="logo-area">
-        <img src="/favicon.svg" alt="logo" class="logo-img" />
-        <span v-show="!isCollapsed" class="logo-text">呆呆面板</span>
+        <img :src="panelIcon || '/favicon.svg'" alt="logo" class="logo-img" />
+        <span v-show="!isCollapsed" class="logo-text">{{ panelTitle }}</span>
       </div>
       <el-menu
         :default-active="activeMenu"

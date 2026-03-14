@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./图标.png" alt="呆呆面板" width="120">
+  <img src="./images/图标.png" alt="呆呆面板" width="120">
 </p>
 
 <h1 align="center">呆呆面板</h1>
@@ -12,18 +12,18 @@
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white" alt="Vue3">
   <img src="https://img.shields.io/badge/Element%20Plus-2.x-409EFF?logo=element&logoColor=white" alt="Element Plus">
-  <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white" alt="SQLite">
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white" alt="Docker">
 </p>
 
 ---
 
-呆呆面板 (Daidai Panel) 是一款轻量级定时任务管理平台，采用 Go (Gin) + Vue3 (Element Plus) + PostgreSQL 架构，专注于脚本托管与自动化任务调度。支持 Python、Node.js、Shell 等多语言脚本的定时执行与可视化管理，内置 18 种消息推送渠道、订阅管理、环境变量、依赖管理、Open API 等功能。Docker 一键部署，开箱即用。
+呆呆面板 (Daidai Panel) 是一款轻量级定时任务管理平台，采用 Go (Gin) + Vue3 (Element Plus) + SQLite 架构，专注于脚本托管与自动化任务调度。支持 Python、Node.js、Shell 等多语言脚本的定时执行与可视化管理，内置 18 种消息推送渠道、订阅管理、环境变量、依赖管理、Open API 等功能。Docker 一键部署，开箱即用。
 
 ## 功能特性
 
 - **定时任务** — Cron 表达式调度，支持重试、超时、任务依赖、前后置钩子
-- **脚本管理** — 在线代码编辑器，支持 Python、Node.js、Shell、TypeScript
+- **脚本管理** — 在线代码编辑器，支持 Python、Node.js、Shell、TypeScript，拖拽移动文件
 - **执行日志** — SSE 实时日志流，历史日志查看与自动清理
 - **环境变量** — 分组管理、拖拽排序、批量导入导出（兼容青龙格式）
 - **订阅管理** — 自动从 Git 仓库拉取脚本，支持定期同步
@@ -49,8 +49,9 @@
 ### 脚本文件管理
 - 在线代码编辑器（语法高亮）
 - 支持创建、重命名、删除文件
-- 支持文件上传
+- 支持文件上传与拖拽移动
 - 脚本版本管理
+- 调试运行与实时日志输出
 
 ### 执行日志
 - SSE 实时日志流
@@ -82,6 +83,7 @@
 - IP 白名单
 - 登录日志与会话管理
 - 数据备份与恢复
+- 面板标题与图标自定义
 
 </details>
 
@@ -92,15 +94,15 @@
 
 | 功能 | 截图 |
 |------|------|
-| 登录页面 | ![登录](./image.png) |
-| 仪表盘 | ![仪表盘](./image%20copy.png) |
-| 定时任务 | ![定时任务](./image%20copy%202.png) |
-| 脚本管理 | ![脚本管理](./image%20copy%203.png) |
-| 环境变量 | ![环境变量](./image%20copy%204.png) |
-| 订阅管理 | ![订阅管理](./image%20copy%205.png) |
-| 消息通知 | ![消息通知](./image%20copy%206.png) |
-| 依赖管理 | ![依赖管理](./image%20copy%207.png) |
-| API 文档 | ![API文档](./image%20copy%208.png) |
+| 登录页面 | ![登录](./images/登录.png) |
+| 仪表盘 | ![仪表盘](./images/仪表盘.png) |
+| 定时任务 | ![定时任务](./images/定时任务.png) |
+| 脚本管理 | ![脚本管理](./images/脚本管理.png) |
+| 环境变量 | ![环境变量](./images/环境变量.png) |
+| 订阅管理 | ![订阅管理](./images/订阅管理.png) |
+| 消息通知 | ![消息通知](./images/消息通知.png) |
+| 依赖管理 | ![依赖管理](./images/依赖管理.png) |
+| API 文档 | ![API文档](./images/接口文档.png) |
 
 </details>
 
@@ -117,7 +119,7 @@ services:
     ports:
       - "5700:5700"
     volumes:
-      - ./data:/app/data
+      - ./Dumb-Panel:/app/Dumb-Panel
       - /var/run/docker.sock:/var/run/docker.sock  # 支持面板内一键更新
     environment:
       - TZ=Asia/Shanghai
@@ -136,7 +138,7 @@ docker run -d \
   --name daidai-panel \
   --restart unless-stopped \
   -p 5700:5700 \
-  -v $(pwd)/data:/app/data \
+  -v $(pwd)/Dumb-Panel:/app/Dumb-Panel \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e TZ=Asia/Shanghai \
   -e CONTAINER_NAME=daidai-panel \
@@ -149,6 +151,39 @@ docker run -d \
 首次使用需要初始化管理员账号。
 
 > **说明**：挂载 `/var/run/docker.sock` 是为了支持面板内一键更新功能。如果不需要此功能，可以移除该挂载。
+
+### 自定义端口
+
+默认面板端口为 5700。如需修改宿主机访问端口，只需更改 `-p` 左侧的端口号即可：
+
+```bash
+# 示例：通过宿主机 8080 端口访问面板
+docker run -d \
+  --name daidai-panel \
+  --restart unless-stopped \
+  -p 8080:5700 \
+  -v $(pwd)/Dumb-Panel:/app/Dumb-Panel \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e TZ=Asia/Shanghai \
+  linzixuanzz/daidai-panel:latest
+```
+
+如果需要同时修改容器内部端口，通过 `PANEL_PORT` 环境变量指定，并保持 `-p` 右侧端口与其一致：
+
+```bash
+# 示例：容器内部使用 7100 端口，宿主机通过 8080 访问
+docker run -d \
+  --name daidai-panel \
+  --restart unless-stopped \
+  -p 8080:7100 \
+  -e PANEL_PORT=7100 \
+  -v $(pwd)/Dumb-Panel:/app/Dumb-Panel \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e TZ=Asia/Shanghai \
+  linzixuanzz/daidai-panel:latest
+```
+
+> **注意**：`-p` 右侧的容器端口必须与 `PANEL_PORT` 一致，否则面板将无法访问。
 
 ## 多架构支持
 
@@ -170,8 +205,8 @@ docker compose up -d
 ## 数据目录
 
 ```
-./data/
-├── daidai.db          # PostgreSQL 数据（容器内置）
+./Dumb-Panel/
+├── daidai.db          # SQLite 数据库
 ├── scripts/           # 脚本文件存储
 ├── logs/              # 执行日志
 └── backups/           # 数据备份
@@ -182,7 +217,7 @@ docker compose up -d
 | 层 | 技术 |
 |----|------|
 | 前端 | Vue 3 + TypeScript + Element Plus + Pinia + Vite |
-| 后端 | Go (Gin) + GORM + PostgreSQL |
+| 后端 | Go (Gin) + GORM + SQLite |
 | 部署 | Nginx + Go Binary，Docker 单镜像（AMD64 / ARM64） |
 
 ## 环境变量
@@ -190,8 +225,10 @@ docker compose up -d
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `TZ` | 时区 | `Asia/Shanghai` |
-| `DB_PATH` | 数据库路径 | `./data/daidai.db` |
+| `DATA_DIR` | 数据存储目录 | `/app/Dumb-Panel` |
+| `DB_PATH` | 数据库路径 | `${DATA_DIR}/daidai.db` |
 | `SERVER_PORT` | Go 服务端口 | `5701` |
+| `PANEL_PORT` | 面板访问端口（容器内 Nginx 监听端口） | `5700` |
 
 <details>
 <summary><b>Nginx 反向代理配置（HTTPS）</b></summary>

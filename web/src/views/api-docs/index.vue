@@ -53,10 +53,24 @@ function handleSelect(id: string) {
 }
 
 function handleCopy(text: string, key: string) {
-  navigator.clipboard.writeText(text).then(() => {
+  if (!text) return
+  const doCopy = () => {
     copiedKey.value = key
     setTimeout(() => copiedKey.value = '', 1500)
-  })
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(doCopy)
+  } else {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    doCopy()
+  }
 }
 
 function methodClass(method: string) {
@@ -410,7 +424,7 @@ function methodClass(method: string) {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-family: var(--dd-font-mono);
   color: #fff;
   line-height: 20px;
 }
@@ -472,7 +486,7 @@ function methodClass(method: string) {
 }
 
 .url-path {
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-family: var(--dd-font-mono);
   font-size: 14px;
   color: var(--el-text-color-primary);
   word-break: break-all;
@@ -567,7 +581,7 @@ function methodClass(method: string) {
 }
 
 .param-example {
-  font-family: monospace;
+  font-family: var(--dd-font-mono);
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
@@ -601,7 +615,7 @@ function methodClass(method: string) {
   color: #e0e0e0;
   padding: 20px;
   margin: 0;
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-family: var(--dd-font-mono);
   font-size: 13px;
   line-height: 1.7;
   overflow: auto;

@@ -113,6 +113,13 @@ var extInterpreterMap = map[string]string{
 	".sh": "bash",
 }
 
+var desiInterpreterMap = map[string]string{
+	".js": "node",
+	".py": "python3",
+	".ts": "ts-node",
+	".sh": "bash",
+}
+
 func validateCommand(command, scriptsDir string) (string, string, error) {
 	parts := strings.Fields(command)
 	if len(parts) < 2 {
@@ -127,6 +134,15 @@ func validateCommand(command, scriptsDir string) (string, string, error) {
 		mapped, ok := extInterpreterMap[ext]
 		if !ok {
 			return "", "", fmt.Errorf("task 命令不支持的文件扩展名: %s", ext)
+		}
+		interpreter = mapped
+	}
+
+	if interpreter == "desi" {
+		ext := strings.ToLower(filepath.Ext(scriptPath))
+		mapped, ok := desiInterpreterMap[ext]
+		if !ok {
+			return "", "", fmt.Errorf("desi 命令不支持的文件扩展名: %s", ext)
 		}
 		interpreter = mapped
 	}

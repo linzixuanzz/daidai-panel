@@ -1,5 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { systemApi } from '@/api/system'
+
+let cachedPanelTitle = '呆呆面板'
+systemApi.panelSettings().then((res: any) => {
+  if (res.data?.panel_title) cachedPanelTitle = res.data.panel_title
+}).catch(() => {})
 
 const router = createRouter({
   history: createWebHistory(),
@@ -122,7 +128,7 @@ router.beforeEach(async (to, _from, next) => {
 
 router.afterEach((to) => {
   const title = to.meta.title as string | undefined
-  document.title = title ? `呆呆面板 - ${title}` : '呆呆面板'
+  document.title = title ? `${cachedPanelTitle} - ${title}` : cachedPanelTitle
 })
 
 export default router

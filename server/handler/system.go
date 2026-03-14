@@ -201,7 +201,7 @@ func (h *SystemHandler) DownloadBackup(c *gin.Context) {
 func (h *SystemHandler) Version(c *gin.Context) {
 	response.Success(c, gin.H{
 		"data": gin.H{
-			"version":     "0.2.0",
+			"version":     Version,
 			"api_version": "v1",
 			"framework":   "gin",
 			"go_version":  service.GetResourceInfo().GoVersion,
@@ -213,6 +213,17 @@ func (h *SystemHandler) PublicVersion(c *gin.Context) {
 	response.Success(c, gin.H{
 		"data": gin.H{
 			"version": Version,
+		},
+	})
+}
+
+func (h *SystemHandler) PanelSettings(c *gin.Context) {
+	title := model.GetConfig("panel_title", "呆呆面板")
+	icon := model.GetConfig("panel_icon", "")
+	response.Success(c, gin.H{
+		"data": gin.H{
+			"panel_title": title,
+			"panel_icon":  icon,
 		},
 	})
 }
@@ -334,6 +345,7 @@ func (h *SystemHandler) PanelLog(c *gin.Context) {
 
 func (h *SystemHandler) RegisterRoutes(r *gin.RouterGroup) {
 	r.GET("/system/public-version", h.PublicVersion)
+	r.GET("/system/panel-settings", h.PanelSettings)
 
 	sys := r.Group("/system", middleware.JWTAuth())
 	{

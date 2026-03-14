@@ -6,6 +6,7 @@ export const systemApi = {
   stats: () => request.get('/system/stats'),
   version: () => request.get('/system/version'),
   publicVersion: () => request.get('/system/public-version'),
+  panelSettings: () => request.get('/system/panel-settings'),
   checkUpdate: () => request.get('/system/check-update'),
   updatePanel: () => request.post('/system/update'),
   panelLog: (params?: { lines?: number; keyword?: string }) =>

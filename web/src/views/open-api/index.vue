@@ -7,30 +7,30 @@
 
     <el-table :data="apps" v-loading="loading" border>
       <el-table-column prop="name" label="应用名称" min-width="120" />
-      <el-table-column label="App Key" min-width="260">
+      <el-table-column label="App Key" min-width="280">
         <template #default="{ row }">
-          <div style="display: flex; align-items: center; gap: 6px">
-            <code style="font-size: 12px; word-break: break-all">{{ row.app_key }}</code>
-            <el-button type="primary" link size="small" @click="copyText(row.app_key)">
+          <div class="key-display">
+            <code class="key-code">{{ row.app_key }}</code>
+            <el-button class="copy-btn" size="small" @click="copyText(row.app_key)">
               <el-icon><DocumentCopy /></el-icon>
             </el-button>
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="App Secret" min-width="260">
+      <el-table-column label="App Secret" min-width="280">
         <template #default="{ row }">
-          <div style="display: flex; align-items: center; gap: 6px">
+          <div class="key-display">
             <template v-if="revealedSecrets[row.id]">
-              <code style="font-size: 12px; word-break: break-all">{{ revealedSecrets[row.id] }}</code>
-              <el-button type="primary" link size="small" @click="copyText(revealedSecrets[row.id] || '')">
+              <code class="key-code secret-code">{{ revealedSecrets[row.id] }}</code>
+              <el-button class="copy-btn" size="small" @click="copyText(revealedSecrets[row.id] || '')">
                 <el-icon><DocumentCopy /></el-icon>
               </el-button>
-              <el-button type="info" link size="small" @click="delete revealedSecrets[row.id]">
+              <el-button class="copy-btn" size="small" @click="delete revealedSecrets[row.id]">
                 <el-icon><Hide /></el-icon>
               </el-button>
             </template>
             <template v-else>
-              <span style="color: var(--el-text-color-placeholder); letter-spacing: 2px">••••••••••••••••</span>
+              <span class="secret-mask">••••••••••••••••</span>
               <el-button type="primary" link size="small" @click="viewSecret(row)">
                 <el-icon><View /></el-icon>查看
               </el-button>
@@ -97,28 +97,30 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="secretDialogVisible" title="应用密钥" width="520px" :close-on-click-modal="false">
+    <el-dialog v-model="secretDialogVisible" title="应用密钥" width="560px" :close-on-click-modal="false">
       <el-alert type="warning" :closable="false" style="margin-bottom: 16px">
         请妥善保管密钥，关闭后需要验证密码才能再次查看 App Secret。
       </el-alert>
-      <el-descriptions :column="1" border>
-        <el-descriptions-item label="App Key">
-          <div style="display: flex; align-items: center; gap: 8px">
-            <code>{{ secretData.app_key }}</code>
-            <el-button type="primary" link size="small" @click="copyText(secretData.app_key)">
-              <el-icon><DocumentCopy /></el-icon>
+      <div class="secret-display-card">
+        <div class="secret-row">
+          <span class="secret-label">App Key</span>
+          <div class="secret-value-box">
+            <code class="secret-value-text">{{ secretData.app_key }}</code>
+            <el-button class="copy-btn" size="small" @click="copyText(secretData.app_key)">
+              <el-icon><DocumentCopy /></el-icon> 复制
             </el-button>
           </div>
-        </el-descriptions-item>
-        <el-descriptions-item label="App Secret">
-          <div style="display: flex; align-items: center; gap: 8px">
-            <code>{{ secretData.app_secret }}</code>
-            <el-button type="primary" link size="small" @click="copyText(secretData.app_secret)">
-              <el-icon><DocumentCopy /></el-icon>
+        </div>
+        <div class="secret-row">
+          <span class="secret-label">App Secret</span>
+          <div class="secret-value-box">
+            <code class="secret-value-text">{{ secretData.app_secret }}</code>
+            <el-button class="copy-btn" size="small" @click="copyText(secretData.app_secret)">
+              <el-icon><DocumentCopy /></el-icon> 复制
             </el-button>
           </div>
-        </el-descriptions-item>
-      </el-descriptions>
+        </div>
+      </div>
     </el-dialog>
 
     <el-dialog v-model="logsDialogVisible" title="调用日志" width="700px">
@@ -189,9 +191,22 @@ const stringToScopes = (str: string): string[] => {
   return str.split(',').map(s => s.trim()).filter(Boolean)
 }
 
-const copyText = (text: string) => {
+const copyText = async (text: string) => {
   if (!text) return
-  navigator.clipboard.writeText(text).then(() => ElMessage.success('已复制'))
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制')
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    ElMessage.success('已复制')
+  }
 }
 
 const loadApps = async () => {
@@ -312,3 +327,85 @@ const loadLogs = async () => {
 
 onMounted(loadApps)
 </script>
+
+<style scoped lang="scss">
+.key-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.key-code {
+  font-size: 12px;
+  word-break: break-all;
+  background: var(--el-fill-color-light);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--el-border-color-lighter);
+  font-family: var(--dd-font-mono);
+  flex: 1;
+  min-width: 0;
+}
+
+.secret-code {
+  background: var(--el-color-warning-light-9);
+  border-color: var(--el-color-warning-light-5);
+}
+
+.secret-mask {
+  color: var(--el-text-color-placeholder);
+  letter-spacing: 2px;
+}
+
+.copy-btn {
+  flex-shrink: 0;
+  border: 1px solid var(--el-border-color);
+  background: var(--el-fill-color-blank);
+  &:hover {
+    color: var(--el-color-primary);
+    border-color: var(--el-color-primary-light-5);
+    background: var(--el-color-primary-light-9);
+  }
+}
+
+.secret-display-card {
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  padding: 20px;
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.secret-row {
+  &:not(:last-child) {
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px dashed var(--el-border-color-lighter);
+  }
+}
+
+.secret-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 8px;
+}
+
+.secret-value-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.secret-value-text {
+  flex: 1;
+  font-size: 13px;
+  font-family: var(--dd-font-mono);
+  word-break: break-all;
+  line-height: 1.5;
+}
+</style>

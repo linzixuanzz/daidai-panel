@@ -2,11 +2,16 @@ package service
 
 import (
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"daidai-panel/config"
 )
+
+var panelStartTime = time.Now()
 
 type ResourceInfo struct {
 	CPUUsage    float64 `json:"cpu_usage"`
@@ -24,6 +29,7 @@ type ResourceInfo struct {
 	OS          string  `json:"os"`
 	Arch        string  `json:"arch"`
 	NumCPU      int     `json:"num_cpu"`
+	DataDir     string  `json:"data_dir"`
 }
 
 func GetResourceInfo() ResourceInfo {
@@ -33,6 +39,16 @@ func GetResourceInfo() ResourceInfo {
 		OS:         runtime.GOOS,
 		Arch:       runtime.GOARCH,
 		NumCPU:     runtime.NumCPU(),
+		Uptime:     getPanelUptime(),
+	}
+
+	if config.C != nil {
+		absDir, err := filepath.Abs(config.C.Data.Dir)
+		if err == nil {
+			info.DataDir = absDir
+		} else {
+			info.DataDir = config.C.Data.Dir
+		}
 	}
 
 	if runtime.GOOS == "linux" {
@@ -47,10 +63,24 @@ func GetResourceInfo() ResourceInfo {
 		}
 
 		info.CPUUsage = getLinuxCPU()
-		info.Uptime = getLinuxUptime()
 	}
 
 	return info
+}
+
+func getPanelUptime() string {
+	dur := time.Since(panelStartTime)
+	days := int(dur.Hours() / 24)
+	hours := int(dur.Hours()) % 24
+	mins := int(dur.Minutes()) % 60
+
+	if days > 0 {
+		return strconv.Itoa(days) + "天" + strconv.Itoa(hours) + "时" + strconv.Itoa(mins) + "分"
+	}
+	if hours > 0 {
+		return strconv.Itoa(hours) + "时" + strconv.Itoa(mins) + "分"
+	}
+	return strconv.Itoa(mins) + "分"
 }
 
 func getLinuxMemory() (total, used, free uint64) {
@@ -98,28 +128,4 @@ func getLinuxCPU() float64 {
 	}
 	val, _ := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
 	return val
-}
-
-func getLinuxUptime() string {
-	out, err := exec.Command("cat", "/proc/uptime").Output()
-	if err != nil {
-		return ""
-	}
-	fields := strings.Fields(string(out))
-	if len(fields) < 1 {
-		return ""
-	}
-	secs, _ := strconv.ParseFloat(fields[0], 64)
-	dur := time.Duration(secs) * time.Second
-	days := int(dur.Hours() / 24)
-	hours := int(dur.Hours()) % 24
-	mins := int(dur.Minutes()) % 60
-
-	if days > 0 {
-		return strconv.Itoa(days) + "天" + strconv.Itoa(hours) + "时" + strconv.Itoa(mins) + "分"
-	}
-	if hours > 0 {
-		return strconv.Itoa(hours) + "时" + strconv.Itoa(mins) + "分"
-	}
-	return strconv.Itoa(mins) + "分"
 }

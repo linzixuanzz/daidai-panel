@@ -548,6 +548,7 @@ async function handleImport(event: Event) {
 }
 
 .command-text {
+  font-family: var(--dd-font-mono);
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }

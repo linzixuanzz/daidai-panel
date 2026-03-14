@@ -118,6 +118,25 @@ func (h *EnvHandler) Create(c *gin.Context) {
 			continue
 		}
 
+		var existing model.EnvVar
+		found := false
+		if item.Remarks != "" {
+			if database.DB.Where("name = ? AND remarks = ?", item.Name, item.Remarks).First(&existing).Error == nil {
+				found = true
+			}
+		}
+
+		if found {
+			updates := map[string]interface{}{"value": item.Value}
+			if item.Group != "" {
+				updates["group"] = item.Group
+			}
+			database.DB.Model(&existing).Updates(updates)
+			database.DB.First(&existing, existing.ID)
+			created = append(created, existing.ToDict())
+			continue
+		}
+
 		env := model.EnvVar{
 			Name:     item.Name,
 			Value:    item.Value,
@@ -226,6 +245,36 @@ func (h *EnvHandler) BatchDelete(c *gin.Context) {
 	result := database.DB.Where("id IN ?", req.IDs).Delete(&model.EnvVar{})
 	response.Success(c, gin.H{
 		"message": fmt.Sprintf("已删除 %d 个环境变量", result.RowsAffected),
+	})
+}
+
+func (h *EnvHandler) BatchEnable(c *gin.Context) {
+	var req struct {
+		IDs []uint `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求参数错误")
+		return
+	}
+
+	result := database.DB.Model(&model.EnvVar{}).Where("id IN ?", req.IDs).Update("enabled", true)
+	response.Success(c, gin.H{
+		"message": fmt.Sprintf("已启用 %d 个环境变量", result.RowsAffected),
+	})
+}
+
+func (h *EnvHandler) BatchDisable(c *gin.Context) {
+	var req struct {
+		IDs []uint `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求参数错误")
+		return
+	}
+
+	result := database.DB.Model(&model.EnvVar{}).Where("id IN ?", req.IDs).Update("enabled", false)
+	response.Success(c, gin.H{
+		"message": fmt.Sprintf("已禁用 %d 个环境变量", result.RowsAffected),
 	})
 }
 
@@ -512,6 +561,8 @@ func (h *EnvHandler) RegisterRoutes(r *gin.RouterGroup) {
 		envs.PUT("/:id/enable", h.Enable)
 		envs.PUT("/:id/disable", h.Disable)
 		envs.DELETE("/batch", h.BatchDelete)
+		envs.PUT("/batch/enable", h.BatchEnable)
+		envs.PUT("/batch/disable", h.BatchDisable)
 		envs.GET("/export", h.Export)
 		envs.PUT("/sort", h.Sort)
 		envs.GET("/groups", h.Groups)

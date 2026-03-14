@@ -218,7 +218,7 @@ function handleClose() {
   overflow-y: auto;
   background: #1e1e1e;
   color: #d4d4d4;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--dd-font-mono);
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;

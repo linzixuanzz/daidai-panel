@@ -168,7 +168,7 @@ function handleClose() {
   background: #1e1e1e;
   border-radius: 4px;
   padding: 12px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--dd-font-mono);
   font-size: 13px;
   line-height: 1.6;
 }

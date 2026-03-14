@@ -80,6 +80,8 @@ const configForm = ref({
   captcha_enabled: false,
   captcha_id: '',
   captcha_key: '',
+  panel_title: '',
+  panel_icon: '',
 })
 
 function formatBytes(bytes: number): string {
@@ -144,6 +146,8 @@ async function loadSystemConfigs() {
       captcha_enabled: g('captcha_enabled', 'false') === 'true',
       captcha_id: g('captcha_id', ''),
       captcha_key: g('captcha_key', ''),
+      panel_title: g('panel_title', ''),
+      panel_icon: g('panel_icon', ''),
     }
   } catch {
     ElMessage.error('加载配置失败')
@@ -173,7 +177,25 @@ function handleSaveSystemConfig() {
   saveConfigKeys([
     'auto_add_cron', 'auto_del_cron', 'default_cron_rule', 'repo_file_extensions',
     'cpu_warn', 'memory_warn', 'disk_warn', 'notify_on_resource_warn', 'notify_on_login',
+    'panel_title', 'panel_icon',
   ])
+}
+
+function handleIconUpload(file: File) {
+  if (!file.name.endsWith('.svg')) {
+    ElMessage.warning('仅支持 SVG 格式图标')
+    return false
+  }
+  if (file.size > 100 * 1024) {
+    ElMessage.warning('图标文件不能超过 100KB')
+    return false
+  }
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    configForm.value.panel_icon = e.target?.result as string
+  }
+  reader.readAsDataURL(file)
+  return false
 }
 
 function handleSaveTaskConfig() {
@@ -334,10 +356,13 @@ async function handleChangePassword() {
   }
   try {
     await authApi.changePassword(oldPassword.value, newPassword.value)
-    ElMessage.success('密码修改成功')
+    ElMessage.success('密码修改成功，即将跳转到登录页')
     oldPassword.value = ''
     newPassword.value = ''
     confirmPassword.value = ''
+    setTimeout(() => {
+      authStore.logout()
+    }, 1500)
   } catch {
     ElMessage.error('密码修改失败')
   }
@@ -626,21 +651,25 @@ onMounted(() => {
               <div class="si-value">{{ systemInfo.go_version || '-' }}</div>
             </div>
             <div class="si-item">
+              <div class="si-label">数据目录</div>
+              <div class="si-value">{{ systemInfo.data_dir || '-' }}</div>
+            </div>
+            <div class="si-item">
               <div class="si-label">CPU 使用率</div>
-              <div class="si-value" :class="getUsageClass(systemInfo.cpu_percent)">
-                {{ systemInfo.cpu_percent || 0 }}%&nbsp;&nbsp;({{ systemInfo.num_cpu || 0 }} 核)
+              <div class="si-value" :class="getUsageClass(systemInfo.cpu_usage)">
+                {{ systemInfo.cpu_usage || 0 }}%&nbsp;&nbsp;({{ systemInfo.num_cpu || 0 }} 核)
               </div>
             </div>
             <div class="si-item">
               <div class="si-label">内存使用</div>
-              <div class="si-value" :class="getUsageClass(systemInfo.memory_percent)">
-                {{ systemInfo.memory_percent || 0 }}%&nbsp;&nbsp;({{ formatBytes(systemInfo.memory_used) }} / {{ formatBytes(systemInfo.memory_total) }})
+              <div class="si-value" :class="getUsageClass(systemInfo.memory_usage)">
+                {{ systemInfo.memory_usage || 0 }}%&nbsp;&nbsp;({{ formatBytes(systemInfo.memory_used) }} / {{ formatBytes(systemInfo.memory_total) }})
               </div>
             </div>
             <div class="si-item">
               <div class="si-label">磁盘使用</div>
-              <div class="si-value" :class="getUsageClass(systemInfo.disk_percent)">
-                {{ systemInfo.disk_percent || 0 }}%&nbsp;&nbsp;({{ formatBytes(systemInfo.disk_used) }} / {{ formatBytes(systemInfo.disk_total) }})
+              <div class="si-value" :class="getUsageClass(systemInfo.disk_usage)">
+                {{ systemInfo.disk_usage || 0 }}%&nbsp;&nbsp;({{ formatBytes(systemInfo.disk_used) }} / {{ formatBytes(systemInfo.disk_total) }})
               </div>
             </div>
           </div>
@@ -657,6 +686,32 @@ onMounted(() => {
               </el-button>
             </div>
           </template>
+
+          <div class="config-section">
+            <h4 class="section-title">面板设置</h4>
+            <div class="form-field">
+              <label>面板标题</label>
+              <el-input v-model="configForm.panel_title" placeholder="呆呆面板" />
+              <span class="form-hint">自定义面板的站点标题，留空使用默认值"呆呆面板"</span>
+            </div>
+            <div class="form-field">
+              <label>面板图标 (SVG)</label>
+              <div style="display: flex; align-items: center; gap: 12px">
+                <el-upload
+                  :show-file-list="false"
+                  :before-upload="handleIconUpload"
+                  accept=".svg"
+                >
+                  <el-button size="small"><el-icon><Upload /></el-icon>上传 SVG 图标</el-button>
+                </el-upload>
+                <div v-if="configForm.panel_icon" class="icon-preview">
+                  <img :src="configForm.panel_icon" alt="icon" style="width: 32px; height: 32px" />
+                  <el-button size="small" text type="danger" @click="configForm.panel_icon = ''">移除</el-button>
+                </div>
+              </div>
+              <span class="form-hint">上传 SVG 格式图标自定义面板图标，留空使用默认图标</span>
+            </div>
+          </div>
 
           <div class="config-section">
             <h4 class="section-title">订阅设置</h4>
@@ -835,17 +890,19 @@ onMounted(() => {
             <el-table-column prop="created_at" label="创建时间" width="170">
               <template #default="{ row }">{{ new Date(row.created_at).toLocaleString() }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="200" fixed="right">
+            <el-table-column label="操作" width="220" fixed="right" align="center">
               <template #default="{ row }">
-                <el-button size="small" text @click="handleDownloadBackup(row.name)">
-                  <el-icon><Download /></el-icon>下载
-                </el-button>
-                <el-button size="small" text type="primary" @click="handleRestoreBackup(row.name)">
-                  <el-icon><Upload /></el-icon>恢复
-                </el-button>
-                <el-button size="small" text type="danger" @click="handleDeleteBackup(row.name)">
-                  <el-icon><Delete /></el-icon>删除
-                </el-button>
+                <div style="display: flex; gap: 4px; justify-content: center">
+                  <el-button size="small" type="primary" plain @click="handleDownloadBackup(row.name)">
+                    <el-icon><Download /></el-icon>下载
+                  </el-button>
+                  <el-button size="small" type="success" plain @click="handleRestoreBackup(row.name)">
+                    <el-icon><Upload /></el-icon>恢复
+                  </el-button>
+                  <el-button size="small" type="danger" plain @click="handleDeleteBackup(row.name)">
+                    <el-icon><Delete /></el-icon>删除
+                  </el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>

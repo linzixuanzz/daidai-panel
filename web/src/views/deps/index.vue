@@ -6,7 +6,7 @@
       <el-tab-pane label="Linux" name="linux" />
     </el-tabs>
     <div class="deps-toolbar">
-      <el-button type="primary" @click="showCreateDialog = true">
+      <el-button type="primary" @click="createType = activeTab; showCreateDialog = true">
         <el-icon><Plus /></el-icon>新建依赖
       </el-button>
       <el-button @click="loadData" :loading="loading">
@@ -300,7 +300,7 @@ onBeforeUnmount(() => { closeSSE(); if (refreshTimer) clearInterval(refreshTimer
   color: #d4d4d4;
   border-radius: 6px;
   padding: 16px;
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--dd-font-mono);
   font-size: 13px;
   line-height: 1.6;
   min-height: 200px;

@@ -29,7 +29,7 @@ RUN apk add --no-cache \
     git openssh-client \
     docker-cli
 
-RUN mkdir -p /app/data/scripts /app/data/logs /app/data/backups /run/nginx
+RUN mkdir -p /app/Dumb-Panel/scripts /app/Dumb-Panel/logs /app/Dumb-Panel/backups /run/nginx
 
 WORKDIR /app
 
@@ -42,9 +42,10 @@ COPY docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 ENV TZ=Asia/Shanghai
+ENV PANEL_PORT=5700
 
 EXPOSE 5700
 
-VOLUME ["/app/data"]
+VOLUME ["/app/Dumb-Panel"]
 
 ENTRYPOINT ["/app/entrypoint.sh"]

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
@@ -21,6 +21,25 @@ const focusField = ref<'none' | 'username' | 'password'>('none')
 const containerRef = ref<HTMLDivElement>()
 
 const panelVersion = ref('')
+
+const lockCountdown = ref(0)
+let lockTimer: ReturnType<typeof setInterval> | null = null
+
+function startLockCountdown(seconds: number) {
+  if (lockTimer) clearInterval(lockTimer)
+  lockCountdown.value = seconds
+  lockTimer = setInterval(() => {
+    lockCountdown.value--
+    if (lockCountdown.value <= 0) {
+      lockCountdown.value = 0
+      if (lockTimer) { clearInterval(lockTimer); lockTimer = null }
+    }
+  }, 1000)
+}
+
+onUnmounted(() => {
+  if (lockTimer) clearInterval(lockTimer)
+})
 
 const form = ref({
   username: '',
@@ -100,7 +119,11 @@ async function handleSubmit() {
     }, 600)
   } catch (err: any) {
     mood.value = 'error'
-    const msg = err?.response?.data?.error || err?.message || '操作失败'
+    const data = err?.response?.data
+    if (data?.locked && data?.remaining_seconds > 0) {
+      startLockCountdown(data.remaining_seconds)
+    }
+    const msg = data?.error || err?.message || '操作失败'
     ElMessage.error(msg)
     setTimeout(() => {
       mood.value = 'idle'
@@ -183,10 +206,11 @@ const btnText = computed(() => isInit.value ? '登 录' : '初始化并登录')
                 type="primary"
                 size="large"
                 :loading="loading"
+                :disabled="lockCountdown > 0"
                 class="login-btn"
                 @click="handleSubmit"
               >
-                {{ btnText }}
+                {{ lockCountdown > 0 ? `${Math.floor(lockCountdown / 60)}:${String(lockCountdown % 60).padStart(2, '0')} 后重试` : btnText }}
               </el-button>
             </el-form-item>
           </el-form>

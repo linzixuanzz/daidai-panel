@@ -29,13 +29,10 @@ func RecordLoginLog(userID uint, username, ip, userAgent string, status int, mes
 
 func CheckLoginLock(ip, username string) (bool, time.Duration) {
 	var attempt model.LoginAttempt
-	err := database.DB.Where("ip = ? AND username = ? AND expires_at > ?", ip, username, time.Now()).
+	err := database.DB.Where("ip = ? AND username = ?", ip, username).
 		Take(&attempt).Error
 
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return false, 0
-		}
 		return false, 0
 	}
 
@@ -51,7 +48,7 @@ func CheckLoginLock(ip, username string) (bool, time.Duration) {
 
 func RecordFailedLogin(ip, username string) int {
 	var attempt model.LoginAttempt
-	err := database.DB.Where("ip = ? AND username = ? AND expires_at > ?", ip, username, time.Now()).
+	err := database.DB.Where("ip = ? AND username = ?", ip, username).
 		Take(&attempt).Error
 
 	if err != nil {
@@ -72,7 +69,8 @@ func RecordFailedLogin(ip, username string) int {
 	if attempt.Count >= MaxLoginAttempts {
 		now := time.Now()
 		attempt.LockedAt = &now
-		attempt.ExpiresAt = now.Add(LockDuration)
+		lockTimes := attempt.Count - MaxLoginAttempts + 1
+		attempt.ExpiresAt = now.Add(time.Duration(lockTimes) * LockDuration)
 	}
 	database.DB.Save(&attempt)
 	return attempt.Count
