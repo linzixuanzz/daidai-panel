@@ -1,0 +1,6 @@
+version: 2.20.2
+changeLogLink: https://t.me/jiao_long/434
+publishTime: 2026-03-01 1800
+changeLog: |
+  1. 修复 path 安全漏洞（重要）
+  

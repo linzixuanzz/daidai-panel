@@ -1,0 +1,272 @@
+name: Build And Push Docker Image
+
+on:
+  push:
+    paths-ignore:
+      - "*.md"
+    branches:
+      - "master"
+      - "develop"
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  code_gitlab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: Yikun/hub-mirror-action@master
+        with:
+          src: github/whyour
+          dst: gitlab/whyour
+          dst_key: ${{ secrets.GITLAB_SSH_PK }}
+          dst_token: ${{ secrets.GITLAB_TOKEN }}
+          static_list: "qinglong"
+          force_update: true
+
+  code_gitee:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: Yikun/hub-mirror-action@master
+        with:
+          src: github/whyour
+          dst: gitee/whyour
+          dst_key: ${{ secrets.GITLAB_SSH_PK }}
+          dst_token: ${{ secrets.GITEE_TOKEN }}
+          static_list: "qinglong"
+          force_update: true
+
+  build-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "8.3.1"
+
+      - uses: actions/setup-node@v6
+        with:
+          cache: "pnpm"
+
+      - name: build front and back
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build:front
+          pnpm build:back
+
+      - name: copy to static repo
+        env:
+          GITHUB_REPO: github.com/${{ github.repository_owner }}/qinglong-static
+          GITHUB_BRANCH: ${{ github.ref_name }}
+          REPO_GITEE: git@gitee.com:whyour/qinglong-static.git
+          REPO_GITLAB: git@gitlab.com:whyour/qinglong-static.git
+          PRIVATE_KEY: ${{ secrets.GITLAB_SSH_PK }}
+        run: |
+          mkdir -p tmp
+          cd ./tmp
+          cp -rf ../static/* ./
+          git init -b ${GITHUB_BRANCH} && git add .
+          git config --local user.name 'github-actions[bot]'
+          git config --local user.email 'github-actions[bot]@users.noreply.github.com'
+          git commit --allow-empty -m "copy static at $(date +'%Y-%m-%d %H:%M:%S')"
+          git push --force --quiet "https://${{ secrets.API_TOKEN }}@${GITHUB_REPO}.git" ${GITHUB_BRANCH}:${GITHUB_BRANCH}
+
+  static_gitlab:
+    needs: build-static
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: Yikun/hub-mirror-action@master
+        with:
+          src: github/whyour
+          dst: gitlab/whyour
+          dst_key: ${{ secrets.GITLAB_SSH_PK }}
+          dst_token: ${{ secrets.GITLAB_TOKEN }}
+          static_list: "qinglong-static"
+          force_update: true
+
+  static_gitee:
+    needs: build-static
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: Yikun/hub-mirror-action@master
+        with:
+          src: github/whyour
+          dst: gitee/whyour
+          dst_key: ${{ secrets.GITLAB_SSH_PK }}
+          dst_token: ${{ secrets.GITEE_TOKEN }}
+          static_list: "qinglong-static"
+          force_update: true
+
+  build:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    needs: build-static
+
+    runs-on: ubuntu-22.04
+
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "8.3.1"
+      - uses: actions/setup-node@v6
+        with:
+          cache: "pnpm"
+
+      - name: Read version from version.yaml
+        id: version
+        run: |
+          VERSION=$(grep '^version:' version.yaml | awk '{print $2}')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Setup timezone
+        uses: szenius/set-timezone@v2.0
+        with:
+          timezoneLinux: Asia/Shanghai
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ github.repository }}
+            ghcr.io/${{ github.repository }}
+          flavor: |
+            latest=false
+          tags: |
+            type=ref,event=branch,enable=${{ github.ref == format('refs/heads/{0}', 'develop') }}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'master') }}
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ github.ref == format('refs/heads/{0}', 'master') }}
+            type=semver,pattern={{version}}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        id: docker_build
+        uses: docker/build-push-action@v6
+        with:
+          build-args: |
+            MAINTAINER=${{ github.repository_owner }}
+            QL_BRANCH=${{ github.ref_name }}
+            SOURCE_COMMIT=${{ github.sha }}
+          network: host
+          # linux/s390x npm 暂不可用
+          platforms: linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le,linux/386
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=whyour/qinglong:cache
+          cache-to: type=registry,ref=whyour/qinglong:cache,mode=max
+
+      - name: Image digest
+        run: |
+          echo ${{ steps.docker_build.outputs.digest }}
+
+  build310:
+    if: ${{ github.ref_name == 'master' }}
+    needs: build-static
+
+    runs-on: ubuntu-22.04
+
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "8.3.1"
+      - uses: actions/setup-node@v6
+        with:
+          cache: "pnpm"
+
+      - name: Read version from version.yaml
+        id: version
+        run: |
+          VERSION=$(grep '^version:' version.yaml | awk '{print $2}')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Setup timezone
+        uses: szenius/set-timezone@v2.0
+        with:
+          timezoneLinux: Asia/Shanghai
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push python3.10
+        id: docker_build_310
+        uses: docker/build-push-action@v6
+        with:
+          build-args: |
+            MAINTAINER=${{ github.repository_owner }}
+            QL_BRANCH=${{ github.ref_name }}
+            SOURCE_COMMIT=${{ github.sha }}
+          network: host
+          # linux/s390x npm 暂不可用
+          platforms: linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le,linux/386
+          context: .
+          file: ./docker/310.Dockerfile
+          push: true
+          tags: |
+            whyour/qinglong:python3.10
+            whyour/qinglong:${{ steps.version.outputs.version }}-python3.10
+          cache-from: type=registry,ref=whyour/qinglong:cache-python3.10
+          cache-to: type=registry,ref=whyour/qinglong:cache-python3.10,mode=max
+
+      - name: Image digest
+        run: |
+          echo ${{ steps.docker_build_310.outputs.digest }}

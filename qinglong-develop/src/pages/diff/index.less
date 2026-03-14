@@ -1,0 +1,24 @@
+.d2h-files-diff {
+  height: calc(100vh - 130px);
+  height: calc(100vh - var(--vh-offset, 0px) - 130px);
+  overflow: auto;
+}
+
+.d2h-code-side-linenumber {
+  position: relative;
+}
+
+.d2h-code-side-line {
+  padding: 0 0.5em;
+}
+
+.diff-switch-file {
+  min-width: 768px;
+  .ant-form-item {
+    margin-bottom: 8px;
+  }
+
+  + section {
+    height: calc(100% - 40px) !important;
+  }
+}

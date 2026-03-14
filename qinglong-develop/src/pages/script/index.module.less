@@ -1,0 +1,30 @@
+@import '~antd/es/style/themes/default.less';
+@import '~@/styles/variable.less';
+
+.left-tree {
+  &-container {
+    overflow: hidden;
+    position: relative;
+    background-color: @component-background;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  &-scroller {
+    flex: 1;
+    overflow: auto;
+    padding-top: 6px;
+  }
+}
+
+.log-container {
+  display: flex;
+  position: relative;
+}
+
+:global {
+  .Pane.vertical.Pane1 {
+    padding-right: 5px;
+    border-right: 1px dashed @text-color;
+  }
+}

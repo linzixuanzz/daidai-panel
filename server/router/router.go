@@ -77,7 +77,7 @@ func Setup(engine *gin.Engine) {
 
 	engine.GET("/api/v1/version", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"version":     "0.2.0",
+			"version":     handler.Version,
 			"api_version": "v1",
 			"framework":   "gin",
 		})
@@ -88,7 +88,7 @@ func Setup(engine *gin.Engine) {
 
 	engine.GET("/api/version", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"version":     "0.2.0",
+			"version":     handler.Version,
 			"api_version": "v1",
 			"framework":   "gin",
 		})

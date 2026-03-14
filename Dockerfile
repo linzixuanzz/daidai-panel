@@ -16,7 +16,8 @@ COPY server/go.mod server/go.sum ./
 ENV GOPROXY=https://goproxy.cn,direct
 RUN go mod download
 COPY server/ ./
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o daidai-server .
+ARG VERSION=1.1.0
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X daidai-panel/handler.Version=${VERSION}" -o daidai-server .
 
 
 FROM alpine:3.19

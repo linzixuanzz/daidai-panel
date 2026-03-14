@@ -258,7 +258,7 @@ func (h *SystemHandler) CheckUpdate(c *gin.Context) {
 	}
 
 	latestVersion := strings.TrimPrefix(release.TagName, "v")
-	hasUpdate := latestVersion != currentVersion
+	hasUpdate := compareVersions(currentVersion, latestVersion)
 
 	response.Success(c, gin.H{
 		"data": gin.H{
@@ -293,13 +293,64 @@ func (h *SystemHandler) UpdatePanel(c *gin.Context) {
 
 		time.Sleep(1 * time.Second)
 
-		restartCmd := exec.Command("docker", "restart", containerName)
-		restartCmd.Run()
+		inspectCmd := exec.Command("docker", "inspect", "--format", "{{json .}}", containerName)
+		inspectOut, err := inspectCmd.Output()
+		if err != nil {
+			return
+		}
+
+		var containerInfo struct {
+			HostConfig struct {
+				Binds       []string `json:"Binds"`
+				NetworkMode string   `json:"NetworkMode"`
+				RestartPolicy struct {
+					Name string `json:"Name"`
+				} `json:"RestartPolicy"`
+				PortBindings map[string][]struct {
+					HostIP   string `json:"HostIp"`
+					HostPort string `json:"HostPort"`
+				} `json:"PortBindings"`
+			} `json:"HostConfig"`
+			Config struct {
+				Env []string `json:"Env"`
+			} `json:"Config"`
+		}
+		if err := json.Unmarshal(inspectOut, &containerInfo); err != nil {
+			return
+		}
+
+		exec.Command("docker", "stop", containerName).Run()
+		exec.Command("docker", "rm", containerName).Run()
+
+		args := []string{"run", "-d", "--name", containerName}
+
+		if containerInfo.HostConfig.RestartPolicy.Name != "" {
+			args = append(args, "--restart", containerInfo.HostConfig.RestartPolicy.Name)
+		}
+
+		for port, bindings := range containerInfo.HostConfig.PortBindings {
+			for _, b := range bindings {
+				if b.HostPort != "" {
+					args = append(args, "-p", b.HostPort+":"+strings.Split(port, "/")[0])
+				}
+			}
+		}
+
+		for _, bind := range containerInfo.HostConfig.Binds {
+			args = append(args, "-v", bind)
+		}
+
+		for _, env := range containerInfo.Config.Env {
+			args = append(args, "-e", env)
+		}
+
+		args = append(args, imageName)
+		exec.Command("docker", args...).Run()
 	}()
 
 	response.Success(c, gin.H{
 		"data": gin.H{
-			"message": "更新任务已启动，正在拉取最新镜像",
+			"message": "更新任务已启动，正在拉取最新镜像并重建容器",
 		},
 	})
 }

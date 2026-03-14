@@ -1,0 +1,78 @@
+@import '~antd/es/style/themes/default.less';
+
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100vh;
+  height: calc(100vh - var(--vh-offset, 0px));
+  overflow: auto;
+  background: @layout-body-background;
+  padding-top: 70px;
+}
+
+@media (min-width: @screen-md-min) {
+  .container {
+    background-image: url('https://gw.alipayobjects.com/zos/rmsportal/TVYTbAXWheQpRcWDaDMu.svg');
+    background-repeat: no-repeat;
+    background-position: center 110px;
+    background-size: 100%;
+  }
+}
+
+.top {
+  text-align: center;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+}
+
+.logo {
+  width: 48px;
+  display: block;
+  margin-bottom: 24px;
+  margin-top: 20px;
+}
+
+.title {
+  font-size: 20px;
+  margin-bottom: 16px;
+}
+
+.desc {
+  margin-top: 12px;
+  margin-bottom: 40px;
+  color: @text-color-secondary;
+  font-size: @font-size-base;
+}
+
+.main {
+  padding: 20px;
+  border-radius: 6px;
+  background-color: #f6f8fa;
+  border: 1px solid #ebedef;
+  display: flex;
+  max-width: 500px;
+  width: 90%;
+  height: 400px;
+
+  .ant-steps {
+    width: 35%;
+    min-width: 110px;
+    display: flex;
+    align-items: center;
+    position: relative;
+    top: 6%;
+  }
+  .steps-container {
+    flex: 1;
+    overflow-y: auto;
+  }
+}
+
+.extra {
+  margin-top: 20px;
+}
