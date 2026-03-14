@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 
-FROM golang:1.25-alpine AS backend-builder
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS backend-builder
 
 RUN apk add --no-cache git
 
@@ -17,7 +17,9 @@ ENV GOPROXY=https://goproxy.cn,direct
 RUN go mod download
 COPY server/ ./
 ARG VERSION=1.1.0
-RUN CGO_ENABLED=0 go build -ldflags="-s -w -X daidai-panel/handler.Version=${VERSION}" -o daidai-server .
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w -X daidai-panel/handler.Version=${VERSION}" -o daidai-server .
 
 
 FROM alpine:3.19
