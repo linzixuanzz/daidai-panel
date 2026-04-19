@@ -12,6 +12,7 @@ func TestResolvePythonAutoInstallPackage(t *testing.T) {
 		expect string
 	}{
 		{name: "crypto alias", input: "Crypto", expect: "pycryptodome"},
+		{name: "cryptodome alias maps to pycryptodomex not pycryptodome", input: "Cryptodome", expect: "pycryptodomex"},
 		{name: "execjs alias", input: "execjs", expect: "pyexecjs"},
 		{name: "case insensitive", input: "crypto", expect: "pycryptodome"},
 		{name: "socks alias", input: "socks", expect: "pysocks"},
@@ -21,6 +22,8 @@ func TestResolvePythonAutoInstallPackage(t *testing.T) {
 		{name: "yaml alias", input: "yaml", expect: "pyyaml"},
 		{name: "dateutil alias", input: "dateutil", expect: "python-dateutil"},
 		{name: "jwt alias", input: "jwt", expect: "pyjwt"},
+		{name: "websocket alias", input: "websocket", expect: "websocket-client"},
+		{name: "attr alias", input: "attr", expect: "attrs"},
 		{name: "passthrough", input: "requests", expect: "requests"},
 	}
 

@@ -17,6 +17,18 @@ func TestDetectAutoInstallCandidate(t *testing.T) {
 		}
 	})
 
+	t.Run("python Cryptodome alias maps to pycryptodomex", func(t *testing.T) {
+		// 回归：from Cryptodome.PublicKey import RSA 失败时，必须 pip install pycryptodomex，
+		// 不能原样 install Cryptodome（PyPI 没这个名字，会直接 404）。
+		candidate := DetectAutoInstallCandidate(".py", "ModuleNotFoundError: No module named 'Cryptodome'", t.TempDir())
+		if candidate == nil {
+			t.Fatal("expected python candidate")
+		}
+		if candidate.Manager != "python" || candidate.PackageName != "pycryptodomex" {
+			t.Fatalf("unexpected python candidate: %+v", candidate)
+		}
+	})
+
 	t.Run("node package", func(t *testing.T) {
 		candidate := DetectAutoInstallCandidate(".js", "Error: Cannot find module 'axios'", t.TempDir())
 		if candidate == nil {

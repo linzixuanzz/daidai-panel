@@ -180,8 +180,33 @@ docker run -d --pull=always \
 docker compose -f docker-compose.debian.yml up -d
 
 # 或基于源码本地构建
-docker build --build-arg VERSION=2.0.9 -f Dockerfile.debian -t daidai-panel:debian-local .
+docker build --build-arg VERSION=2.1.0 -f Dockerfile.debian -t daidai-panel:debian-local .
 ```
+
+### Windows 单机版（不走 Docker）
+
+**v2.1.0 新增**：Windows 用户可以直接下载编译好的 zip 解压运行，面板内置 Go 后端同时托管前端（无需 Nginx / Docker）。
+
+1. 去 [GitHub Release](https://github.com/linzixuanzz/daidai-panel/releases) 下载 `daidai-windows-amd64.zip` 解压到任意目录（建议路径无空格、无中文，例如 `D:\daidai-panel`）。
+2. 双击 `start.bat` 启动服务。
+3. 浏览器访问 `http://localhost:5700`，首次进入创建管理员账号。
+
+解压后目录：
+
+```
+daidai-panel-windows-amd64/
+├── daidai-server.exe     # 后端主程序（同端口同时服务前端）
+├── ddp.exe               # 运维 CLI
+├── web/                  # 前端静态资源（Go 通过 web_dir 直接托管）
+├── config.yaml           # 端口 / 数据目录配置
+├── start.bat             # 启动脚本（chcp 65001 兜底中文显示）
+├── README.txt            # 详细使用说明
+└── Dumb-Panel/           # 首次启动时自动创建，含数据库 / 脚本 / 日志 / 备份
+```
+
+**可选：脚本执行环境**。如需面板调度 Python / Node.js 脚本，请自行安装 Python 3.10+ 和 Node.js 20 LTS 并勾选 "Add to PATH"，重启 `start.bat` 即可（`ddp.exe`、脚本执行器会从 PATH 找到对应的 `python` / `node`）。
+
+**升级**：关掉正在跑的 `start.bat`，下载新版 zip 解压到新目录，把旧版本的 `Dumb-Panel\` 整个文件夹拷到新目录，重启新版本 `start.bat`。Windows 单机版**不支持**面板内一键更新（Docker 专属）、Magisk 模块。
 
 ## 端口与反向代理
 
@@ -298,7 +323,7 @@ docker compose -f docker-compose.debian.yml up -d
 本地基于源码自己构建的镜像，重新 build 即可：
 
 ```bash
-docker build --build-arg VERSION=2.0.9 -f Dockerfile.debian -t daidai-panel:debian-local .
+docker build --build-arg VERSION=2.1.0 -f Dockerfile.debian -t daidai-panel:debian-local .
 ```
 
 ## 容器命令 `ddp`

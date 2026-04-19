@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +10,10 @@ import (
 	"daidai-panel/testutil"
 )
 
-func TestBuildManagedRuntimeEnvMapIncludesPythonAutoInstallSettings(t *testing.T) {
+// TestBuildManagedRuntimeEnvMapDoesNotWritePythonPreCheckEnv 守卫：
+// Python 预检自动安装链路已移除，不应再向任务环境写入这些已废弃的 env 键。
+// 若将来有人把预检加回来，这个测试会立刻失败，提醒同时把 pysmx 漏判问题重新评估。
+func TestBuildManagedRuntimeEnvMapDoesNotWritePythonPreCheckEnv(t *testing.T) {
 	root := testutil.SetupTestEnv(t)
 
 	envMap, err := BuildManagedRuntimeEnvMap(root, root, nil, time.Hour)
@@ -19,16 +21,10 @@ func TestBuildManagedRuntimeEnvMapIncludesPythonAutoInstallSettings(t *testing.T
 		t.Fatalf("build managed runtime env map: %v", err)
 	}
 
-	if got := envMap["DD_AUTO_INSTALL_DEPS"]; got != "1" {
-		t.Fatalf("expected DD_AUTO_INSTALL_DEPS=1, got %q", got)
-	}
-
-	var aliases map[string]string
-	if err := json.Unmarshal([]byte(envMap["DD_PY_AUTO_INSTALL_ALIASES"]), &aliases); err != nil {
-		t.Fatalf("decode DD_PY_AUTO_INSTALL_ALIASES: %v", err)
-	}
-	if got := aliases["crypto"]; got != "pycryptodome" {
-		t.Fatalf("expected crypto alias to be pycryptodome, got %q", got)
+	for _, key := range []string{"DD_AUTO_INSTALL_DEPS", "DD_PY_AUTO_INSTALL_ALIASES"} {
+		if got, exists := envMap[key]; exists {
+			t.Fatalf("expected %s to be absent, got %q", key, got)
+		}
 	}
 }
 
@@ -79,5 +75,32 @@ func TestResolveManagedVenvBinUsesExistingScriptsDir(t *testing.T) {
 
 	if got := resolveManagedVenvBin(venvDir); got != scriptsDir {
 		t.Fatalf("expected Scripts dir %q, got %q", scriptsDir, got)
+	}
+}
+
+// TestPythonBootstrapHasNoPreCheckAutoInstall 守卫：
+// Python bootstrap 必须保持"纯跑脚本"语义，不做任何基于 importlib.find_spec 或
+// AST 扫 import 的预检自动安装。历史上这套预检曾导致 pysmx 等已装好的包被反复
+// 判定缺失并循环触发 pip install（v2.0.7 两次尝试修 find_spec 均未根治）。
+// 真实缺失的依赖由 Go 侧 task_executor.detectAndInstallDeps 兜底处理，
+// 它在脚本真实抛出 ModuleNotFoundError 时再 pip install + 自动重跑，更精准。
+func TestPythonBootstrapHasNoPreCheckAutoInstall(t *testing.T) {
+	forbidden := []struct {
+		name string
+		text string
+	}{
+		{"AST import scan", "_dd_scan_imports"},
+		{"find_spec pre-check", "find_spec"},
+		{"importlib.metadata fallback", "packages_distributions"},
+		{"disk scan fallback", "_dd_module_available_on_disk"},
+		{"pip install subprocess", "_dd_install_package"},
+		{"auto install switch", "DD_AUTO_INSTALL_DEPS"},
+		{"alias env", "DD_PY_AUTO_INSTALL_ALIASES"},
+		{"missing dep banner", "检测到缺失依赖"},
+	}
+	for _, m := range forbidden {
+		if strings.Contains(pythonEnvBootstrap, m.text) {
+			t.Fatalf("pythonEnvBootstrap must not contain %s marker %q (预检链路已移除，改由 Go 侧后置兜底)", m.name, m.text)
+		}
 	}
 }

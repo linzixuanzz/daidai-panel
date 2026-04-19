@@ -88,6 +88,16 @@ jobs:
           GOARM: '7'
         run: go build -ldflags="-s -w -X daidai-panel/handler.Version=${{ steps.version.outputs.VERSION }}" -o daidai-linux-armv7 .
 
+      - name: Build Windows amd64
+        working-directory: server
+        env:
+          CGO_ENABLED: '0'
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          go build -ldflags="-s -w -X daidai-panel/handler.Version=${{ steps.version.outputs.VERSION }}" -o daidai-server.exe .
+          go build -ldflags="-s -w -X daidai-panel/handler.Version=${{ steps.version.outputs.VERSION }}" -o ddp.exe ./cmd/ddp
+
       - name: Package
         run: |
           mkdir -p release
@@ -110,6 +120,18 @@ jobs:
           tar -czvf ../daidai-linux-armv7.tar.gz daidai-linux-armv7 config.yaml web/
           cd ..
 
+          # Windows 单机版：二进制 + 独立 config.yaml + start.bat + README，
+          # 同梱前端 dist，整个解压即用；Go 后端通过 server.web_dir 直接托管前端。
+          win_staging="release-windows/daidai-panel-windows-amd64"
+          mkdir -p "$win_staging/web"
+          cp server/daidai-server.exe "$win_staging/"
+          cp server/ddp.exe "$win_staging/"
+          cp -r web/dist/. "$win_staging/web/"
+          cp packaging/windows/config.yaml "$win_staging/config.yaml"
+          cp packaging/windows/start.bat "$win_staging/start.bat"
+          cp packaging/windows/README.txt "$win_staging/README.txt"
+          (cd release-windows && zip -rq ../daidai-windows-amd64.zip daidai-panel-windows-amd64)
+
       - name: Create Or Update Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -125,6 +147,7 @@ jobs:
               daidai-linux-arm64.tar.gz \
               daidai-linux-386.tar.gz \
               daidai-linux-armv7.tar.gz \
+              daidai-windows-amd64.zip \
               --clobber
           else
             gh release create "${GITHUB_REF_NAME}" \
@@ -132,6 +155,7 @@ jobs:
               daidai-linux-arm64.tar.gz \
               daidai-linux-386.tar.gz \
               daidai-linux-armv7.tar.gz \
+              daidai-windows-amd64.zip \
               --title "${GITHUB_REF_NAME}" \
               --notes-file "$NOTES_FILE"
           fi

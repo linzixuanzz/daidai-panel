@@ -25,7 +25,18 @@ type managedRuntimePaths struct {
 	searchDirs []string
 }
 
-const pythonEnvBootstrap = `import builtins, importlib, importlib.util, json, os, runpy, subprocess, sys
+// pythonEnvBootstrap 只负责三件事：
+//  1. 从 env.json 注入任务环境变量到 os.environ
+//  2. 把 PYTHONPATH 里声明的目录前置到 sys.path（工作目录、脚本目录、venv site-packages）
+//  3. 以 runpy.run_path 的方式执行用户脚本
+//
+// 历史上这里还有"AST 扫 import + importlib.find_spec 判缺失 + 自动 pip install"
+// 的预检链路（v2.0.7 引入），但 find_spec 在 Alpine venv 下对 pysmx 等包会漏判，
+// 导致已装好的包反复被判定缺失、循环触发 pip install。真实缺失的包由
+// Go 侧 task_executor.detectAndInstallDeps 兜底——它在脚本真实抛出
+// ModuleNotFoundError 时介入，基于正则抓模块名后 pip install，并自动重跑脚本，
+// 比预检更精准，且最多重试 5 次覆盖多依赖场景。
+const pythonEnvBootstrap = `import json, os, runpy, sys
 env_file, script_path, extra_path_raw = sys.argv[1:4]
 script_args = sys.argv[4:]
 with open(env_file, "r", encoding="utf-8") as fh:
@@ -37,87 +48,6 @@ for key, value in payload.items():
 for entry in reversed([item for item in extra_path_raw.split(os.pathsep) if item]):
     if entry not in sys.path:
         sys.path.insert(0, entry)
-_dd_auto_install_enabled = str(os.environ.get("DD_AUTO_INSTALL_DEPS", "")).strip().lower() in {"1", "true", "yes", "on"}
-try:
-    _dd_aliases = json.loads(os.environ.get("DD_PY_AUTO_INSTALL_ALIASES", "{}") or "{}")
-except Exception:
-    _dd_aliases = {}
-if not isinstance(_dd_aliases, dict):
-    _dd_aliases = {}
-if _dd_auto_install_enabled:
-    import ast as _dd_ast, tokenize as _dd_tok, io as _dd_io
-    _dd_stdlib_names = set(sys.stdlib_module_names) if hasattr(sys, "stdlib_module_names") else set(sys.builtin_module_names)
-    _dd_stdlib_names |= set(sys.builtin_module_names)
-    _dd_stdlib_names |= {"sendNotify", "notify", "CryptoJS", "ql", "qlApi", "jdCookie"}
-
-    def _dd_scan_imports(path):
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                tree = _dd_ast.parse(fh.read(), filename=path)
-        except Exception:
-            return []
-        names = []
-        for node in _dd_ast.walk(tree):
-            if isinstance(node, _dd_ast.Import):
-                for alias in node.names:
-                    names.append(alias.name.split(".")[0])
-            elif isinstance(node, _dd_ast.ImportFrom):
-                if node.module and node.level == 0:
-                    names.append(node.module.split(".")[0])
-        return names
-
-    def _dd_install_package(request_name, package_name):
-        display_name = request_name if not package_name or package_name == request_name else f"{request_name} -> {package_name}"
-        print(f"[检测到缺失依赖: {display_name}，正在自动安装...]", flush=True)
-        proc = subprocess.run(
-            [sys.executable, "-m", "pip", "install", package_name],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        output = (proc.stdout or "").strip()
-        if output:
-            print(output, flush=True)
-        if proc.returncode != 0:
-            print(f"[安装失败: {display_name}]", flush=True)
-            return False
-        print(f"[安装成功: {display_name}]", flush=True)
-        return True
-
-    def _dd_is_local_module(name, script_dir):
-        for suffix in [".so", ".pyd", ".py", ".pyc"]:
-            if os.path.isfile(os.path.join(script_dir, name + suffix)):
-                return True
-        if os.path.isdir(os.path.join(script_dir, name)):
-            return True
-        import glob as _dd_glob
-        if _dd_glob.glob(os.path.join(script_dir, name + ".*.so")):
-            return True
-        if _dd_glob.glob(os.path.join(script_dir, name + ".*.pyd")):
-            return True
-        return False
-
-    _dd_script_dir = os.path.dirname(os.path.abspath(script_path))
-    _dd_imported_names = _dd_scan_imports(script_path)
-    _dd_missing = []
-    for _dd_name in dict.fromkeys(_dd_imported_names):
-        if _dd_name.startswith("_") or _dd_name in _dd_stdlib_names:
-            continue
-        if _dd_is_local_module(_dd_name, _dd_script_dir):
-            continue
-        try:
-            _dd_spec = importlib.util.find_spec(_dd_name)
-        except (ImportError, ValueError):
-            _dd_spec = None
-        if _dd_spec is None:
-            _dd_missing.append(_dd_name)
-
-    for _dd_name in _dd_missing:
-        package_name = str(_dd_aliases.get(_dd_name.lower(), _dd_name)).strip()
-        _dd_install_package(_dd_name, package_name)
-
-    del _dd_ast, _dd_tok, _dd_io, _dd_imported_names, _dd_missing
-
 sys.argv = [script_path] + script_args
 runpy.run_path(script_path, run_name="__main__")
 `
@@ -155,13 +85,6 @@ func BuildManagedRuntimeEnvMap(workDir, scriptsDir string, defaultChannelID *uin
 	if pythonPath := buildManagedPythonPath(envMap["PYTHONPATH"], workDir, scriptsDir, runtimePaths.VenvSitePackages); pythonPath != "" {
 		envMap["PYTHONPATH"] = pythonPath
 	}
-	if model.GetRegisteredConfigBool("auto_install_deps") {
-		envMap["DD_AUTO_INSTALL_DEPS"] = "1"
-	} else {
-		envMap["DD_AUTO_INSTALL_DEPS"] = "0"
-	}
-	envMap["DD_PY_AUTO_INSTALL_ALIASES"] = EncodePythonAutoInstallAliases()
-
 	AppendScriptHelperPaths(envMap, scriptsDir)
 	var helperErr error
 	if helperEnv, err := BuildNotifyHelperEnv(scriptsDir, workDir, config.C.Server.Port, defaultChannelID, ttl); err == nil {

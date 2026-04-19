@@ -1,0 +1,26 @@
+# 呆呆面板 Windows 单机版配置
+# 修改本文件后需要重启 daidai-server.exe 生效
+# 默认路径均为相对路径（相对 daidai-server.exe 所在目录）
+
+server:
+  port: 5700                       # 监听端口，浏览器访问 http://localhost:5700
+  mode: release                    # debug / release
+  web_dir: ./web                   # 前端静态资源目录；Go 后端直接托管前端，无需 Nginx
+
+database:
+  path: ./Dumb-Panel/daidai.db
+
+jwt:
+  secret: ""                       # 留空自动生成并持久化到数据库
+  access_token_expire: 480h
+  refresh_token_expire: 1440h
+
+data:
+  dir: ./Dumb-Panel                # 数据根目录
+  scripts_dir: ./Dumb-Panel/scripts
+  log_dir: ./Dumb-Panel/logs
+
+cors:
+  origins:
+    - http://localhost:5700
+    - http://127.0.0.1:5700
