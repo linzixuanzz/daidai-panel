@@ -451,7 +451,7 @@ func (h *SubscriptionHandler) BatchDelete(c *gin.Context) {
 }
 
 func (h *SubscriptionHandler) RegisterRoutes(r *gin.RouterGroup) {
-	subs := r.Group("/subscriptions", middleware.JWTAuth(), middleware.RequireUserToken(), middleware.RequireRole("operator"))
+	subs := r.Group("/subscriptions", middleware.JWTAuth(), middleware.OpenAPIAccess("subscriptions"), middleware.RequireRole("operator"))
 	{
 		subs.GET("", h.List)
 		subs.POST("", h.Create)

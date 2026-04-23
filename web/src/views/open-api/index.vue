@@ -266,6 +266,7 @@ const scopeOptions = [
   { label: '任务管理', value: 'tasks' },
   { label: '脚本管理', value: 'scripts' },
   { label: '环境变量', value: 'envs' },
+  { label: '订阅管理', value: 'subscriptions' },
   { label: '日志查看', value: 'logs' },
   { label: '系统信息', value: 'system' },
 ]

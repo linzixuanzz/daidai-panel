@@ -220,7 +220,7 @@ onMounted(() => {
         />
       </el-tab-pane>
 
-      <el-tab-pane v-if="isAdmin" label="系统配置" name="config">
+      <el-tab-pane v-if="isAdmin" label="面板外观" name="config">
         <SystemConfigCard
           :configs-loading="configsLoading"
           :configs-saving="configsSaving"
@@ -232,7 +232,7 @@ onMounted(() => {
         />
       </el-tab-pane>
 
-      <el-tab-pane v-if="isAdmin" label="任务执行" name="task-exec">
+      <el-tab-pane v-if="isAdmin" label="任务运行" name="task-exec">
         <TaskExecutionCard
           :configs-loading="configsLoading"
           :configs-saving="configsSaving"
@@ -241,7 +241,7 @@ onMounted(() => {
         />
       </el-tab-pane>
 
-      <el-tab-pane v-if="isAdmin" label="网络代理" name="proxy">
+      <el-tab-pane v-if="isAdmin" label="代理设置" name="proxy">
         <ProxyConfigCard
           :configs-saving="configsSaving"
           :form="configForm"
@@ -249,7 +249,7 @@ onMounted(() => {
         />
       </el-tab-pane>
 
-      <el-tab-pane v-if="isAdmin" label="验证码设置" name="captcha">
+      <el-tab-pane v-if="isAdmin" label="登录验证码" name="captcha">
         <CaptchaConfigCard
           :configs-saving="configsSaving"
           :form="configForm"
@@ -273,7 +273,7 @@ onMounted(() => {
         />
       </el-tab-pane>
 
-      <el-tab-pane v-if="isAdmin" label="数据备份" name="backup">
+      <el-tab-pane v-if="isAdmin" label="备份恢复" name="backup">
         <BackupManagementCard
           v-model:show-backup-dialog="showBackupDialog"
           v-model:backup-name="backupName"
@@ -306,7 +306,7 @@ onMounted(() => {
         />
       </el-tab-pane>
 
-      <el-tab-pane label="安全" name="security">
+      <el-tab-pane label="账号安全" name="security">
         <el-tabs v-model="securityTab" @tab-change="handleSecurityTabChange">
           <el-tab-pane name="password-2fa">
             <template #label>

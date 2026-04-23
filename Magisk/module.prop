@@ -1,7 +1,7 @@
 id=daidai-panel
 name=呆呆面板 (Daidai Panel)
-version=v2.0.6
-versionCode=20006
+version=v2.1.2
+versionCode=20102
 author=linzixuanzz
 description=在 Android 设备上以 root 权限运行呆呆面板，开机自启，默认监听 http://127.0.0.1:5700
 updateJson=https://github.com/linzixuanzz/daidai-panel/releases/latest/download/update.json

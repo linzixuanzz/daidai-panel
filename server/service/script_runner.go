@@ -3,6 +3,7 @@ package service
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -481,13 +482,16 @@ func runSingleCommand(plan *CommandExecutionPlan, timeout int, envVars map[strin
 	truncated := false
 
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 256*1024), 16*1024*1024)
 
 	done := make(chan struct{})
 	go func() {
 		for scanner.Scan() {
 			line := scanner.Text()
 			if totalSize < maxLogSize {
+				if len(line) > 8192 {
+					line = line[:8192] + "... [行内容过长已截断]"
+				}
 				outputBuilder.WriteString(line + "\n")
 				totalSize += len(line) + 1
 				if onOutput != nil {
@@ -499,6 +503,21 @@ func runSingleCommand(plan *CommandExecutionPlan, timeout int, envVars map[strin
 				outputBuilder.WriteString(msg)
 				if onOutput != nil {
 					onOutput(msg)
+				}
+			}
+		}
+		if err := scanner.Err(); err != nil && totalSize < maxLogSize {
+			remaining, _ := io.ReadAll(io.LimitReader(stdout, 32*1024))
+			if len(remaining) > 0 {
+				for _, rl := range strings.Split(string(remaining), "\n") {
+					if totalSize >= maxLogSize {
+						break
+					}
+					outputBuilder.WriteString(rl + "\n")
+					totalSize += len(rl) + 1
+					if onOutput != nil {
+						onOutput(rl)
+					}
 				}
 			}
 		}
@@ -886,6 +905,7 @@ func RunInlineScript(content, scriptsDir string, envVars map[string]string, time
 	}
 
 	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 256*1024), 16*1024*1024)
 	go func() {
 		for scanner.Scan() {
 			if onOutput != nil {
@@ -943,6 +963,7 @@ func RunHookScript(scriptName, scriptsDir string, envVars map[string]string, onO
 	}
 
 	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 256*1024), 16*1024*1024)
 	go func() {
 		for scanner.Scan() {
 			if onOutput != nil {

@@ -208,6 +208,17 @@ daidai-panel-windows-amd64/
 
 **升级**：关掉正在跑的 `start.bat`，下载新版 zip 解压到新目录，把旧版本的 `Dumb-Panel\` 整个文件夹拷到新目录，重启新版本 `start.bat`。Windows 单机版**不支持**面板内一键更新（Docker 专属）、Magisk 模块。
 
+### Android Magisk 模块（Root 手机）
+
+在已 Root 的 Android 设备上直接跑面板，无需 Docker、无需 Termux。模块会在安装阶段下载一份 Alpine 3.18 minirootfs 到 `/data/daidai`，在容器里 `apk` 装好 Python / Node.js / Git 等运行时，然后通过 `rurima` 进入容器启动后端，开机自启。
+
+- **支持**：Magisk v24.0+ / KernelSU / APatch；Android 8.0+；`arm64` 或 `x86_64`
+- **默认访问**：`http://127.0.0.1:5700`，后端绑定 `0.0.0.0`，局域网 / 内网穿透可直连
+- **一键更新**：模块 `updateJson` 自动推送新版 ZIP，升级保留数据
+- **下载**：[GitHub Release](https://github.com/linzixuanzz/daidai-panel/releases) 里的 `daidai-panel-magisk-vX.Y.Z.zip`
+
+> 📱 **完整的安装 / 升级 / 卸载 / 端口配置 / 排障文档请看 → [`Magisk/README.md`](./Magisk/README.md)**
+
 ## 端口与反向代理
 
 ### 端口三兄弟
@@ -253,6 +264,43 @@ docker run -d --name daidai-panel \
   -e PANEL_PORT=7100 \
   ...
 ```
+
+### Magisk 模块（Android Root）改端口
+
+Magisk 模块版和 Docker 结构不一样：没有容器内 Nginx，前端 / 后端都由单个 `daidai-server` 二进制在 `PANEL_PORT` 上直接托管，**不要**直接去改 `config.yaml`——每次开机 `service.sh` 都会按 `ports.conf` 重新生成 `config.yaml`，手动改的内容会被覆盖。
+
+改端口的唯一入口是编辑持久化目录下的 `ports.conf`：
+
+```bash
+su
+vi /data/adb/daidai-panel/ports.conf
+```
+
+> 首次安装模块时会自动生成这个文件，内容带注释，直接修改对应的值即可。
+
+里面有三个可选变量：
+
+| 变量 | 作用 | 默认 |
+|------|------|------|
+| `PANEL_PORT` | 浏览器访问面板的端口（绑定 `0.0.0.0`，本机 / 局域网 / 内网穿透都能连） | `5700` |
+| `SSH_PORT` | 容器内 SSH 端口（adb / Termux 登入容器调试用） | `22` |
+| `EXTRA_CORS_ORIGINS` | 额外 CORS 白名单，英文逗号分隔。仅在跨域场景需要（如内网穿透公网端口与面板端口不同，或自定义域名访问） | 空 |
+
+示例：
+
+```ini
+PANEL_PORT=6700
+SSH_PORT=2222
+EXTRA_CORS_ORIGINS="https://panel.example.com,https://xx.trycloudflare.com"
+```
+
+改完后重启手机，或手动执行以下命令让配置立即生效：
+
+```bash
+su -c "sh /data/adb/modules/daidai-panel/service.sh"
+```
+
+生效后在 Magisk / KernelSU / APatch 管理器里点模块卡片的「运行」按钮，可以看到当前 `PANEL_PORT` / `SSH_PORT` 的实际监听状态。完整的 Magisk 模块安装 / 升级 / 卸载文档见 [`Magisk/README.md`](./Magisk/README.md)。
 
 ### 反向代理示例
 

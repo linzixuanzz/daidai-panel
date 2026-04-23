@@ -25,7 +25,7 @@ defineProps<{
   onOpenCodeRunner: () => void
   onRefresh: () => void | Promise<void>
   onNodeClick: (data: TreeNode) => void | Promise<void>
-  onNodeDrop: (draggingNode: any, dropNode: any) => void | Promise<void>
+  onNodeDrop: (draggingNode: any, dropNode: any, dropType: string) => void | Promise<void>
   onOpenRename: (path: string) => void
   onDelete: (path: string, isDir: boolean) => void | Promise<void>
   onMoveToRoot?: (path: string, isDir: boolean) => void | Promise<void>
@@ -291,7 +291,9 @@ watch(searchKeyword, (val) => {
   }
 
   :deep(.el-tree__drop-indicator) {
-    display: none;
+    height: 2px;
+    background: var(--scripts-accent, #22c55e);
+    border-radius: 1px;
   }
 
   :deep(.el-tree-node.is-dragging > .el-tree-node__content) {

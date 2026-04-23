@@ -665,7 +665,7 @@ async function handleImport(event: Event) {
           <div class="dd-mobile-card__actions task-card__actions">
             <el-button v-if="row.status !== 2" type="primary" size="small" @click="handleRun(row)">运行</el-button>
             <el-button v-else type="warning" size="small" @click="handleStop(row)">停止</el-button>
-            <el-button :type="row.status === 0 ? 'success' : 'info'" size="small" plain @click="handleToggle(row)">
+            <el-button :type="row.status === 0 ? 'success' : 'danger'" size="small" plain @click="handleToggle(row)">
               {{ row.status === 0 ? '启用' : '禁用' }}
             </el-button>
             <el-button size="small" @click="openLogViewer(row)">日志</el-button>
@@ -789,7 +789,7 @@ async function handleImport(event: Event) {
           <el-button-group size="small">
             <el-button v-if="row.status !== 2" type="primary" text @click="handleRun(row)">运行</el-button>
             <el-button v-else type="warning" text @click="handleStop(row)">停止</el-button>
-            <el-button :type="row.status === 0 ? 'success' : 'info'" text @click="handleToggle(row)">
+            <el-button :type="row.status === 0 ? 'success' : 'danger'" text @click="handleToggle(row)">
               {{ row.status === 0 ? '启用' : '禁用' }}
             </el-button>
             <el-button text @click="openLogViewer(row)">日志</el-button>
@@ -1001,12 +1001,12 @@ async function handleImport(event: Event) {
 
 :deep(.el-button) {
   font-size: 14px;
-  padding: 8px 16px;
+  padding: 9px 18px;
 }
 
 :deep(.el-button--small) {
   font-size: 13px;
-  padding: 6px 12px;
+  padding: 7px 14px;
 }
 
 @media screen and (max-width: 768px) {

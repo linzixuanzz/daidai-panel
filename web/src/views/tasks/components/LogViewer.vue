@@ -32,6 +32,7 @@ let logBuffer: string[] = []
 let logFlushTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let hiddenAt: number | null = null
+let pendingScrollRestore: number | null = null
 
 const hasLogs = computed(() => logLines.value.length > 0 || logTail.value.length > 0)
 const renderedLogText = computed(() => {
@@ -82,12 +83,14 @@ watch(autoScroll, (enabled) => {
 })
 
 async function startStream(isReconnect = false) {
+  const savedScrollTop = isReconnect ? logContainerRef.value?.scrollTop ?? null : null
   cleanup()
   resetLogOutput()
   done.value = false
   error.value = null
   emptyMessage.value = null
   loading.value = !isReconnect
+  pendingScrollRestore = isReconnect && savedScrollTop !== null ? savedScrollTop : null
   if (!isReconnect) {
     autoScroll.value = false
     scheduleScrollToTop()
@@ -238,7 +241,15 @@ function flushBufferedLogs() {
   }
   logBuffer = []
 
-  if (autoScroll.value) {
+  if (pendingScrollRestore !== null) {
+    const target = pendingScrollRestore
+    pendingScrollRestore = null
+    void nextTick(() => {
+      if (logContainerRef.value) {
+        logContainerRef.value.scrollTop = target
+      }
+    })
+  } else if (autoScroll.value) {
     scheduleScrollToBottom()
   }
 }

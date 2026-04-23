@@ -44,11 +44,15 @@ if [ ! -f "$PORTS_CONF" ]; then
 # 呆呆面板端口配置 —— 修改后重启模块生效
 PANEL_PORT=5700
 SSH_PORT=22
+SSH_USER=root
+SSH_PASSWORD=123456
 PCONF
 fi
 
 PANEL_PORT=5700
 SSH_PORT=22
+SSH_USER=root
+SSH_PASSWORD=123456
 EXTRA_CORS_ORIGINS=""
 # shellcheck disable=SC1090
 . "$PORTS_CONF" 2>/dev/null || true
@@ -72,6 +76,7 @@ fi
 log "========================================="
 log "呆呆面板模块启动 (MODDIR=$MODDIR, rootfs=$rootfs)"
 log "端口: PANEL_PORT=$PANEL_PORT (绑定 0.0.0.0), SSH_PORT=$SSH_PORT (来源: $PORTS_CONF)"
+log "SSH 凭据: 用户=$SSH_USER"
 if [ -n "$EXTRA_CORS_ORIGINS" ]; then
   log "额外 CORS 来源: $EXTRA_CORS_ORIGINS"
 fi
@@ -131,6 +136,8 @@ cat > "$STARTUP" << 'CONTAINER_EOF'
 # 默认值 + 用户 ports.conf 覆盖（同文件已由宿主 service.sh 校验过合法性）
 PANEL_PORT=5700
 SSH_PORT=22
+SSH_USER=root
+SSH_PASSWORD=123456
 EXTRA_CORS_ORIGINS=""
 [ -f /tmp/ports.conf ] && . /tmp/ports.conf
 
@@ -187,7 +194,15 @@ if [ -n "${EXTRA_CORS_ORIGINS}" ]; then
   done
 fi
 
-# ---- SSH: 按 SSH_PORT 更新 sshd_config 并启动 ------------------------
+# ---- SSH: 同步用户名/密码，按 SSH_PORT 更新 sshd_config 并启动 --------
+# 每次启动都同步密码，确保 ports.conf 改了密码后重启即生效
+if [ -n "${SSH_USER}" ] && [ -n "${SSH_PASSWORD}" ]; then
+  if [ "${SSH_USER}" != "root" ]; then
+    id "${SSH_USER}" >/dev/null 2>&1 || adduser -D -s /bin/bash "${SSH_USER}" 2>/dev/null
+  fi
+  echo "${SSH_USER}:${SSH_PASSWORD}" | chpasswd 2>/dev/null
+fi
+
 if [ -f /etc/ssh/sshd_config ]; then
   # 清除已有 Port 行（包括注释的），再追加当前端口
   sed -i -E '/^[#[:space:]]*Port[[:space:]]+/d' /etc/ssh/sshd_config

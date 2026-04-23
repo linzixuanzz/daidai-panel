@@ -176,7 +176,10 @@ for id in 3001 3002 3003 3004 3005; do
 done
 usermod -a -G aid_3001,aid_3002,aid_3003,aid_3004,aid_3005 root 2>/dev/null || true
 
-echo 'root:123456' | chpasswd 2>/dev/null
+# SSH 凭据（ports.conf 可自定义，这里用默认值）
+SSH_USER="${SSH_USER:-root}"
+SSH_PASSWORD="${SSH_PASSWORD:-123456}"
+echo "${SSH_USER}:${SSH_PASSWORD}" | chpasswd 2>/dev/null
 echo '123456' | chsh root -s /bin/bash 2>/dev/null
 cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime 2>/dev/null
 
@@ -233,6 +236,8 @@ if [ ! -f "$PERSIST_DIR/ports.conf" ]; then
 # PANEL_PORT: 面板 HTTP 端口（浏览器访问端口），默认 5700
 #             后端绑定的是 0.0.0.0:PANEL_PORT，局域网 / 穿透都能直连
 # SSH_PORT:   容器内 SSH 端口（adb/termux 登入容器调试），默认 22
+# SSH_USER:   SSH 登录用户名，默认 root
+# SSH_PASSWORD: SSH 登录密码，默认 123456（建议修改！）
 # EXTRA_CORS_ORIGINS:
 #             额外的 CORS 白名单；默认 127.0.0.1 / localhost 已放行，
 #             且"同源请求"会被中间件自动放行，绝大多数内网穿透不需要改它。
@@ -243,6 +248,8 @@ if [ ! -f "$PERSIST_DIR/ports.conf" ]; then
 #               EXTRA_CORS_ORIGINS="https://panel.example.com,https://xx.trycloudflare.com"
 PANEL_PORT=5700
 SSH_PORT=22
+SSH_USER=root
+SSH_PASSWORD=123456
 EXTRA_CORS_ORIGINS=""
 PCONF
 fi
@@ -262,6 +269,7 @@ ui_print ""
 ui_print "- 安装完成！"
 ui_print "- 重启后面板将自动启动，访问 http://127.0.0.1:${CUR_PANEL_PORT}"
 ui_print "- 端口配置: $PERSIST_DIR/ports.conf (PANEL_PORT=${CUR_PANEL_PORT}, SSH_PORT=${CUR_SSH_PORT})"
+ui_print "- SSH 连接: ssh ${SSH_USER:-root}@<设备IP> -p ${CUR_SSH_PORT} (默认密码: ${SSH_PASSWORD:-123456})"
 ui_print "- rootfs 位置: $rootfs"
 ui_print "- 数据目录:   $rootfs/app/Dumb-Panel"
 ui_print ""

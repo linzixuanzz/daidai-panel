@@ -137,12 +137,15 @@ export function useScriptWorkspaceBrowser() {
     if (type === 'inner') {
       return !dropNode.data.isLeaf
     }
+    if (type === 'before' || type === 'after') {
+      return dropNode.level === 1
+    }
     return false
   }
 
-  async function handleNodeDrop(draggingNode: any, dropNode: any) {
+  async function handleNodeDrop(draggingNode: any, dropNode: any, dropType: string) {
     const sourcePath = draggingNode.data.key
-    const targetDir = dropNode.data.key
+    const targetDir = dropType === 'inner' ? dropNode.data.key : ''
     try {
       await scriptApi.move(sourcePath, targetDir)
       ElMessage.success('移动成功')

@@ -44,7 +44,8 @@ async function loadLocalMonaco(): Promise<MonacoLoadResult> {
   loader.config({
     paths: {
       vs: `${import.meta.env.BASE_URL}${LOCAL_MONACO_VS}`
-    }
+    },
+    'vs/nls': { availableLanguages: { '*': 'zh-cn' } }
   })
 
   const monaco = await loader.init()
@@ -55,7 +56,8 @@ async function loadCdnMonaco(): Promise<MonacoLoadResult> {
   loader.config({
     paths: {
       vs: MONACO_CDN_VS
-    }
+    },
+    'vs/nls': { availableLanguages: { '*': 'zh-cn' } }
   })
 
   const monaco = await loader.init()

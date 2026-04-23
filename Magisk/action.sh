@@ -20,6 +20,8 @@ TAIL_LINES=60
 # 端口配置（有则读，无则默认）
 PANEL_PORT=5700
 SSH_PORT=22
+SSH_USER=root
+SSH_PASSWORD=123456
 EXTRA_CORS_ORIGINS=""
 # shellcheck disable=SC1090
 [ -f "$PORTS_CONF" ] && . "$PORTS_CONF" 2>/dev/null
@@ -32,6 +34,7 @@ ui_print "========================================="
 ui_print " 呆呆面板 - 运行状态"
 ui_print "========================================="
 ui_print "- 端口配置: PANEL=${PANEL_PORT} (绑定 0.0.0.0)  SSH=${SSH_PORT}"
+ui_print "- SSH 凭据: 用户=${SSH_USER}  密码=${SSH_PASSWORD}"
 ui_print "           ($PORTS_CONF)"
 if [ -n "$EXTRA_CORS_ORIGINS" ]; then
   ui_print "- 额外 CORS: $EXTRA_CORS_ORIGINS"
