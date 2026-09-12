@@ -40,8 +40,6 @@ func (h *TaskHandler) RegisterRoutes(r *gin.RouterGroup) {
 		tasks.PUT("/:id/disable", middleware.RequireRole("operator"), h.Disable)
 		tasks.PUT("/:id/pin", middleware.RequireRole("operator"), h.Pin)
 		tasks.PUT("/:id/unpin", middleware.RequireRole("operator"), h.Unpin)
-		// 清除订阅锁：任务重新跟随订阅源的名称与定时
-		tasks.PUT("/:id/restore-subscription-default", middleware.RequireRole("operator"), h.RestoreSubscriptionDefault)
 		// 列表拖拽排序。静态段 sort 与同层的 PUT /:id 共存，和 /tasks/batch 是同一个形态。
 		// 复用组上已挂的 OpenAPIAccess("tasks")，不新开 scope。
 		tasks.PUT("/sort", middleware.RequireRole("operator"), h.Sort)

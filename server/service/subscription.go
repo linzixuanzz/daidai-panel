@@ -921,11 +921,36 @@ func hasLabel(labels []string, target string) bool {
 	return false
 }
 
+// hasLabelFold：labels 里有没有与 target 忽略大小写相同的项。给订阅标签判定用——SQLite 的 LIKE 对 ASCII
+// 不分大小写（queryTasksByLabel），usedByOtherSubscription / withoutLabel 与它对齐，否则用户手写成
+// Subscription:2 这类大小写差异会误删别的订阅在用的任务，或者每次同步空转一次「[解除关联]」。
+func hasLabelFold(labels []string, target string) bool {
+	for _, item := range labels {
+		if strings.EqualFold(item, target) {
+			return true
+		}
+	}
+	return false
+}
+
 func withLabel(labels []string, target string) []string {
 	if hasLabel(labels, target) {
 		return labels
 	}
 	return append(labels, target)
+}
+
+// withoutLabel 是 withLabel 的反操作：去掉所有与 target 忽略大小写相同（strings.EqualFold）的项，其余按原顺序保留。
+// 忽略大小写是为了与 queryTasksByLabel 的 LIKE 口径一致：用户把订阅标签手写成 Subscription:2 时，这里也能把它摘掉，
+// 不会写回原值造成每次同步空转。
+func withoutLabel(labels []string, target string) []string {
+	kept := make([]string, 0, len(labels))
+	for _, item := range labels {
+		if !strings.EqualFold(item, target) {
+			kept = append(kept, item)
+		}
+	}
+	return kept
 }
 
 func subscriptionSaveDir(sub *model.Subscription) string {
@@ -1178,7 +1203,8 @@ func syncSubscriptionTasks(sub *model.Subscription, emit PullCallback) {
 
 	saveDir := subscriptionSaveDir(sub)
 	scriptsDir := filepath.Join(config.C.Data.ScriptsDir, saveDir)
-	candidates, dependencyFiles := collectSubscriptionTaskCandidates(sub, options)
+	scan := scanSubscriptionTaskCandidates(sub, options)
+	candidates, dependencyFiles := scan.candidates, scan.dependencyOnly
 	label := subscriptionTaskLabel(sub.ID)
 
 	// 可观测兜底：v2.2.8 之前任何空候选 / DB 创建失败都被静默吞掉，用户只看到
@@ -1206,69 +1232,71 @@ func syncSubscriptionTasks(sub *model.Subscription, emit PullCallback) {
 	}
 
 	var managedTasks []model.Task
-	queryTasksByLabel(label).Find(&managedTasks)
-	managedByCommand := make(map[string]*model.Task, len(managedTasks))
+	if err := queryTasksByLabel(label).Find(&managedTasks).Error; err != nil {
+		emit(fmt.Sprintf("[警告] 读取本订阅的任务失败，本次跳过任务同步: %v", err))
+		return
+	}
+
+	// 按脚本认任务（#125）：本订阅已有任务在跑某个候选脚本——命令原样，或改过参数、写法
+	// （task x.js now、desi …、-m 30m、./x.js、node x.js …）——就算这个脚本「已经有任务」：
+	// 不新建，也不改它的名称、定时、命令、状态、日志；同一脚本有多条任务也都不动。
+	// 想恢复订阅默认就删掉任务重新拉取。以前按命令原文匹配，命令一加参数就对不上：
+	// 新建一条重复任务，开着自动删除时还会把改过命令的那条连同历史日志删掉。
+	scriptIndex := newSubscriptionScriptIndex(config.C.Data.ScriptsDir, candidates)
+	managedCommands := make(map[string]bool, len(managedTasks))
+	managedKeys := make(map[string]bool, len(managedTasks))
 	for i := range managedTasks {
-		managedByCommand[strings.TrimSpace(managedTasks[i].Command)] = &managedTasks[i]
+		managedCommands[strings.TrimSpace(managedTasks[i].Command)] = true
+		if key, ok := scriptIndex.scriptKeyOf(managedTasks[i].Command); ok {
+			managedKeys[key] = true
+		}
 	}
 
 	created := 0
-	updated := 0
 	deleted := 0
 	adopted := 0
+	detached := 0
 	failed := 0
 
 	if options.autoAdd {
-		for command, candidate := range candidates {
-			if existing, ok := managedByCommand[command]; ok {
-				// 用户在面板手动改过任务名或定时的任务带 SubscriptionLocked 锁，订阅同步不再回灌订阅源的值。
-				// 这里必须打日志：否则用户改了订阅源时间、任务却没跟着变，会反过来以为同步坏了。
-				if existing.SubscriptionLocked {
-					if existing.Name != candidate.Name || existing.CronExpression != candidate.CronExpression {
-						emit(fmt.Sprintf("[保留手动定时] %s 已被手动调整过，跳过订阅源的名称/定时覆盖（订阅源 cron: %s）；如需重新跟随订阅，请在任务详情点「恢复为订阅默认」",
-							existing.Name, candidate.CronExpression))
-					}
-					continue
-				}
-				changes := map[string]interface{}{}
-				if existing.Name != candidate.Name {
-					changes["name"] = candidate.Name
-					existing.Name = candidate.Name
-				}
-				if existing.CronExpression != candidate.CronExpression {
-					changes["cron_expression"] = candidate.CronExpression
-					existing.CronExpression = candidate.CronExpression
-				}
-				if len(changes) > 0 {
-					if err := database.DB.Model(existing).Updates(changes).Error; err != nil {
-						failed++
-						emit(fmt.Sprintf("[自动更新任务失败] %s: %v", candidate.Name, err))
-					} else {
-						GetSchedulerV2().UpdateJob(existing)
-						updated++
-						emit(fmt.Sprintf("[自动更新任务] %s (cron: %s)", candidate.Name, candidate.CronExpression))
-					}
-				}
+		var pending []string
+		for _, command := range sortedSubscriptionCandidateCommands(candidates) {
+			if managedCommands[command] {
 				continue
 			}
+			// 键有歧义的候选（Windows 下仅大小写不同的两个文件）不按脚本认领，只认命令原文。
+			if key, ok := scriptIndex.candidateKey(command); ok && managedKeys[key] {
+				continue
+			}
+			pending = append(pending, command)
+		}
 
-			var existing model.Task
-			if err := database.DB.Where("command = ?", command).First(&existing).Error; err == nil {
-				labels := withLabel(existing.GetLabels(), label)
-				existing.SetLabelsFromSlice(labels)
-				// adopt 接管的是用户自建任务，名称与定时本来就是用户自己排的，
-				// 直接加锁，避免下一次同步立刻把它们覆盖成订阅源的值。
-				existing.SubscriptionLocked = true
-				if err := database.DB.Model(&existing).Updates(map[string]interface{}{
-					"labels":              existing.Labels,
-					"subscription_locked": true,
-				}).Error; err != nil {
-					failed++
-					emit(fmt.Sprintf("[关联已有任务失败] %s: %v", existing.Name, err))
-				} else {
-					managedByCommand[command] = &existing
-					adopted++
-					emit(fmt.Sprintf("[关联已有任务] %s", existing.Name))
+		var adoptPool *subscriptionAdoptPool
+		if len(pending) > 0 {
+			var err error
+			if adoptPool, err = loadSubscriptionAdoptPool(scriptIndex, managedTasks); err != nil {
+				failed++
+				emit(fmt.Sprintf("[关联已有任务失败] 读取任务列表出错，本次不新建任务，以免与已有任务重复: %v", err))
+				pending = nil
+			}
+		}
+
+		for _, command := range pending {
+			candidate := candidates[command]
+
+			// 接管：不归本订阅管、但命令与候选完全相同或跑的是同一个脚本的任务（用户自建的、删订阅再重建后
+			// 带着悬空旧标签的、别的订阅的），只加上本订阅的标签，名称、定时、命令一概不动；有几条接管几条。
+			key, keyOK := scriptIndex.candidateKey(command)
+			if matches := adoptPool.take(command, key, keyOK); len(matches) > 0 {
+				for _, existing := range matches {
+					existing.SetLabelsFromSlice(withLabel(existing.GetLabels(), label))
+					if err := database.DB.Model(existing).Update("labels", existing.Labels).Error; err != nil {
+						failed++
+						emit(fmt.Sprintf("[关联已有任务失败] %s: %v", existing.Name, err))
+					} else {
+						adopted++
+						emit(fmt.Sprintf("[关联已有任务] %s", existing.Name))
+					}
 				}
 				continue
 			}
@@ -1294,7 +1322,6 @@ func syncSubscriptionTasks(sub *model.Subscription, emit PullCallback) {
 				if err := GetSchedulerV2().AddJob(&task); err != nil {
 					log.Printf("任务 %d 注册调度失败（它不会自动触发）: %v", task.ID, err)
 				}
-				managedByCommand[command] = &task
 				created++
 				emit(fmt.Sprintf("[自动添加任务] %s (cron: %s)", candidate.Name, candidate.CronExpression))
 			}
@@ -1302,36 +1329,78 @@ func syncSubscriptionTasks(sub *model.Subscription, emit PullCallback) {
 	}
 
 	if options.autoDelete {
-		for _, task := range managedTasks {
-			command := strings.TrimSpace(task.Command)
-			if !strings.HasPrefix(command, "task ") {
-				continue
+		if len(candidates) == 0 {
+			// 熔断：一个候选都没有，多半是检出为空、子目录/白名单配错，或单文件订阅扫错了目录，
+			// 而不是上游真把脚本全删了。这时照「不在候选里就删」会把整个订阅的任务连同历史日志清空。
+			if len(managedTasks) > 0 {
+				emit("[跳过自动删除] 本次没有识别到任何候选脚本，为防误删，未删除任何任务")
 			}
-			if _, ok := candidates[command]; ok {
-				continue
+		} else if otherLabels, err := otherLiveSubscriptionLabels(sub.ID); err != nil {
+			failed++
+			emit(fmt.Sprintf("[跳过自动删除] 读取订阅列表失败，无法确认任务是否还被其他订阅使用，为防误删，未删除任何任务: %v", err))
+		} else {
+			// 删除必须有正面证据（判定见 subscriptionStaleTaskJudge.judge）。范围不变：只看 task 开头的命令，
+			// node / python3 这类解释器命令从不自动删除。
+			judge := newSubscriptionStaleTaskJudge(scriptIndex, candidates, saveDir,
+				subscriptionScannedFileKeys(scriptIndex, config.C.Data.ScriptsDir, scan.seenFiles))
+			for i := range managedTasks {
+				task := &managedTasks[i]
+				if !strings.HasPrefix(strings.TrimSpace(task.Command), "task ") {
+					continue
+				}
+				verdict, scriptPath, statErr := judge.judge(task.Command)
+				switch verdict {
+				case staleTaskKeep:
+					continue
+				case staleTaskKeepUnscanned:
+					emit(fmt.Sprintf("[保留任务] %s：脚本 %s 还在订阅目录里，但本次扫描没有读到，未删除（可能是目录联接或存储读目录异常）",
+						task.Name, scriptPath))
+					continue
+				case staleTaskKeepStatError:
+					emit(fmt.Sprintf("[保留任务] %s：无法确认脚本 %s 是否还在（%s），未删除（可能是权限不足或存储异常）",
+						task.Name, scriptPath, statErr))
+					continue
+				}
+				// 跨订阅接管之后（两个订阅共用 SaveDir、单文件订阅的 SaveDir 设在别的仓库里），这条任务可能还带着
+				// 别的订阅的标签。那个订阅还在，任务对它就没有失效：只摘掉本订阅的标签，不删行、不动日志，
+				// 删不删交给那个订阅自己的同步。已删订阅留下的悬空旧标签（E9）不算，照常删。
+				if usedByOtherSubscription(task, otherLabels) {
+					changed, err := detachSubscriptionTaskIfUnchanged(task, label)
+					if err != nil {
+						failed++
+						emit(fmt.Sprintf("[解除关联失败] %s: %v", task.Name, err))
+						continue
+					}
+					if !changed {
+						// changed=false 有两种：快照过期（同步期间任务被改 / 删，条件不命中）→ 保留并提示；
+						// 本订阅标签本就不在任务上（detach 无可摘除）→ 静默，绝不能每次拉取都刷屏。
+						if hasLabelFold(task.GetLabels(), label) {
+							emit(fmt.Sprintf("[保留任务] %s：同步期间任务被修改或已删除，本次未解除关联", task.Name))
+						}
+						continue
+					}
+					detached++
+					emit(fmt.Sprintf("[解除关联] %s：仍被其他订阅使用，只移除本订阅的标签，未删除", task.Name))
+					continue
+				}
+				removed, err := deleteSubscriptionTaskIfUnchanged(task)
+				if err != nil {
+					failed++
+					emit(fmt.Sprintf("[自动删除任务失败] %s: %v", task.Name, err))
+					continue
+				}
+				if !removed {
+					emit(fmt.Sprintf("[保留任务] %s：同步期间任务被修改或已删除，本次未删除", task.Name))
+					continue
+				}
+				deleted++
+				emit(fmt.Sprintf("[自动删除任务] %s", task.Name))
 			}
-			// 带锁任务必须在这里显式判断：删除会连任务带历史日志一起物理删掉，
-			// 标记也随之消失，锁本身守不住，只能在删除前拦一道。
-			// 已知副作用：改 SaveDir/Alias 会让所有 relPath 变化 → 新任务照建、旧的带锁任务被保留，
-			// 会出现重复任务，靠下面这条提示让用户自行清理（自动合并需要路径映射推断，误判代价更高）。
-			if task.SubscriptionLocked {
-				emit(fmt.Sprintf("[保留任务] %s 已加锁，订阅源中已无对应脚本，已保留，请手动确认", task.Name))
-				continue
-			}
-
-			GetSchedulerV2().RemoveJob(task.ID)
-			database.DB.Where("task_id = ?", task.ID).Delete(&model.TaskLog{})
-			database.DB.Delete(&task)
-			deleted++
-			emit(fmt.Sprintf("[自动删除任务] %s", task.Name))
 		}
 	}
 
 	if created > 0 {
 		emit(fmt.Sprintf("[共自动添加 %d 个定时任务]", created))
-	}
-	if updated > 0 {
-		emit(fmt.Sprintf("[共自动更新 %d 个定时任务]", updated))
 	}
 	if adopted > 0 {
 		emit(fmt.Sprintf("[共关联 %d 个已有任务]", adopted))
@@ -1339,12 +1408,104 @@ func syncSubscriptionTasks(sub *model.Subscription, emit PullCallback) {
 	if deleted > 0 {
 		emit(fmt.Sprintf("[共自动删除 %d 个失效任务]", deleted))
 	}
+	if detached > 0 {
+		emit(fmt.Sprintf("[共解除关联 %d 个任务]", detached))
+	}
 	if failed > 0 {
 		emit(fmt.Sprintf("[警告] 共 %d 个任务操作失败，详见上方日志", failed))
 	}
-	if created == 0 && updated == 0 && adopted == 0 && deleted == 0 && failed == 0 {
+	if created == 0 && adopted == 0 && deleted == 0 && detached == 0 && failed == 0 {
 		emit("[同步完成] 本次未对定时任务做任何变更")
 	}
+}
+
+// deleteSubscriptionTaskIfUnchanged 按同步开始时的快照条件删除一条失效任务：
+// 只有 id 与命令原文都还和快照一致才删（同步期间用户改了命令、或别处已经删了，都不动），
+// 任务行删到了，历史日志才跟着删——两步在同一个事务里，要么都删、要么都不删；提交之后再从调度器摘掉。
+// 返回 (false, nil) 表示条件不满足、什么都没删。
+//
+// 事务里的顺序是「先删日志、再按条件删任务、条件不满足就回滚」：task_logs 对 tasks 有外键
+// （PRAGMA foreign_keys 开着），任务行在、日志还在时删任务会报 FOREIGN KEY constraint failed。
+// 事务里只能用 tx：库连接池只有 1 个连接，事务里再用 database.DB 会把自己锁死。
+func deleteSubscriptionTaskIfUnchanged(task *model.Task) (bool, error) {
+	removed, changed := false, false
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("task_id = ?", task.ID).Delete(&model.TaskLog{}).Error; err != nil {
+			return fmt.Errorf("删除历史日志失败: %w", err)
+		}
+		result := tx.Where("id = ? AND command = ?", task.ID, task.Command).Delete(&model.Task{})
+		if result.Error != nil {
+			return fmt.Errorf("删除任务失败: %w", result.Error)
+		}
+		if result.RowsAffected != 1 {
+			// 返回非 nil 让事务回滚，刚删的日志原样恢复。
+			changed = true
+			return fmt.Errorf("任务在同步期间被修改或已删除")
+		}
+		removed = true
+		return nil
+	})
+	if changed {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if removed {
+		if scheduler := GetSchedulerV2(); scheduler != nil {
+			scheduler.RemoveJob(task.ID)
+		}
+	}
+	return removed, nil
+}
+
+// otherLiveSubscriptionLabels 返回除 selfID 外、仍然存在的订阅的标签（subscriptionTaskLabel 的形态），每次同步查一次。
+// 删订阅不动任务，任务身上会留下已删订阅的悬空旧标签（E9）——它们不在这里面，不挡删除。
+func otherLiveSubscriptionLabels(selfID uint) ([]string, error) {
+	var ids []uint
+	if err := database.DB.Model(&model.Subscription{}).Order("id").Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	labels := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id != selfID {
+			labels = append(labels, subscriptionTaskLabel(id))
+		}
+	}
+	return labels, nil
+}
+
+// usedByOtherSubscription：任务标签里有没有 otherLabels 中的任一个。与 queryTasksByLabel 的 LIKE 同口径：
+// GetLabels 按逗号切、整项比较，但忽略大小写（hasLabelFold）——否则用户手写成 Subscription:2 时，B 的 LIKE 认它、
+// A 的精确比较不认，A 会把 B 还在用的任务连日志删掉。
+func usedByOtherSubscription(task *model.Task, otherLabels []string) bool {
+	labels := task.GetLabels()
+	for _, other := range otherLabels {
+		if hasLabelFold(labels, other) {
+			return true
+		}
+	}
+	return false
+}
+
+// detachSubscriptionTaskIfUnchanged 把 label 从任务标签里摘掉（忽略大小写，见 withoutLabel），不删任务、不动日志与调度——
+// 给「判为失效、但还被别的仍存在的订阅使用」的任务。快照条件比删除多一个 labels：同步期间用户改了命令或标签
+// （含别的订阅刚摘掉自己的标签）、或任务已被删，都不动。返回 (false, nil) 有两种：新旧标签相同（没什么可摘、直接返回）、
+// 或快照条件不命中（同步期间被改 / 删）——调用方两种都不计 detached、不打 [解除关联]，靠 hasLabelFold 区分要不要提示。
+func detachSubscriptionTaskIfUnchanged(task *model.Task, label string) (bool, error) {
+	updated := *task
+	updated.SetLabelsFromSlice(withoutLabel(task.GetLabels(), label))
+	if updated.Labels == task.Labels {
+		// 标签本就不带 label（大小写规整后也没有）：没什么可摘的，直接当没改。调用方据此静默处理，避免空转刷屏。
+		return false, nil
+	}
+	result := database.DB.Model(&model.Task{}).
+		Where("id = ? AND command = ? AND labels = ?", task.ID, task.Command, task.Labels).
+		Update("labels", updated.Labels)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // countSubscriptionScriptFiles 统计 scriptsDir 下符合扩展名 + 白/黑名单过滤的文件数。
@@ -1378,7 +1539,8 @@ func countSubscriptionScriptFiles(scriptsDir string, allowedExts map[string]bool
 // FallbackSubscriptionCron 是订阅脚本未声明 cron 时使用的"硬兜底"。
 // 用户既没在脚本头部写 cron 注释、也没在系统设置 default_cron_rule 里配自定义默认值时，
 // 用这个兜底——每天 0 点跑一次，保证 git 拉到的脚本都会变成定时任务。
-// 用户可以在任务详情里手动改 cron，或者把脚本注释加上 cron 头让下次同步用真值覆盖。
+// 用户可以在任务详情里手动改 cron。订阅同步从不回写已有任务（#125）：脚本后来补了 cron 头，
+// 想让任务按它重建，就删掉任务重新拉取。
 const FallbackSubscriptionCron = "0 0 * * *"
 
 func getSubscriptionTaskSyncOptions(sub *model.Subscription) subscriptionTaskSyncOptions {
@@ -1527,13 +1689,28 @@ func matchesFullCheckoutSubPathScope(sub *model.Subscription, filePath string) b
 
 // collectSubscriptionTaskCandidates 返回任务候选，以及「仅因依赖规则落盘、刻意不建任务」
 // 的文件相对路径（调用方负责打日志——这个项目的历史教训就是静默失配最难查）。
+// 签名保持不变（有测试直接调它）；同步还需要「本次读到的全部文件」，走 scanSubscriptionTaskCandidates。
 func collectSubscriptionTaskCandidates(sub *model.Subscription, options subscriptionTaskSyncOptions) (map[string]subscriptionTaskCandidate, []string) {
+	scan := scanSubscriptionTaskCandidates(sub, options)
+	return scan.candidates, scan.dependencyOnly
+}
+
+// subscriptionCandidateScan 是一次扫描的完整结果。
+type subscriptionCandidateScan struct {
+	candidates     map[string]subscriptionTaskCandidate
+	dependencyOnly []string
+	// seenFiles：本次扫描读到的全部文件（任意扩展名，未经任何规则过滤），路径与候选命令同根。
+	// 自动删除分支靠它区分「文件在、被规则排除」（照删）与「文件在、扫描没读到」（保留并提示）。
+	seenFiles []string
+}
+
+func scanSubscriptionTaskCandidates(sub *model.Subscription, options subscriptionTaskSyncOptions) subscriptionCandidateScan {
 	candidates := make(map[string]subscriptionTaskCandidate)
 	saveDir := subscriptionSaveDir(sub)
 	scriptsDir := filepath.Join(config.C.Data.ScriptsDir, saveDir)
 
 	if _, err := os.Stat(scriptsDir); err != nil {
-		return candidates, nil
+		return subscriptionCandidateScan{candidates: candidates}
 	}
 
 	// 收集"所有受支持扩展名的文件"。用 walk + 兜底的 ReadDir，确保:
@@ -1546,6 +1723,7 @@ func collectSubscriptionTaskCandidates(sub *model.Subscription, options subscrip
 		info    os.FileInfo
 	}
 	var allFiles []fileEntry
+	var seenFiles []string
 	seen := map[string]bool{}
 
 	addEntry := func(path string, info os.FileInfo) {
@@ -1578,6 +1756,7 @@ func collectSubscriptionTaskCandidates(sub *model.Subscription, options subscrip
 			}
 			return nil
 		}
+		seenFiles = append(seenFiles, path)
 		addEntry(path, info)
 		return nil
 	})
@@ -1598,6 +1777,7 @@ func collectSubscriptionTaskCandidates(sub *model.Subscription, options subscrip
 					continue
 				}
 			}
+			seenFiles = append(seenFiles, fullPath)
 			addEntry(fullPath, info)
 		}
 	}
@@ -1676,7 +1856,7 @@ func collectSubscriptionTaskCandidates(sub *model.Subscription, options subscrip
 		}
 	}
 
-	return candidates, dependencyOnly
+	return subscriptionCandidateScan{candidates: candidates, dependencyOnly: dependencyOnly, seenFiles: seenFiles}
 }
 
 func queryTasksByLabel(label string) *gorm.DB {
@@ -1717,7 +1897,8 @@ func resolveCronForSubscriptionTask(path string, defaultCron string) string {
 //	new Env('名称')  >  注释头 `// name: 名称`  >  fallback（去掉扩展名的文件名）
 //
 // new Env 必须排在前面：它是青龙沿用至今的写法，存量任务名都是由它决定的。
-// 如果让后加的注释头抢先，老用户升级后一批「没加订阅锁」的任务会在下次拉取时被静默改名。
+// 订阅同步从 #125 起不再改已有任务的名称，但用户删掉任务重新拉取时，新建出来的名称仍要和原来一致；
+// 让后加的注释头抢先，重建出来的任务就会换个名字。
 // 所以这里两种声明都扫完再决定，而不是「哪个先在文件里出现就用哪个」。
 func resolveSubscriptionTaskName(path, fallback string) string {
 	fallback = strings.TrimSpace(fallback)

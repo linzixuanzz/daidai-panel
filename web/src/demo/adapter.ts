@@ -856,7 +856,6 @@ function createTask(body: Record<string, any>): DemoTask {
     // 新建的任务排在最前面：服务端默认排序里 sort_order 越小越靠前
     sort_order: -1,
     is_pinned: false,
-    subscription_locked: false,
     pid: null,
     log_path: null,
     last_running_time: null,
@@ -1329,13 +1328,6 @@ route('PUT', '/tasks/:id/unpin', (ctx) => {
   return { message: '已取消置顶' }
 })
 
-route('PUT', '/tasks/:id/restore-subscription-default', (ctx) => {
-  const task = requireTask(ctx)
-  task.subscription_locked = false
-  task.updated_at = nowIso()
-  return { message: '已恢复为订阅默认', data: toTaskDict(task) }
-})
-
 route('POST', '/tasks/:id/copy', (ctx) => {
   const task = requireTask(ctx)
   const copied = createTask({
@@ -1343,7 +1335,6 @@ route('POST', '/tasks/:id/copy', (ctx) => {
     name: `${task.name} - 副本`,
     labels: [...task.labels],
   } as Record<string, any>)
-  copied.subscription_locked = false
   return { message: '复制成功', data: toTaskDict(copied) }
 })
 

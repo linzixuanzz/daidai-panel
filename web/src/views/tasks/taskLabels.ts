@@ -10,25 +10,6 @@ export function isInternalTaskLabel(label: string) {
   return label.startsWith(SUBSCRIPTION_LABEL_PREFIX) || label.startsWith(TASK_GROUP_LABEL_PREFIX)
 }
 
-/**
- * 任务是否由订阅管理：原始 labels 里带 `subscription:<id>` 前缀。
- *
- * ⚠️ 判定只能用原始 labels，不要换成 subscription_labels：那个字段只有任务列表接口会补，
- * 单条任务接口（含「恢复为订阅默认」的响应）走的是 ToDict()，不带它——
- * 用它判定会让订阅相关的区块在刷新单条数据后突然消失。
- *
- * ⚠️ 这里先 trim 再判前缀，是刻意与后端 hasSubscriptionLabel（server/handler/task_labels.go）对齐，
- * 不是笔误：这一处的判定结果决定详情页「订阅同步」整行渲不渲染，也就是用户还有没有「恢复为订阅默认」
- * 这个解锁入口。历史脏数据里存在 " subscription:1" 这种带前导空格的标签，后端 TrimSpace 后认它是订阅任务、
- * 照常加锁，前端不 trim 就会判成非订阅任务把那一行藏掉——用户看得到「已锁定」却没有任何入口解开，
- * 是不可自愈的死状态，而不是显示瑕疵。
- * 本文件其它函数（isInternalTaskLabel / getTaskGroupName / getDisplayTaskLabels 等）保持不 trim：
- * 它们不决定解锁入口，加 trim 只会改变既有行为，别顺手一起改。
- */
-export function isSubscriptionTask(labels: string[] = []) {
-  return labels.some(label => typeof label === 'string' && label.trim().startsWith(SUBSCRIPTION_LABEL_PREFIX))
-}
-
 export function getTaskGroupName(labels: string[] = []) {
   for (const label of labels) {
     if (!label) continue

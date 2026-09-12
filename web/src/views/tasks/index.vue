@@ -901,8 +901,7 @@ function displayTaskLabels(task: any) {
   return getDisplayTaskLabels(task?.labels || [])
 }
 
-// 「显示设置」下拉的四个可勾选项。「已锁定」（订阅锁）刻意不在里面：
-// 它是状态而不是分类标签，且是「这个任务手改过、订阅同步不会覆盖」的关键提示，藏掉会让人以为订阅坏了。
+// 「显示设置」下拉的四个可勾选项。
 const nameLabelOptions: { key: keyof TaskNameLabelPrefs; label: string }[] = [
   { key: 'subscription', label: '订阅标签' },
   { key: 'group', label: '分组标签' },
@@ -1203,27 +1202,10 @@ async function handleCopy(task: any) {
   }
 }
 
-// 清除订阅锁：任务重新跟随订阅源，下次拉取会用订阅源的名称与定时覆盖回来，
-// 所以这里必须二次确认，避免用户误点后手改的时间被打回。
-async function handleRestoreSubscriptionDefault(task: any) {
-  if (!task?.id) return
-  if (!ensureCanOperate('当前账号没有编辑任务权限')) return
-  try {
-    await ElMessageBox.confirm(
-      `任务「${task.name}」将重新跟随订阅源：下次拉取会用订阅源的名称与定时覆盖当前设置，订阅源删除脚本时也会自动删除该任务。确认恢复吗？`,
-      '恢复为订阅默认',
-      { type: 'warning' }
-    )
-    const res = await taskApi.restoreSubscriptionDefault(task.id)
-    if (detailTask.value && detailTask.value.id === task.id) {
-      detailTask.value = res.data
-    }
-    ElMessage.success('已恢复为订阅默认')
-    loadTasks()
-  } catch (err: any) {
-    if (err === 'cancel' || err === 'close') return
-    ElMessage.error(err?.response?.data?.error || '恢复失败')
-  }
+// 置顶行挂 task-row-pinned，样式见 <style> 里的「Pinned Row」（与环境变量页同一套）。
+// 类名由 el-table 每次渲染按行数据重算，轮询就地合并、拖拽重排之后都跟着数据走，不会挂错行。
+function getRowClassName({ row }: { row: any }) {
+  return row?.is_pinned ? 'task-row-pinned' : ''
 }
 
 async function handlePin(task: any) {
@@ -1630,6 +1612,7 @@ async function handleImport(event: Event) {
         v-for="row in tasks"
         :key="row.id"
         class="dd-mobile-card task-card"
+        :class="{ 'task-card--pinned': row.is_pinned }"
       >
         <div class="dd-mobile-card__header">
           <div class="dd-mobile-card__title-wrap task-card__title-wrap">
@@ -1638,7 +1621,6 @@ async function handleImport(event: Event) {
                 <el-checkbox v-if="canOperateTasks" :model-value="isSelected(row.id)" @change="toggleSelected(row.id, $event)" />
                 <div class="task-card__name-block">
                   <div class="task-card__name-line">
-                    <el-icon v-if="row.is_pinned" class="pin-icon" :class="{ 'is-readonly': !canOperateTasks }" @click="canOperateTasks && handlePin(row)"><Star /></el-icon>
                     <button
                       type="button"
                       class="dd-mobile-card__title task-name-link"
@@ -1664,18 +1646,6 @@ async function handleImport(event: Event) {
                    移动端卡片没有列宽压力，所以只受手动开关控制。 -->
               <el-tag v-if="nameLabelPrefs.type" size="small" effect="plain" class="task-label task-label--type">
                 {{ getTaskTypeLabel(row.task_type) }}
-              </el-tag>
-              <!-- 订阅锁：手改过名称/定时的任务不再被订阅拉取覆盖，也不会被自动删除 -->
-              <el-tag
-                v-if="row.subscription_locked"
-                size="small"
-                effect="plain"
-                type="warning"
-                class="task-label"
-                title="已手动调整过名称/定时，订阅拉取不会覆盖，也不会自动删除"
-              >
-                <el-icon><Lock /></el-icon>
-                已锁定
               </el-tag>
               <!-- 与桌面表格共用同一份「显示设置」开关（分组 / 订阅 / 自定义三类分项过滤）。
                    :key 用 entry.key（带下标）而不是标签文字：订阅名与分组名重名时会并排两条同名标签，
@@ -1800,6 +1770,7 @@ async function handleImport(event: Event) {
         style="width: 100%"
         :header-cell-style="{ background: '#f8fafc', color: '#64748b', fontWeight: 600, fontSize: '13px' }"
         :row-style="{ cursor: 'pointer' }"
+        :row-class-name="getRowClassName"
       >
         <el-table-column v-if="canOperateTasks" type="selection" width="40" />
         <!-- 拖拽列：40px，与环境变量页同宽同形（那边是 .env-drag-col）。
@@ -1821,7 +1792,6 @@ async function handleImport(event: Event) {
         <el-table-column label="任务名称" :min-width="isNarrowDesktop ? 90 : 80">
           <template #default="{ row }">
             <div class="task-name-cell">
-              <el-icon v-if="row.is_pinned" class="pin-icon" :class="{ 'is-readonly': !canOperateTasks }" @click.stop="canOperateTasks && handlePin(row)"><Star /></el-icon>
               <div class="task-name-info">
                 <div class="task-name-inline">
                   <button
@@ -1840,18 +1810,6 @@ async function handleImport(event: Event) {
                        不该被一个默认开着的偏好覆盖掉。 -->
                   <el-tag v-if="!isNarrowDesktop && nameLabelPrefs.type" size="small" effect="plain" class="task-label task-label--type">
                     {{ getTaskTypeLabel(row.task_type) }}
-                  </el-tag>
-                  <!-- 订阅锁：手改过名称/定时的任务不再被订阅拉取覆盖，也不会被自动删除 -->
-                  <el-tag
-                    v-if="row.subscription_locked"
-                    size="small"
-                    effect="plain"
-                    type="warning"
-                    class="task-label"
-                    title="已手动调整过名称/定时，订阅拉取不会覆盖，也不会自动删除"
-                  >
-                    <el-icon><Lock /></el-icon>
-                    已锁定
                   </el-tag>
                   <!-- 分组 / 订阅 / 自定义三类标签按工具栏「显示设置」分项过滤。
                        任务详情弹窗（TaskDetail.vue）刻意不跟随，那里必须能看到完整标签。
@@ -2074,8 +2032,6 @@ async function handleImport(event: Event) {
     <TaskDetail
       v-model:visible="detailVisible"
       :task="detailTask"
-      :can-operate="canOperateTasks"
-      @restore-subscription-default="handleRestoreSubscriptionDefault"
     />
 
     <LogFileBrowser
@@ -2318,17 +2274,6 @@ async function handleImport(event: Event) {
   display: flex;
   align-items: center;
   gap: 8px;
-
-  .pin-icon {
-    color: var(--el-color-warning);
-    cursor: pointer;
-    font-size: 16px;
-    flex-shrink: 0;
-
-    &.is-readonly {
-      cursor: default;
-    }
-  }
 }
 
 .task-name-info {
@@ -2584,6 +2529,20 @@ async function handleImport(event: Event) {
   }
 }
 
+/* ---- Pinned Row ---- */
+// 置顶行：整行淡橙底 + 首格左缘 4px 橙色竖条，与环境变量页 .env-row-pinned 同一套写法（推导见那边注释）。
+// 🔴 选择器里的 `.el-table` 别删：操作列是 fixed="right"，EP 给固定列补了
+//    `.el-table__body-wrapper tr td.el-table-fixed-column--right { background: inherit }`（0,2,2），
+//    不带 `.el-table` 只有 (0,2,1)，最右一格会退回普通底色；带上是 (0,3,1)，压得过。
+//    它仍输给 EP 的行 hover（0,3,2），悬停照常显示 hover 底色，别加 !important 去压。
+:deep(.el-table .task-row-pinned > td) {
+  background: color-mix(in srgb, #ffd66b 12%, var(--el-table-tr-bg-color));
+}
+
+:deep(.task-row-pinned > td:first-child) {
+  box-shadow: inset 4px 0 0 #f5a623;
+}
+
 // ===== 窄桌面紧凑模式（视口 <1600px，由 isNarrowDesktop 挂 .is-compact）=====
 // 目标是把行高从 94~186px 压回 40px 上下。三件事一起做才有效，缺一件都会被最高的那格顶回去：
 //   1) 定时规则单行省略（不省略就是 3 行）。命令列的省略已提升到 .command-text 基态、两档桌面共用，
@@ -2630,6 +2589,13 @@ async function handleImport(event: Event) {
     overflow: visible;
     text-overflow: clip;
   }
+}
+
+// 置顶移动卡：与环境变量页 .env-card--pinned 同一套，只改边框色与左缘竖条、不改底色。
+// global.scss 的 `.dd-mobile-card` 是 (0,1,0)，这条 scoped 之后是 (0,2,0)，压得过。
+.task-card--pinned {
+  border-color: rgba(245, 166, 35, 0.28);
+  box-shadow: inset 4px 0 0 #f5a623;
 }
 
 .task-card__title-row {

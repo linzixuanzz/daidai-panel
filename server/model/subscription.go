@@ -66,8 +66,8 @@ type Subscription struct {
 	Alias       string     `gorm:"size:128;default:''" json:"alias"`
 	ForceOverwrite *bool   `gorm:"default:true" json:"force_overwrite"`
 	// OverwriteMode 覆盖拉取策略：inherit=跟随全局 / force=强制覆盖 / preserve=强制保留本地。
-	// 作用域只有 git 工作区文件（reset --hard vs stash），与任务的名称、定时无关
-	// —— 详见 task.go SubscriptionLocked 的注释。
+	// 作用域只有 git 工作区文件（reset --hard vs stash），与任务表无关：
+	// 订阅同步从不修改已有任务的名称与定时（#125，见 service.syncSubscriptionTasks）。
 	// 上面那个 ForceOverwrite 是 v2.2.15 之后就没人维护的旧列，只做只读兼容，不再参与判定。
 	OverwriteMode string `gorm:"size:16;not null;default:'inherit'" json:"overwrite_mode"`
 	// FullCheckout 完整检出：开启后放弃 sparse-checkout，把整个仓库拉下来。

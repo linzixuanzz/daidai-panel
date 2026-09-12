@@ -55,25 +55,23 @@ type Task struct {
 	// 补列后存量任务一律为 0，默认排序整体行为与升级前逐字节一致。
 	ListOrder int  `gorm:"not null;default:0" json:"list_order"`
 	IsPinned  bool `json:"is_pinned"`
-	// SubscriptionLocked 表示用户手动调整过该任务的名称或定时。
-	// 置真后订阅同步不再覆盖 name/cron，也不会在候选集缺失时自动删除它。
-	// 刻意不叫 cron_locked：名称与定时是同一把锁，避免重蹈 force_overwrite「名字与作用域不符」的覆辙。
-	SubscriptionLocked     bool      `gorm:"default:0" json:"subscription_locked"`
+	// 这里原有订阅锁字段，#125 起下线：订阅同步从不修改已有任务，锁不再有意义。
+	// 库里那一列保留、不再读写（也不 DROP），旧版本回退不受影响。
 	// LastSkipAt / LastSkipReason 记录「到点了但这次没执行」的最近一次原因。
 	// 目前只有一种成因：上一次执行还没结束、且任务没开「允许多实例」。
 	// 刻意不为这种情况建 task_logs 行 —— 它压根没执行，建成日志会混进「已终止」与耗时统计，
 	// 还会因为时间更晚顶掉「最近一次日志」，让用户看不到真正的执行输出。
 	LastSkipAt             *time.Time `json:"last_skip_at"`
 	LastSkipReason         string     `gorm:"type:text;default:''" json:"last_skip_reason"`
-	PID                    *int      `gorm:"column:pid" json:"pid"`
-	LogPath                *string   `gorm:"size:256" json:"log_path"`
-	LastRunningTime        *float64  `json:"last_running_time"`
-	TaskBefore             *string   `gorm:"type:text" json:"task_before"`
-	TaskAfter              *string   `gorm:"type:text" json:"task_after"`
-	AllowMultipleInstances bool      `json:"allow_multiple_instances"`
-	StopSchedule           string    `gorm:"type:text;default:''" json:"stop_schedule"`
-	CreatedAt              time.Time `json:"created_at"`
-	UpdatedAt              time.Time `json:"updated_at"`
+	PID                    *int       `gorm:"column:pid" json:"pid"`
+	LogPath                *string    `gorm:"size:256" json:"log_path"`
+	LastRunningTime        *float64   `json:"last_running_time"`
+	TaskBefore             *string    `gorm:"type:text" json:"task_before"`
+	TaskAfter              *string    `gorm:"type:text" json:"task_after"`
+	AllowMultipleInstances bool       `json:"allow_multiple_instances"`
+	StopSchedule           string     `gorm:"type:text;default:''" json:"stop_schedule"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
 func (Task) TableName() string {
@@ -112,7 +110,6 @@ func (t *Task) ToDict() map[string]interface{} {
 		"sort_order":               t.SortOrder,
 		"list_order":               t.ListOrder,
 		"is_pinned":                t.IsPinned,
-		"subscription_locked":      t.SubscriptionLocked,
 		"pid":                      t.PID,
 		"last_skip_at":             t.LastSkipAt,
 		"last_skip_reason":         t.LastSkipReason,

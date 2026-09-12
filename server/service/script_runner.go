@@ -119,6 +119,36 @@ var desiInterpreterMap = map[string]string{
 	".go":  "go",
 }
 
+// commandRunnerKind 是执行器按命令首词选定的解析分支。
+type commandRunnerKind int
+
+const (
+	commandRunnerUnsupported commandRunnerKind = iota
+	commandRunnerTask
+	commandRunnerDesi
+	commandRunnerInterpreter
+	commandRunnerManaged
+)
+
+// classifyCommandRunner 是「首词认不认、按哪条分支解析」的唯一判定。
+// 订阅同步按脚本认任务（#125）也用它，不另写一份解释器列表：两边口径一旦分叉，
+// 执行器能跑的命令在同步里就认不出来，又会新建重复任务。
+func classifyCommandRunner(first string) commandRunnerKind {
+	switch first {
+	case "task":
+		return commandRunnerTask
+	case "desi":
+		return commandRunnerDesi
+	case "python", "python3", "python3.10", "python3.11", "python3.12", "node", "ts-node", "bash", "go":
+		return commandRunnerInterpreter
+	default:
+		if isManagedExecutableName(first) {
+			return commandRunnerManaged
+		}
+		return commandRunnerUnsupported
+	}
+}
+
 func ParseCommandExecutionPlan(command, scriptsDir string) (*CommandExecutionPlan, error) {
 	tokens, err := splitCommandTokens(command)
 	if err != nil {
@@ -128,17 +158,16 @@ func ParseCommandExecutionPlan(command, scriptsDir string) (*CommandExecutionPla
 		return nil, fmt.Errorf("命令格式无效")
 	}
 
-	switch tokens[0] {
-	case "task":
+	switch classifyCommandRunner(tokens[0]) {
+	case commandRunnerTask:
 		return parseTaskCommandPlan(tokens[1:], scriptsDir, "")
-	case "desi":
+	case commandRunnerDesi:
 		return parseTaskCommandPlan(tokens[1:], scriptsDir, commandModeDesi)
-	case "python", "python3", "python3.10", "python3.11", "python3.12", "node", "ts-node", "bash", "go":
+	case commandRunnerInterpreter:
 		return parseInterpreterCommandPlan(tokens[0], tokens[1:], scriptsDir)
+	case commandRunnerManaged:
+		return parseManagedCommandPlan(tokens, scriptsDir)
 	default:
-		if isManagedExecutableName(tokens[0]) {
-			return parseManagedCommandPlan(tokens, scriptsDir)
-		}
 		return nil, fmt.Errorf("不支持的解释器: %s", tokens[0])
 	}
 }

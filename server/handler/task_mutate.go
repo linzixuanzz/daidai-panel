@@ -317,24 +317,6 @@ func (h *TaskHandler) Update(c *gin.Context) {
 		}
 	}
 
-	// 用户在面板手动改过任务名或定时 → 打上订阅锁：之后订阅同步不再覆盖 name/cron，
-	// 也不会在候选集缺失时把这个任务连同历史日志删掉。
-	// 刻意由服务端自己推导，subscription_locked 不在 allowedFields 里，前端传什么都会被忽略。
-	// 注意「把任务改成手动执行」这一场景：上面 :234 会把 cron_expression 强制置空，
-	// 与原值不同同样算用户改动，一并加锁，避免订阅每次拉取偷偷回灌订阅源的 cron。
-	// 只有订阅管理的任务才需要这把锁：手动建的任务没有任何订阅会来覆盖它，加锁不产生任何行为，
-	// 只会在列表和详情里显示一个误导用户的「已锁定」。
-	// 判定刻意用改动前的 labels：订阅归属不会因为这一次编辑改变——前端编辑标签时内部标签原样保留，
-	// 用户也注入不了 subscription: 前缀，所以 updates 里的新 labels 不是更可靠的依据。
-	if hasSubscriptionLabel(task.GetLabels()) && !task.SubscriptionLocked {
-		if name, ok := updates["name"].(string); ok && name != task.Name {
-			updates["subscription_locked"] = true
-		}
-		if cronExpr, ok := updates["cron_expression"].(string); ok && cronExpr != task.CronExpression {
-			updates["subscription_locked"] = true
-		}
-	}
-
 	if len(updates) > 0 {
 		database.DB.Model(&task).Updates(updates)
 	}
@@ -346,30 +328,6 @@ func (h *TaskHandler) Update(c *gin.Context) {
 
 	response.Success(c, gin.H{
 		"message": "task updated",
-		"data":    task.ToDict(),
-	})
-}
-
-// RestoreSubscriptionDefault 清除订阅锁，让任务重新跟随订阅源。
-// 用户手动改过名称/定时的任务会被自动加锁，这里是唯一的解锁入口；
-// 解锁后下一次订阅拉取会用订阅源的名称与 cron 覆盖回来，候选集缺失时也会重新按 autoDelete 处理。
-func (h *TaskHandler) RestoreSubscriptionDefault(c *gin.Context) {
-	taskID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
-
-	var task model.Task
-	if err := database.DB.First(&task, taskID).Error; err != nil {
-		response.NotFound(c, "任务不存在")
-		return
-	}
-
-	if err := database.DB.Model(&task).Update("subscription_locked", false).Error; err != nil {
-		response.InternalError(c, "恢复为订阅默认失败")
-		return
-	}
-
-	database.DB.First(&task, taskID)
-	response.Success(c, gin.H{
-		"message": "已恢复为订阅默认，下次拉取将重新跟随订阅源",
 		"data":    task.ToDict(),
 	})
 }

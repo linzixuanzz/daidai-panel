@@ -2258,86 +2258,218 @@ fi
 
 ---
 
-## 场景：订阅同步不覆盖用户手改的任务（subscription_locked）
+## 场景：订阅同步按脚本认任务，已有任务一律不动（#125，取代订阅锁）
 
 ### 1. Scope / Trigger
 
-- 触发：修改 `server/service/subscription.go` 的 `syncSubscriptionTasks`、
-  `server/handler/task_mutate.go` 的任务更新、或 `tasks` 表结构时必须看本节。
-- 原因：v3.0.5 前，订阅每次拉取都会**无条件**把仓库当前状态强加到 `tasks` 表，
-  用户手改的 cron 与任务名被重置，且 `autoDelete` 会连历史日志一起物理删除。
+- 触发：修改 `server/service/subscription.go` 的 `syncSubscriptionTasks` / `scanSubscriptionTaskCandidates`、
+  `server/service/subscription_task_script_match.go`、执行器 `script_runner.go` 的 `classifyCommandRunner` /
+  `splitCommandTokens`，或者改任务命令的格式时，必须看本节。
+- 背景：v3.0.5 起用「订阅锁」`subscription_locked` 挡住同步覆盖用户手改的名称/定时，但匹配仍按命令原文：
+  命令一加参数（`task x.js now`、`task x.js desi JD_COOKIE`）就对不上 → 新建一条重复任务；
+  开着自动删除时，还会把改过命令的那条连历史日志删掉（#125）。
+  #125 起改成「按脚本认任务、认出就一律不动」，订阅锁整套下线。
 
 ### 2. Signatures
 
 - 同步入口：`syncSubscriptionTasks(sub *model.Subscription, emit PullCallback)`
-- 字段：`model.Task.SubscriptionLocked bool` / 列 `subscription_locked BOOLEAN DEFAULT 0`
-- 迁移：`database.EnsureColumns()` → `ensureTableColumns("tasks", ...)`
-- 解锁接口：`PUT /api/tasks/:id/restore-subscription-default`
+- 扫描：`scanSubscriptionTaskCandidates(sub, options) subscriptionCandidateScan`，比旧版多给 `seenFiles`（本次读到的全部文件）。
+  `collectSubscriptionTaskCandidates(sub, options) (map[string]subscriptionTaskCandidate, []string)` 签名不变，是它的包装（有测试直接调）。
+- 字典与求键（`subscription_task_script_match.go`）：`newSubscriptionScriptIndex(scriptsDir, candidates)`、
+  `normalize(ref)`、`candidateKey(command)`、`scriptKeyOf(command)`、`taskCommandScriptRefs(command)`。
+- 删除判定：`newSubscriptionStaleTaskJudge(index, candidates, saveDir, seen).judge(command) (verdict, script, statErr)` →
+  `staleTaskKeep` / `staleTaskKeepUnscanned` / `staleTaskKeepStatError` / `staleTaskDelete`（`script`、`statErr` 只给日志用）。
+  判定里的 Stat 是包级变量 `subscriptionScriptStat = os.Stat`（只为单测能构造 EACCES、网络盘错误码）；「这个前缀不是脚本」由
+  `subscriptionScriptNotAScript(err)` 判，只收「不存在」类 `subscriptionScriptMissing(err)` 与名字类 `subscriptionScriptBadName(err)`
+  （平台相关部分 `subscriptionScriptBadNamePlatform`，build tag 分文件）；其余 Stat 错误都让删除退成保留，**不设白名单**。
+- 条件删除：`deleteSubscriptionTaskIfUnchanged(task *model.Task) (removed bool, err error)`。
+- 条件解除关联：`detachSubscriptionTaskIfUnchanged(task *model.Task, label string) (detached bool, err error)`（新旧标签相同 → 直接 `(false, nil)`）；
+  配套 `otherLiveSubscriptionLabels(selfID uint) ([]string, error)`、`usedByOtherSubscription(task, otherLabels) bool`、
+  `hasLabelFold(labels, target) bool`（忽略大小写，与 `queryTasksByLabel` 的 LIKE 对齐）、`withoutLabel(labels, target)`（`withLabel` 的反操作，也忽略大小写）。
+- 首词判定：`classifyCommandRunner(first string) commandRunnerKind`，执行器 `ParseCommandExecutionPlan` 与同步共用。
+- 已下线：`model.Task.SubscriptionLocked` 与 `ToDict` 的 `subscription_locked`、`PUT /api/v1/tasks/:id/restore-subscription-default`、
+  `database.unlockNonSubscriptionTasks`、`handler` 的加锁推导。库里的 `subscription_locked` 列**保留、不读不写、不 DROP**（旧版本回退照常用）。
 
 ### 3. Contracts
 
-- `subscription_locked` 语义：**用户手动调整过该任务的名称或定时**。
-  为真时订阅同步不覆盖 name/cron，也不自动删除该任务。
-- **写标记只能由服务端推导**：`task_mutate.go` 比较归一化后的 `cron_expression` / `name`
-  与库中现值，不同则置真。
-- **`subscription_locked` 绝不能进 `allowedFields`** —— 否则前端可传任意值，
-  等于把「谁能加锁」的判定交给客户端。解锁必须走独立接口。
-- `adopt` 分支接管的是用户自建任务，名称与定时本来就是用户排的，接管时直接置真。
-- **`force_overwrite` 与本机制完全正交**：它只作用于 git 工作区文件
-  （`reset --hard` vs `stash push/pop`），从不参与任务表写入。
-  不要因为「用户关了覆盖拉取还是被覆盖」就去改 `force_overwrite` 的分支。
-- `autoAdd` = `sub.AutoAddTask || isConfigEnabled("auto_add_cron", true)`，是 **OR**：
-  关单条订阅的开关不生效，必须全局也关。
+- **字典键**：候选命令去掉 `task ` 后归一化。相对路径拼到 `Abs(ScriptsDir)` 下，绝对路径直接求相对路径；
+  落在目录外的绝对路径，解析**所在目录**的软链接后对 `Real(ScriptsDir)` 再求一次（Docker `/ql/data/scripts`、`/ql/scripts`、
+  `/ql/data/repo` 别名，见 `docker/entrypoint.sh`；只解析目录不解析文件，仓库里的文件软链接保持自己的键）；
+  正斜杠；`.`、`..`、`../` 开头的丢弃；**只在 Windows 上**转小写（Linux 上反斜杠是文件名字符，与执行器一致）。
+  Windows 上大小写冲突的键标为歧义：不参与认领，只用于删除时的保留。
+- **任务的键**：纯文本，除上面的别名兜底外零 I/O；首词用 `classifyCommandRunner`，不另写解释器列表：
+  `task` / `desi` 跳过开头的 `-l`、`-m <值>`，按 `--` 切断，取字典里命中的最长前缀；
+  解释器 / 托管命令从第 2 个 token 起跳过 `-` 开头的 token，取第一个命中的最长窗口（`python -m <模块>` 没有键）；其它首词没有键。
+  **每条任务至多一个键；判据是「在候选集里」，不是「文件存在」。**
+- **认出就一律不动**：本订阅已有任务的命令与候选完全相同，或键相同 → 不新建，不改名称、定时、命令、状态、日志；
+  同一脚本有多条任务也都不动。想恢复订阅默认 → 删掉任务重新拉取。
+  `task x.js now extra` 这类跑不起来的命令也算已存在（有意的取舍）：不替用户改命令，失败会在任务日志里暴露。
+- **接管**：非本订阅托管、但命令与候选相同或键相同的任务（无标签、删订阅再重建留下的悬空旧标签、别的订阅）
+  只加本订阅标签，其余字段不动，不再加锁；有几条接管几条，每条一行 `[关联已有任务]`；本订阅已有同脚本任务时不接管。
+  候选池全表加载后在 Go 里过滤，**不写 `NOT IN`**。
+- **自动删除**（开关语义不变，只看 `task ` 开头的命令）：
+  1. 本次候选为空 → 熔断，整段跳过；有托管任务时打 `[跳过自动删除] 本次没有识别到任何候选脚本…`。
+  2. 命令与候选完全相同或键命中 → 保留。
+  3. 否则取命令引用的脚本（`taskCommandScriptRefs`：带受支持扩展名、在脚本目录内的前缀，从长到短取第一个真实存在的，与执行器同口径）：
+     在当前 SaveDir 内、文件存在、但 `seenFiles` 里没有 → 保留，并打 `[保留任务] <名>：脚本 <路径> 还在订阅目录里，但本次扫描没有读到…`；
+     其余（文件已不存在、被白/黑名单或依赖/辅助脚本规则排除、在当前 SaveDir 外）→ 删。
+     提取不出脚本路径的命令（托管可执行命令如 `task dailycheckin`、引号未闭合）也按失效处理，与改动前一致。
+  4. **Stat 错误反过来判：只有「不存在」类与名字类算「这个前缀不是脚本」，其余一律让删除退成保留**（`subscriptionScriptNotAScript`）。
+     - 不是脚本（continue 试更短的前缀，都不在则按删除规则删）：`fs.ErrNotExist` / `ENOTDIR`（`subscriptionScriptMissing`，
+       ENOTDIR 必须单列，Go 在 Unix 上只把 ErrNotExist 映射到 ENOENT）；名字类 `subscriptionScriptBadName`——通用的
+       `ENAMETOOLONG` / `ELOOP` / `EINVAL`，加 Windows 的 ERROR_INVALID_NAME(123) / ERROR_BAD_PATHNAME(161) /
+       ERROR_FILENAME_EXCED_RANGE(206) / ERROR_DIRECTORY(267) / ERROR_CANT_RESOLVE_FILENAME(1921)（平台相关的错误码用 build tag 分文件：
+       `subscription_task_stat_windows.go` / `subscription_task_stat_other.go`）。参数里带 URL / 盘符 / `? * | < >` / 超长段 / 软链接环时命中，
+       这些前缀根本不可能是一个文件。
+     - 其余一切 Stat 错误都可能盖住一个真实文件：权限类（EACCES / EPERM / ERROR_ACCESS_DENIED）、IO / 网络类（EIO / ESTALE /
+       EHOSTDOWN / ECONNRESET，Windows 网络盘的 ERROR_UNEXP_NET_ERR(59) / ERROR_NETNAME_DELETED(64) / ERROR_SEM_TIMEOUT(121) /
+       ERROR_IO_DEVICE(1117)，ERROR_SHARING_VIOLATION），以及没见过的错误码。PUID 降权运行、NFS root_squash、SMB / CIFS 断连、
+       存储异常、文件被独占打开会命中：ref 在当前 SaveDir 内的先记下、继续试更短的前缀；一个真实存在的都没找到 →
+       `staleTaskKeepStatError`，保留并打 `[保留任务] <名>：无法确认脚本 <路径> 是否还在（<错误原文>），未删除…`。
+     - **不许改回白名单**（只列「可能盖住真实文件」的错误、其余当不是脚本）：IO / 网络类错误开放、平台相关、列不全，漏一个就是
+       连日志删掉一个还在的任务；名字类是封闭的一小撮。Go 为 Windows 定义的 `syscall.EIO` / `ESTALE` / `ETIMEDOUT` / `ENOTCONN` /
+       `ENAMETOOLONG` / `ELOOP` 是自造值（`APPLICATION_ERROR` 起，见 `syscall/zerrors_windows.go`），`os.Stat` 永远不会返回；
+       Windows 上的判定只能写真实错误码的数值（syscall 包没导出这几个具名常量）。
+     - Go 自己把 Windows 的 ERROR_BAD_NETPATH(53) 也映射成 `fs.ErrNotExist`（`syscall.Errno.Is`），这个网络类错误码因此按「不存在」处理，
+       与 fix-r1 相同。
+     - 执行器 `resolveCommandScriptPath` 走 `ResolveWithinBase(mustExist=true)`：对任何 Stat 错误都报错、退到更短的前缀
+       （`findTaskScriptTarget` 只保留能解析成功的最长前缀），judge 与它选同一个前缀；差别只在「一个前缀都解析不出」时——
+       执行器运行期报错，这里是删除、要正面证据，于是保留而不删。
+  5. **任务还被其他仍存在的订阅使用 → 只解除关联、不删**：判为删、但标签里还有别的订阅的 `subscription:<id>`
+     （每次同步查一次 `subscriptions` 表的 id，用 `hasLabelFold(labels, subscriptionTaskLabel(id))` 忽略大小写判定，与 `queryTasksByLabel`
+     的 LIKE 同口径——用户手写成 `Subscription:2` 时两边一致，否则会误删别的订阅在用的任务）→
+     不删行、不动日志，只按条件摘掉本订阅的标签（`withoutLabel` 也忽略大小写；`UPDATE tasks SET labels=? WHERE id=? AND command=? AND labels=?`，
+     要求 `RowsAffected==1`），打 `[解除关联] <名>：仍被其他订阅使用，只移除本订阅的标签，未删除`；删不删交给那个订阅自己的同步。
+     场景：跨订阅接管（共用 SaveDir、单文件订阅的 SaveDir 设在别的仓库里）之后，A 加黑名单或挪走 SaveDir。
+     **只看仍然存在的订阅**：已删订阅留下的悬空旧标签（E9）不挡删除。读订阅列表失败 → 整段跳过删除（`[跳过自动删除]`，计入失败）。
+     快照过期（标签或命令被改、已被删）→ 不改 + `[保留任务] …同步期间…`；标签本就不带（`detach` 新旧相同）→ 静默、不刷屏；出错 → `failed++` + `[解除关联失败]`。
+     汇总 `[共解除关联 N 个任务]`；解除关联也算变更（不再打 `[同步完成] 本次未对定时任务做任何变更`）。
+- **条件删除**：一个事务里先删该任务的 `task_logs`，再 `DELETE FROM tasks WHERE id=? AND command=?`；
+  `RowsAffected≠1` 或任一步出错就回滚（日志原样恢复）；提交后再 `RemoveJob`。
+  **顺序不能反**：`task_logs` 对 `tasks` 有外键（`PRAGMA foreign_keys=ON`），先删任务会 `FOREIGN KEY constraint failed`，
+  每一条有历史日志的失效任务都删不掉。
+  任一步出错 → `failed++` + `[自动删除任务失败]`；快照过期（命令被改、已被删）→ 不删 + `[保留任务] …同步期间…`。
+  事务内只能用 `tx`（`database` 的连接池只有 1 个连接）。
+- **autoAdd / autoDelete 是三态**（inherit / enabled / disabled），见 `getSubscriptionTaskSyncOptions` →
+  `resolveSubscriptionAutoAddTask` / `resolveSubscriptionAutoDelTask`：订阅自己设了就用订阅的，inherit 才跟随全局
+  `auto_add_cron` / `auto_del_cron`。旧文档里「`autoAdd` 是 `sub.AutoAddTask || 全局`（OR）」早已过时。
+- `force_overwrite` / `overwrite_mode` 与本机制正交：只作用于 git 工作区文件（`reset --hard` vs `stash`），从不写任务表。
 
 ### 4. Validation & Error Matrix
 
-- 带锁任务命中 name/cron 差异 → 跳过覆盖，`emit("[保留手动定时] ...")`，**必须打日志**
-  （否则用户改了订阅源时间任务却没变，会反过来以为同步坏了）
-- 带锁任务不在候选集 → 跳过删除，`emit("[保留任务] ... 已加锁，订阅源中已无对应脚本")`
-- 未加锁任务 → 行为与改动前**完全一致**
-- 存量行升级后 `subscription_locked = 0`，首次拉取仍会重置一次（DEFAULT 0 的必然结果）
+| 情形 | 结果 | 日志 |
+|---|---|---|
+| 命令与候选完全相同 | 不动 | — |
+| 改成 now / desi / conc / `--` / `-m` / `-l` / `./`、引号、多空格、`desi X ENV`、`node X`、`python3 X`、目录内绝对路径、Docker 别名路径；Windows 正斜杠 / 大小写 | 不动、不新建、不删 | — |
+| 上游改了名称或 cron | 已有任务不变 | 不再有 `[自动更新任务]` |
+| 同一脚本多条任务；复制任务再改副本 | 都不动、不新建 | — |
+| a.js 的任务改成跑 b.js | 该任务不动；a.js 新建一条 | `[自动添加任务]` |
+| 未托管的同脚本任务（无标签 / 悬空旧标签） | 只加标签 | `[关联已有任务]` |
+| 上游删了脚本（规范命令、改过参数的都算） | 按开关删，连日志 | `[自动删除任务]` |
+| 黑名单排除、改 SaveDir（文件还在盘上） | 按开关删 | `[自动删除任务]` |
+| 候选为空（检出为空、单文件订阅 SaveDir 为空） | 一条不删 | `[跳过自动删除]` |
+| 脚本在当前 SaveDir 内、文件在、扫描没读到（目录联接、NAS / Magisk） | 保留 | `[保留任务] …本次扫描没有读到…` |
+| `node X` 的脚本从订阅里消失 | 保留（不在删除范围） | — |
+| 快照之后命令被改 / 删任务出错 | 不删；日志不动 | `[保留任务] …同步期间…` / `[自动删除任务失败]` |
+| 判为删、但任务还带着别的仍存在订阅的标签（跨订阅接管后 A 加黑名单 / 挪走 SaveDir；单文件订阅挪走 SaveDir） | 不删；只摘掉本订阅的标签，名称、定时、命令、日志不动 | `[解除关联] <名>：仍被其他订阅使用…` / `[共解除关联 N 个任务]` |
+| 失效任务只多带了已删订阅的悬空旧标签 | 按开关删，连日志 | `[自动删除任务]` |
+| 解除关联时快照过期（标签或命令被改）/ 出错 | 标签不动、不删 | `[保留任务] …同步期间…` / `[解除关联失败]` |
+| 别的订阅的标签只差大小写（用户手写 `Subscription:2`） | 不删；只解除关联（`hasLabelFold` 认它归别的订阅） | `[解除关联] <名>…` |
+| 本订阅自己的标签只差大小写 | 一次摘掉（`withoutLabel` 忽略大小写），下轮不再空转 | `[解除关联] <名>…`（仅一次） |
+| 读订阅列表失败 | 一条不删，计入失败 | `[跳过自动删除] 读取订阅列表失败…` |
+| 脚本在当前 SaveDir 内，Stat 报的错误不是「不存在」类、也不是名字类（EACCES / EPERM / EIO / ESTALE / EHOSTDOWN / ECONNRESET；Windows 的 ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION / 网络盘 59 / 64 / 121 / 1117；没见过的错误码），且没有更短的前缀真实存在 | 保留 | `[保留任务] <名>：无法确认脚本 <路径> 是否还在（<错误原文>）…` |
+| Stat 报「不存在」类（ENOENT / ENOTDIR / ErrNotExist；Windows 上 Go 把 ERROR_BAD_NETPATH 也归到这里） | 算文件不在，按删除规则处理 | `[自动删除任务]` |
+| Stat 报名字类错误（ENAMETOOLONG / ELOOP / EINVAL；Windows 的 ERROR_INVALID_NAME / ERROR_BAD_PATHNAME / ERROR_FILENAME_EXCED_RANGE / ERROR_DIRECTORY / ERROR_CANT_RESOLVE_FILENAME：参数带 URL / 盘符 / `? * \| < >` / 超长段 / 软链接环） | 不是脚本，退到更短前缀；都不在则按删除规则删 | `[自动删除任务]` |
+| Linux 上 `task REPO/A.JS`（只差大小写） | 认不出：新建规范任务，旧任务按删除规则处理 | 与改动前一致 |
 
 ### 5. Good/Base/Bad Cases
 
-- Good：手改 cron → 自动加锁 → 拉取后 cron 不变、日志有保留提示。
-- Base：未加锁任务，订阅源改了时间仍会跟随。
-- Bad：把守卫写成「无论是否加锁一律跳过覆盖」——订阅从此完全失去同步能力。
-- Bad：只在覆盖分支加守卫、不管 `autoDelete` 分支——标记随任务一起被删，锁守不住自己。
+- Good：用户把 `task repo/a.js` 改成 `task repo/a.js desi JD_COOKIE 1-3`，之后拉取多少次都还是这一条，ID、命令、名称、定时、日志都不变。
+- Base：新脚本照常新建；上游删脚本按开关删；黑名单排除、改 SaveDir 照删。
+- Bad：按命令原文匹配——#125 本身。
+- Bad：判据写成「文件存在 / 能执行就算已有」——黑名单排除、改 SaveDir 之后旧任务再也删不掉。
+- Bad：删除只看「不在候选里」——检出为空、目录联接、NAS 读目录异常时，整个订阅的任务连日志被删（E4/E5/E6d）。
+- Bad：先删日志再删任务，但不在同一事务里、不查错误——删任务失败时日志已经没了（E7）。
+  「先删日志」这个顺序本身是外键所迫、没有错；反过来先删任务会 `FOREIGN KEY constraint failed`。
+- Bad：判为失效就直接删，不看任务是否还带着别的、仍存在订阅的标签——跨订阅接管之后，A 加黑名单或挪走 SaveDir
+  会把 B 还在用的任务连日志删掉，B 下次只能按上游默认值重建（review-r1 F1）。
+- Bad：`os.Stat` 报任何错都当「文件不在」——EACCES / EIO / ESTALE 下脚本其实还在，任务连日志被删（review-r1 F2）。
+- Bad：把任何非「不存在」错都当「无法确认」保留、不单列名字类——命令参数里带 URL / 盘符 / `? * | < >` / 超长段的失效任务永远删不掉，
+  还每次拉取误报「可能是权限不足或存储异常」（review-r2 R2-1）。
+- Bad：改成白名单，只把权限 / EIO / ESTALE / 断连这些「可能盖住真实文件」的错误当保留，其余当「不是脚本」——Go 为 Windows 定义的
+  `syscall.EIO` 这类是自造值、`os.Stat` 永远不会返回，白名单在 Windows 上只剩 ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION：
+  SMB / 网络盘报的 59 / 64 / 121 / 1117 等、Linux CIFS 断连报的 EHOSTDOWN / ECONNRESET 全部判删，任务连日志丢失，比 fix-r1 还倒退
+  （verify-r3 R3-1）。应反过来，只列封闭的「不存在」类与名字类，其余一律保留。
+- Bad：标签比较一边用 LIKE（不分大小写）、一边精确比较——大小写不同的订阅标签会误删别的订阅在用的任务，或每次同步空转一次 `[解除关联]`（review-r2 R2-2）。
+- Bad：解除关联后没有 `continue`，落进条件删除——条件删除只比对 id+command、不看 labels，会把还被别的订阅使用的任务连日志删掉（review-r2 R2-3）。
+- Bad：再给「认出的任务」加任何回灌（名称、定时、状态）——用户改过的东西又会被悄悄改回去，锁的老问题原样回来。
 
 ### 6. Tests Required
 
-- 带锁任务手改 cron / name 后同步 → 断言值未变
-- 带锁任务不在候选集 → 断言任务**与其 TaskLog** 都还在
-- **未加锁任务行为不变**的回归用例（这条是护栏，防止守卫写成一律跳过）
-- `task_mutate`：改 cron 后自动加锁；前端传 `subscription_locked` **双向**被忽略
-  （传 true 不加锁、传 false 不解锁——两个断言要能各自独立失败）
+- `subscription_task_script_match_test.go`：`scriptKeyOf` / `normalize` 表驱动（task、desi、解释器、托管命令、`-m`、`-l`、`--`、引号、
+  带空格路径、目录内外绝对路径、`.bak`、引号未闭合、空串、Windows 反斜杠与大小写、Linux 上反斜杠不算分隔符）；
+  Windows 候选大小写冲突；删除判定的「扫描漏读」（人为缺项的 `seen` 集合）；Docker 别名（Linux，Windows 上 `t.Skip`）。
+- `subscription_task_sync_existing_test.go`：各种改过的命令 × 自动删除开 / 关 × 两轮；上游改名称 / cron；复制任务；同脚本多条；
+  改指向别的脚本；上游删脚本（开 / 关）；黑名单、改 SaveDir；候选为空与单文件订阅；Windows 目录联接做 SaveDir；Docker 别名（Linux）；
+  大小写与分隔符；接管（无标签、悬空旧标签、按原文、多条、托管优先）；`node X` 不被删；条件删除（快照过期、删任务失败时日志不动）。
+- 跨订阅解除关联（`subscription_task_cross_sub_test.go`）：`TestSyncSubscriptionTasksCrossSubStaleTaskOnlyDetaches`
+  （共用 SaveDir，A 接管 B 改过名称 / 定时、有日志的任务后 A 加黑名单 / 改 SaveDir，× 是否改过命令：B 的任务行、名称、定时、命令、日志都在，
+  只少了 A 的标签，之后两边再同步都不变）、`TestSyncSubscriptionTasksSingleFileMovedOutOfOtherRepoDetaches`（单文件订阅 SaveDir 设到 B 的仓库再挪走）、
+  `TestSyncSubscriptionTasksDanglingLabelDoesNotBlockDelete`（悬空旧标签照删）、`TestDetachSubscriptionTaskIfUnchangedSkipsChangedTask`
+  （快照过期：标签或命令被改都不动）、`TestSyncSubscriptionTasksReportsFailedDetach`（出错计入失败、任务与日志都在）。
+  标签大小写（R2-2）：`TestSyncSubscriptionTasksCaseVariantOtherLabelOnlyDetaches`（别的订阅标签只差大小写 → 只解除关联、不删）、
+  `TestSyncSubscriptionTasksCaseVariantOwnLabelDetachesWithoutSpin`（本订阅标签只差大小写 → 一次摘掉、下一轮不空转）。
+- Stat 错误（F2、R2-1、R3-1）：`TestSubscriptionStaleTaskJudgeStatErrorIsNotAbsence`（替换 `subscriptionScriptStat`：EACCES / EIO / ESTALE → 保留；
+  Windows 网络盘的 59 / 64 / 121 / 1117 → 保留（`unsure_windows_*`，非 Windows 下 `t.Skip`）；EHOSTDOWN / ECONNRESET → 保留（`unsure_unix_*`，Windows 下 `t.Skip`）；
+  ENOENT / ENOTDIR / ErrNotExist → 删；名字类 ENAMETOOLONG / ELOOP / EINVAL → 删；Windows 的 123 / 161 / 206 / 267 / 1921 → 删
+  （`not_a_script_windows_*`，非 Windows 下 `t.Skip`）；最长前缀报名字类、脚本本身报 IO 错误 → 按脚本本身保留（`bad_name_prefix_then_unsure_script`）；
+  SaveDir 外照删；更长前缀报错、更短前缀存在按更短的判；真实 ENOTDIR）；
+  `TestSyncSubscriptionTasksUnreadableSubdirKeepsTask`（Linux 非 root，子目录 chmod 0311 / 0000；root 与 Windows 下 `t.Skip`）；
+  `TestSyncSubscriptionTasksUrlOrDriveArgFollowsSwitch`（Windows：参数带 URL / 盘符，脚本在时保留、上游删后按开关删含日志；Linux 下 `t.Skip`）、
+  `TestSyncSubscriptionTasksLongArgFollowsSwitch`（Linux：超长参数段 ENAMETOOLONG，删脚本后按开关删；Windows 下 `t.Skip`）。
+- Linux 专属用例在 WSL 里跑交叉编译的测试二进制（`GOOS=linux go test -c`）；chmod 用例要以非 root 身份跑
+  （`setpriv --reuid=65534 --regid=65534 --clear-groups`，`TMPDIR` 指向 nobody 可写的目录）。
+- 改 `classifyCommandRunner` 时跑 `script_runner` 相关测试，执行器行为必须逐字节不变。
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```go
-// 错误：只守 cron 覆盖，删除分支不管。
-// autoDelete 会连任务带 TaskLog 一起物理删掉，标记也随之消失，锁根本守不住自己。
-if existing.CronExpression != candidate.CronExpression && !existing.SubscriptionLocked {
-    changes["cron_expression"] = candidate.CronExpression
+// 按命令原文认任务：命令一加参数就对不上 → 新建重复任务；
+// 自动删除再把改过命令的那条连日志删掉：不看它是否还被别的订阅使用，
+// 日志与任务分两步删、不在同一事务里、不查错误（删任务失败时日志已经没了）。
+if existing, ok := managedByCommand[command]; ok { /* 回灌名称/定时 */ }
+// ...
+if _, ok := candidates[command]; !ok {
+    database.DB.Where("task_id = ?", task.ID).Delete(&model.TaskLog{})
+    database.DB.Delete(&task)
 }
 ```
 
 #### Correct
 
 ```go
-// 正确：覆盖分支前置守卫 + continue，删除分支再单独拦一道。
-if existing.SubscriptionLocked {
-    if existing.Name != candidate.Name || existing.CronExpression != candidate.CronExpression {
-        emit(fmt.Sprintf("[保留手动定时] %s 已被手动调整过，跳过订阅源的名称/定时覆盖", existing.Name))
-    }
+// 认出就不动：命令原文相同，或跑的是同一个脚本。
+if managedCommands[command] {
     continue
 }
-// ... autoDelete 分支：
-if task.SubscriptionLocked {
-    emit(fmt.Sprintf("[保留任务] %s 已加锁，订阅源中已无对应脚本，已保留，请手动确认", task.Name))
+if key, ok := scriptIndex.candidateKey(command); ok && managedKeys[key] {
     continue
+}
+// ... 自动删除：候选为空先熔断；删除要有正面证据（Stat 只有「不存在」类与名字类算不是脚本，
+// 其余 Stat 错误都保留，见 subscriptionScriptNotAScript）；
+// 还被别的、仍存在的订阅使用 → 只解除关联；否则按快照条件删，删不到就回滚（日志随之恢复）。
+verdict, scriptPath, statErr := judge.judge(task.Command) // 后两个只在保留判定时用于日志
+if verdict == staleTaskDelete {
+    if usedByOtherSubscription(task, otherLabels) { // hasLabelFold：与 queryTasksByLabel 的 LIKE 同口径，忽略大小写
+        changed, err := detachSubscriptionTaskIfUnchanged(task, label) // UPDATE … WHERE id=? AND command=? AND labels=?
+        // err → failed++ + [解除关联失败]；!changed → 快照过期时 [保留任务] …同步期间…，标签本就不带则静默；否则 detached++ + [解除关联]
+        continue // 解除关联之后绝不能再走删除：条件删除只比对 id+command，不看 labels
+    }
+    // 事务：先删 task_logs，再 DELETE … WHERE id=? AND command=?；RowsAffected≠1 或出错就回滚
+    removed, err := deleteSubscriptionTaskIfUnchanged(task)
+    // ...
 }
 ```
 

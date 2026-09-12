@@ -116,8 +116,6 @@ interface TaskSeed {
   status: number
   labels: string[]
   pinned?: boolean
-  /** 用户改过订阅任务的名称/定时 → 列表页出现「已锁定」标签 */
-  locked?: boolean
   timeout?: number
   channelId?: number | null
   notifyOnFailure?: boolean
@@ -162,7 +160,7 @@ function everyMinutes(step: number): number[] {
 const ALL_HOURS = everyHours(1)
 
 /**
- * 14 个任务，状态覆盖：成功 / 失败 / 运行中 / 已禁用 / 已锁定 / 置顶。
+ * 14 个任务，状态覆盖：成功 / 失败 / 运行中 / 已禁用 / 置顶。
  *
  * command 全部指向 fixtures/scripts.ts 里真实存在的文件 —— 演示时从任务点到脚本页，
  * 文件是打得开的，不会出现「任务指着一个不存在的脚本」。
@@ -254,13 +252,13 @@ const TASK_SEEDS: TaskSeed[] = [
   },
   {
     id: 12, name: '证书到期巡检', command: 'python3 monitor/cert_expiry.py', taskType: 'cron',
-    cron: '0 8 * * *', status: TASK_STATUS_ENABLED, labels: ['监控', 'subscription:1'], locked: true,
+    cron: '0 8 * * *', status: TASK_STATUS_ENABLED, labels: ['监控', 'subscription:1'],
     timeout: 600, channelId: 2, notifyOnFailure: true, pythonVersion: '3.12', createdDaysAgo: 19,
     runHours: [8], durMin: 12, durMax: 41, failRate: 0.16, timeoutRate: 0.03, abortRate: 0,
   },
   {
     id: 13, name: '对象存储同步', command: 'bash ops/sync_object_storage.sh', taskType: 'cron',
-    cron: '15 */2 * * *', status: TASK_STATUS_ENABLED, labels: ['备份', 'subscription:1'], locked: true,
+    cron: '15 */2 * * *', status: TASK_STATUS_ENABLED, labels: ['备份', 'subscription:1'],
     timeout: 2400, channelId: 1, notifyOnFailure: true, createdDaysAgo: 19,
     runHours: everyHours(2), runMinutes: [15],
     durMin: 18, durMax: 96, failRate: 0.05, timeoutRate: 0.02, abortRate: 0.02,
@@ -304,7 +302,6 @@ function buildTasks(now: number): DemoTask[] {
       list_order: 0,
       sort_order: index,
       is_pinned: seed.pinned ?? false,
-      subscription_locked: seed.locked ?? false,
       pid: seed.status === TASK_STATUS_RUNNING ? 20000 + seed.id : null,
       log_path: null,
       last_running_time: null,

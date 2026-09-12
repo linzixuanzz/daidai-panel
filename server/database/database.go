@@ -271,8 +271,7 @@ func EnsureColumns() {
 		{"sort_order", "INTEGER DEFAULT 0"},
 		{"is_pinned", "BOOLEAN DEFAULT 0"},
 		{"python_version", "VARCHAR(16) DEFAULT ''"},
-		// DEFAULT 0：存量任务升级后一律未加锁，首次拉取行为与升级前完全一致。
-		{"subscription_locked", "BOOLEAN DEFAULT 0"},
+		// 订阅锁那一列（#125 下线）不再登记：新库不再建它，旧库保留、不 DROP，旧版本回退仍能照常读写。
 		// 列表拖拽排序用的展示顺序，与上面的 sort_order（开机任务执行顺序）各管各的。
 		// NOT NULL DEFAULT 0：存量行补列后全落 0，而默认排序里 list_order 排在 sort_order 之前，
 		// 全 0 时等价于这一层比较不存在 —— 升级后列表顺序逐字节不变。
@@ -285,7 +284,6 @@ func EnsureColumns() {
 		{"last_skip_reason", "TEXT DEFAULT ''"},
 	})
 	migrateLegacyTaskPIDColumn()
-	unlockNonSubscriptionTasks()
 
 	ensureTableColumns("task_logs", []columnDef{
 		{"log_path", "VARCHAR(256)"},
@@ -446,53 +444,6 @@ func migrateLegacySubscriptionTaskSyncFlags() {
 		if err := DB.Exec(fmt.Sprintf("UPDATE subscriptions SET %s = 0 WHERE %s = 1", pair.legacyColumn, pair.legacyColumn)).Error; err != nil {
 			log.Printf("warn: failed to clear legacy subscriptions.%s after migration: %v", pair.legacyColumn, err)
 		}
-	}
-}
-
-// unlockNonSubscriptionTasks 清理存量误加的订阅锁：早期版本的写入点没判断任务归属，
-// 任何任务改名或改定时都会被加锁，手动建的任务也会显示「已锁定」。
-//
-// 只解锁「labels 里没有 subscription: 标签」的任务是安全的：没有任何订阅同步会去读非订阅任务的锁，
-// 解锁不改变调度行为，只是让界面不再显示误导标签。反过来，真正的订阅任务一行都不能碰——
-// 它们的锁记录的是用户手改名称/定时的意图，清掉会让下一次订阅拉取把用户的改动覆盖回去。
-//
-// 判定必须卡住标签边界，不能写成裸子串匹配 labels LIKE '%subscription:%'：
-// 用户自建标签 "my-subscription:foo" 会被那种写法当成订阅归属而跳过清理，锁就永远留在库里。
-// 而列表页的「已锁定」只看 subscription_locked，详情页的「订阅同步」整行却按标签边界判定归属，
-// 于是这个任务显示着锁、却没有「恢复为订阅默认」的入口；加锁逻辑同样判它不是订阅任务、以后也不会再碰，
-// 用户永远解不开——这不是显示瑕疵，是不可自愈的死状态，所以必须收口。
-//
-// labels 是逗号分隔的字符串（model.Task.Labels 用 strings.Join 存），订阅标签只可能出现在整串开头
-// 或某个逗号之后；给整串前面补一个逗号，两种位置就统一成 ",subscription:" 一种形态，一次 LIKE 就够，
-// 不必把那串 replace 抄两遍。匹配前先抹掉所有空白（空格/Tab/CR/LF，都是单字节 ASCII，不会破坏 UTF-8 汉字）
-// 是为了对齐 Go 侧 hasSubscriptionLabel 的 TrimSpace：历史脏数据里的 " subscription:1"、
-// "我的标签, subscription:1" 在后端算订阅任务、照样会被加锁，SQL 侧若不覆盖就会把真订阅任务的锁解掉，
-// 让用户手改的名称/定时在下次拉取时被覆盖回去。
-//
-// 方向是「宁可漏解锁（少清一个误锁而已），不可误解锁」，所以 SQL 认定的订阅任务只能比 Go 侧更宽、不能更窄：
-// 抹空白只会让更多行被当成订阅任务而跳过；SQLite 的 LIKE 默认对 ASCII 大小写不敏感，手改出来的
-// "SUBSCRIPTION:1" 也会被跳过（真订阅标签由 service 侧 fmt.Sprintf 生成、恒为小写，不受影响）。
-// 两者都落在保守的那一侧，所以不额外处理大小写。
-//
-// 幂等：每次启动都会跑，但第一次跑完这些行的 subscription_locked 已是 0，之后再也匹配不到，
-// 所以不需要额外的迁移标记表。
-func unlockNonSubscriptionTasks() {
-	existing := getExistingColumns("tasks")
-	if !existing["subscription_locked"] || !existing["labels"] {
-		return
-	}
-	result := DB.Exec(`UPDATE tasks SET subscription_locked = 0
-		WHERE subscription_locked = 1
-		  AND (
-		    labels IS NULL OR labels = ''
-		    OR (',' || replace(replace(replace(replace(labels, ' ', ''), char(9), ''), char(10), ''), char(13), '')) NOT LIKE '%,subscription:%'
-		  )`)
-	if result.Error != nil {
-		log.Printf("warn: failed to unlock non-subscription tasks: %v", result.Error)
-		return
-	}
-	if result.RowsAffected > 0 {
-		log.Printf("unlocked %d non-subscription tasks that were mistakenly subscription_locked", result.RowsAffected)
 	}
 }
 

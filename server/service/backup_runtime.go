@@ -1399,7 +1399,7 @@ func remapSubscriptionLabels(tx *gorm.DB, subscriptionIDMap map[uint]uint) error
 		remapped := make([]string, 0, len(labels))
 		for _, label := range labels {
 			// GetLabels 只按逗号切分、不做 trim，历史脏数据里可能是 " subscription:1"，
-			// 与 handler 的 hasSubscriptionLabel 对齐，先 TrimSpace 再判前缀。
+			// 所以先 TrimSpace 再判前缀。
 			trimmed := strings.TrimSpace(label)
 			if !strings.HasPrefix(trimmed, labelPrefix) {
 				remapped = append(remapped, label)

@@ -153,7 +153,7 @@ function onSplitCommand(key: string) {
             成功 2.5s
           </el-button>
           <el-button size="small" @click="toast.info('正在后台同步')">信息 3s</el-button>
-          <el-button size="small" type="warning" @click="toast.warning('该任务已被订阅锁定，改动可能被下次拉取覆盖')">
+          <el-button size="small" type="warning" @click="toast.warning('日志目录占用已超过 90% 磁盘空间，建议清理旧日志')">
             警告 4.5s
           </el-button>
           <el-button size="small" type="danger" @click="toast.error('执行失败：command not found: python3')">

@@ -156,11 +156,6 @@ export const taskApi = {
     return request.post(`/tasks/${id}/copy`) as Promise<{ message: string; data: any }>
   },
 
-  // 清除订阅锁：任务重新跟随订阅源的名称与定时，下次拉取会被订阅源的值覆盖回来
-  restoreSubscriptionDefault(id: number) {
-    return request.put(`/tasks/${id}/restore-subscription-default`) as Promise<{ message: string; data: any }>
-  },
-
   // signal 是给「并行预取」用的（LogViewer 打开弹窗时会先发一份，见 issue #109-1）：
   // 一旦流里来了实时数据，那份预取就作废了 —— 但如果不 abort，axios 仍会把响应体下完
   // 并在主线程 JSON.parse。运行中的大日志任务这一份可能是几十 MB，正好压在

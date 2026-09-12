@@ -598,7 +598,7 @@ a {
 // EP 有一条 `.el-tag .el-icon { display: flex; cursor: pointer; border-radius: 50% }`，
 // 本意是给「可关闭标签」的关闭按钮用，但选择器命中的是标签里的**任意** el-icon。
 // `.el-tag__content` 作为 flex item 会被 blockify 成 display:block，里面的图标又是块级 flex 盒，
-// 于是「图标 + 文字」型标签（如任务页订阅锁的「已锁定」）会被拆成两行、高度翻倍。
+// 于是「图标 + 文字」型标签会被拆成两行、高度翻倍。
 // 这里用 :has() 只作用于「确实塞了图标」的标签内容区，纯文字标签零影响。
 // 注意：`.el-tag__content` 由 EP 渲染、不带 data-v，只能写在全局块里，scoped 命中不到。
 .el-tag__content:has(> .el-icon) {

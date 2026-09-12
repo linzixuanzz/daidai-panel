@@ -60,8 +60,6 @@ export interface DemoTask {
   list_order: number
   sort_order: number
   is_pinned: boolean
-  /** 用户手动改过订阅任务的名称/定时后置真，列表页显示「已锁定」标签 */
-  subscription_locked: boolean
   pid: number | null
   log_path: string | null
   last_running_time: number | null
