@@ -393,16 +393,16 @@ ddp backup create --name before-uninstall
 
 ```bash
 # 默认只打 arm64 + alpine（CI 发布用的也是这个）
-bash Magisk/build.sh 3.2.6
+bash Magisk/build.sh 3.2.7
 
 # 只打 amd64
-bash Magisk/build.sh 3.2.6 amd64
+bash Magisk/build.sh 3.2.7 amd64
 
 # 同时打 arm64 + amd64
-bash Magisk/build.sh 3.2.6 all
+bash Magisk/build.sh 3.2.7 all
 
 # Debian flavor（第 3 个参数；不传就是 alpine）
-bash Magisk/build.sh 3.2.6 arm64 debian
+bash Magisk/build.sh 3.2.7 arm64 debian
 ```
 
 > `amd64` / `all` 保留的是**构建能力**，不代表模块支持 x86_64：容器运行时 `rurima` 只有 aarch64 构建，`customize.sh` 会在 x86_64 设备上直接拦截。这两个参数是为「将来拿到 x86_64 的 rurima」留的口子，日常发布请用默认的 `arm64`。

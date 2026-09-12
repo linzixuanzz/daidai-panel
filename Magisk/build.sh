@@ -3,9 +3,9 @@
 # 呆呆面板 Magisk 模块打包脚本 (容器方案 v2.0.6+)
 #
 # 用法（版本号必填）:
-#   bash Magisk/build.sh 3.2.6                # arm64 + alpine
-#   bash Magisk/build.sh 3.2.6 all            # 同时打包 arm64 + amd64
-#   bash Magisk/build.sh 3.2.6 arm64 debian   # Debian(glibc) flavor
+#   bash Magisk/build.sh 3.2.7                # arm64 + alpine
+#   bash Magisk/build.sh 3.2.7 all            # 同时打包 arm64 + amd64
+#   bash Magisk/build.sh 3.2.7 arm64 debian   # Debian(glibc) flavor
 #
 # 自检（不构建、不打包、不需要 go）:
 #   bash Magisk/build.sh --check-dist         # 只校验已存在的 web/dist 是不是发布版产物
