@@ -787,19 +787,33 @@ func applySparseCheckout(ctx context.Context, repoDir string, sub *model.Subscri
 	return nil
 }
 
-func pullSingleFileWithCallback(ctx context.Context, sub *model.Subscription, _ string, emit PullCallback) (string, error) {
-	saveDir := sub.SaveDir
+// singleFileSubscriptionTarget 返回单文件订阅的保存子目录与文件名：
+// SaveDir 为空用 downloads，Alias 为空用 URL 末段。
+func singleFileSubscriptionTarget(sub *model.Subscription) (saveDir, filename string) {
+	saveDir = sub.SaveDir
 	if saveDir == "" {
 		saveDir = "downloads"
 	}
 
 	parts := strings.Split(sub.URL, "/")
-	filename := parts[len(parts)-1]
+	filename = parts[len(parts)-1]
 	if sub.Alias != "" {
 		filename = sub.Alias
 	}
+	return saveDir, filename
+}
 
-	destPath := filepath.Join(config.C.Data.ScriptsDir, saveDir, filename)
+// singleFileSubscriptionDestPath 是单文件订阅下载目标路径的唯一公式。
+// 拉取（pullSingleFileWithCallback）与「删除任务时一并删除脚本」判断「这个文件是不是某个订阅下载的」
+// 都走这里；两边口径一旦分叉，被订阅每次重新下载的文件就会被当成普通脚本删掉。
+func singleFileSubscriptionDestPath(scriptsDir string, sub *model.Subscription) string {
+	saveDir, filename := singleFileSubscriptionTarget(sub)
+	return filepath.Join(scriptsDir, saveDir, filename)
+}
+
+func pullSingleFileWithCallback(ctx context.Context, sub *model.Subscription, _ string, emit PullCallback) (string, error) {
+	saveDir, filename := singleFileSubscriptionTarget(sub)
+	destPath := singleFileSubscriptionDestPath(config.C.Data.ScriptsDir, sub)
 	emit(fmt.Sprintf("[下载] %s -> %s/%s", sub.URL, saveDir, filename))
 	output, err := DownloadFileWithContext(ctx, sub.URL, destPath)
 	if output != "" {

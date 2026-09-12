@@ -117,7 +117,7 @@
           "key": "proxy",
           "label": "代理地址 (可选)",
           "widget": "input",
-          "placeholder": "http/socks5 代理地址"
+          "placeholder": "http/socks5 代理，如 http://127.0.0.1:7890；留空使用系统设置中的代理"
         }
       ]
     },
@@ -337,6 +337,12 @@
           "label": "反代基础地址 (可选)",
           "widget": "input",
           "placeholder": "留空使用 https://qyapi.weixin.qq.com，也可填你的 Nginx 反代地址"
+        },
+        {
+          "key": "proxy",
+          "label": "代理地址 (可选)",
+          "widget": "input",
+          "placeholder": "http/socks5 代理，如 http://127.0.0.1:7890；留空使用系统设置中的代理"
         },
         {
           "key": "to_user",

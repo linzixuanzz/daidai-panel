@@ -47,6 +47,10 @@ func (h *TaskHandler) RegisterRoutes(r *gin.RouterGroup) {
 		tasks.PUT("/sort", middleware.RequireRole("operator"), h.Sort)
 		tasks.POST("/:id/copy", middleware.RequireRole("operator"), h.Copy)
 		tasks.DELETE("/:id/log-files/:filename", middleware.RequireRole("operator"), h.DeleteLogFile)
+		// 删除前预览：列出每个任务解析出的脚本、能否一起删、不能删的原因（#124）。
+		// 静态段 delete-preview 与同层的 POST /:id/copy 共存，和 POST /import 是同一个形态。
+		// 复用组上已挂的 OpenAPIAccess("tasks")；应用令牌另需 scripts scope，在 handler 里校验。
+		tasks.POST("/delete-preview", middleware.RequireRole("operator"), h.DeletePreview)
 		tasks.PUT("/batch", middleware.RequireRole("operator"), h.Batch)
 		tasks.PUT("/batch/enable", middleware.RequireRole("operator"), h.BatchEnable)
 		tasks.PUT("/batch/disable", middleware.RequireRole("operator"), h.BatchDisable)

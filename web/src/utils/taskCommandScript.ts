@@ -65,8 +65,11 @@ function trimCommandSpace(value: string): string {
 /**
  * 切词，抄 `splitCommandTokens`：单双引号 + 反斜杠转义，空白分隔，空 token 丢弃。
  * 引号未闭合时后端直接报错，这里返回 null 让调用方按「解析不出来」处理。
+ *
+ * 导出给演示站 `web/src/demo/db.ts` 复用（删除任务时判定脚本）：两处必须按同一套规则切词，
+ * 否则带引号的命令两边分类不一致。脚本管理页也在用它，改行为前两边都要看。
  */
-function splitCommandTokens(command: string): string[] | null {
+export function splitCommandTokens(command: string): string[] | null {
   const tokens: string[] = []
   let current = ''
   let quote = ''

@@ -191,3 +191,149 @@ func TestNormalizeNotifyChannelConfigKeepsUrlCharactersReadable(t *testing.T) {
 		t.Errorf("URL 里的与号被转义了: %s", normalized)
 	}
 }
+
+// ---- #123 保存期校验：渠道代理地址 ----
+
+// notifyProxyConfigJSON 构造只含 proxy 的 config JSON。用 json.Marshal 而不是手拼字符串，
+// 避免 %zz 这类测试值里的特殊字符把 JSON 本身拼坏，测到的就不再是代理校验了。
+func notifyProxyConfigJSON(t *testing.T, proxy string) string {
+	t.Helper()
+	data, err := json.Marshal(map[string]string{"proxy": proxy})
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	return string(data)
+}
+
+// TestValidateNotifyChannelConfigProxy 锁住渠道代理的保存期口径（#123）：与系统设置 proxy_url 完全一致，
+// 且 telegram 与 wecom_app 两个声明了 proxy 的渠道都受约束。
+//
+// 拒绝列表里每一项都是实测过「在发送链路上静默失效或报错难懂」的输入（research/123-recon.md 回退语义实测表）：
+// 漏写 scheme 与非法转义会让 url.Parse 失败、静默直连；localhost:7890 报 dial tcp :0；
+// ftp:// 会被当成 HTTP 代理使用；只有 scheme 的地址报 dial :80 / :1080。
+func TestValidateNotifyChannelConfigProxy(t *testing.T) {
+	accepted := []struct {
+		name  string
+		value string
+	}{
+		{"空值（回落系统代理）", ""},
+		{"只有空白视同空值", "   "},
+		{"http", "http://127.0.0.1:7890"},
+		{"https", "https://proxy.example.com:8443"},
+		{"socks5 带账号密码", "socks5://user:pass@127.0.0.1:1080"},
+		{"socks5h", "socks5h://127.0.0.1:1080"},
+		{"大写 scheme", "HTTP://127.0.0.1:7890"},
+		{"首尾空白", "  http://127.0.0.1:7890  "},
+	}
+	rejected := []struct {
+		name  string
+		value string
+	}{
+		{"漏写 scheme（最常见的误填，发送链路会静默直连）", "127.0.0.1:7890"},
+		{"localhost:端口（被解析成 scheme=localhost、host 为空）", "localhost:7890"},
+		{"非法转义", "%zz"},
+		{"不支持的 scheme（发送链路会把它当 HTTP 代理用）", "ftp://127.0.0.1:21"},
+		{"不支持的 scheme 且带密码（错误信息不得回显）", "ftp://user:secret-pass-xyz@127.0.0.1:21"},
+		{"只有 http://", "http://"},
+		{"只有 socks5://", "socks5://"},
+	}
+
+	for _, channelType := range []string{"telegram", "wecom_app"} {
+		definition, ok := model.GetNotifyChannelDefinition(channelType)
+		if !ok {
+			t.Fatalf("%s 应当是已注册渠道", channelType)
+		}
+		label := ""
+		for _, field := range definition.Fields {
+			if field.Key == "proxy" {
+				label = field.Label
+			}
+		}
+		if label == "" {
+			t.Fatalf("%s 没有声明 proxy 字段，保存期校验对它不会生效", channelType)
+		}
+
+		for _, tc := range accepted {
+			t.Run(channelType+"/放行/"+tc.name, func(t *testing.T) {
+				if err := model.ValidateNotifyChannelConfig(channelType, notifyProxyConfigJSON(t, tc.value)); err != nil {
+					t.Fatalf("合法的代理地址 %q 不应被拦下，实际: %v", tc.value, err)
+				}
+			})
+		}
+		for _, tc := range rejected {
+			t.Run(channelType+"/拒绝/"+tc.name, func(t *testing.T) {
+				err := model.ValidateNotifyChannelConfig(channelType, notifyProxyConfigJSON(t, tc.value))
+				if err == nil {
+					t.Fatalf("非法的代理地址 %q 应当被拦下，实际通过了", tc.value)
+				}
+				msg := err.Error()
+				// 必须点名字段：Web / APP 原样展示这句，用户要能对上是哪个输入框。
+				if !strings.Contains(msg, "(proxy)") || !strings.Contains(msg, label) {
+					t.Errorf("错误信息应同时包含字段名 (proxy) 与标签 %q，实际: %s", label, msg)
+				}
+				if strings.Contains(msg, "secret-pass-xyz") {
+					t.Errorf("错误信息不得回显代理地址里的密码，实际: %s", msg)
+				}
+			})
+		}
+	}
+}
+
+// TestValidateNotifyChannelConfigIgnoresUndeclaredOrUnknown 断言校验只作用于「该渠道声明过的键」。
+func TestValidateNotifyChannelConfigIgnoresUndeclaredOrUnknown(t *testing.T) {
+	junk := notifyProxyConfigJSON(t, "127.0.0.1:7890")
+
+	// webhook 没声明 proxy，服务端根本不读这个值；拦下它只会让用户莫名其妙地存不进去。
+	if err := model.ValidateNotifyChannelConfig("webhook", junk); err != nil {
+		t.Errorf("webhook 未声明 proxy，不应校验它，实际: %v", err)
+	}
+	// 未知类型没有字段声明可依，保存期不在这里另立规则。
+	if err := model.ValidateNotifyChannelConfig("no-such-channel", junk); err != nil {
+		t.Errorf("未知渠道类型应放行，实际: %v", err)
+	}
+	// 调用约定是先归一再校验；坏 JSON 由归一那一步报错，不该在这里变成另一种错误。
+	if err := model.ValidateNotifyChannelConfig("telegram", `{"proxy":`); err != nil {
+		t.Errorf("config 解不开时应放行（由归一那一步负责报错），实际: %v", err)
+	}
+}
+
+// TestValidateNotifyChannelConfigChangeOnlyChecksNewValues 锁住 Update 的「只拦新值」口径（#123 决策）。
+//
+// Web 与 APP 保存时都整份回传 config。本校验上线前存进去的非法代理地址如果每次都被校验，
+// 用户改任何别的字段都会 400 —— 违反「坏记录必须能被编辑保存」。所以只有值变了才校验。
+func TestValidateNotifyChannelConfigChangeOnlyChecksNewValues(t *testing.T) {
+	legacy := `{"chat_id":"c","proxy":"127.0.0.1:7890","token":"t"}`
+	// 库里的旧值两侧带空白：NormalizeNotifyChannelConfig 不 trim 值，Web 编辑时又原样回传，这种存量真实存在。
+	// 只有旧值一侧也 TrimSpace，它才算「未改动」；否则这条记录每次编辑都会 400。
+	legacyPadded := `{"chat_id":"c","proxy":" 127.0.0.1:7890 ","token":"t"}`
+	cases := []struct {
+		name     string
+		previous string
+		next     string
+		wantErr  bool
+	}{
+		{"存量非法值原样回传、只改了别的字段：放行", legacy, `{"chat_id":"c-new","proxy":"127.0.0.1:7890","token":"t"}`, false},
+		{"只差首尾空白视为未改动：放行", legacy, `{"chat_id":"c","proxy":"  127.0.0.1:7890 ","token":"t"}`, false},
+		{"旧值两侧带空白、原样回传：放行", legacyPadded, legacyPadded, false},
+		{"旧值两侧带空白、回传的是 trim 后的值：放行", legacyPadded, legacy, false},
+		{"改成另一个非法值：拦下", legacy, `{"chat_id":"c","proxy":"localhost:7890","token":"t"}`, true},
+		{"改成合法值：放行", legacy, `{"chat_id":"c","proxy":"http://127.0.0.1:7890","token":"t"}`, false},
+		{"清空：放行", legacy, `{"chat_id":"c","proxy":"","token":"t"}`, false},
+		{"没有旧值（previous 为空串）：按新值校验", "", `{"proxy":"127.0.0.1:7890"}`, true},
+		{"旧值为空、新填了非法值：拦下", `{"proxy":""}`, `{"proxy":"127.0.0.1:7890"}`, true},
+		{"旧 config 别的键是坏的（嵌套对象 / 布尔），proxy 照常参与比较", `{"extra":{"a":1},"flag":false,"proxy":"127.0.0.1:7890"}`, `{"proxy":"127.0.0.1:7890"}`, false},
+		{"旧 config 整体不是合法 JSON：视为没有旧值", `{"proxy":`, `{"proxy":"127.0.0.1:7890"}`, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := model.ValidateNotifyChannelConfigChange("telegram", tc.next, tc.previous)
+			if tc.wantErr && err == nil {
+				t.Fatal("应当拦下，实际通过了")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("应当放行，实际: %v", err)
+			}
+		})
+	}
+}

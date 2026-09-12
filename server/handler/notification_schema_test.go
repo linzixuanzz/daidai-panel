@@ -299,3 +299,244 @@ func TestUpdateNotificationChannelRejectsNonStringConfigField(t *testing.T) {
 		t.Errorf("被拒绝的请求不应改动已有 config，实际变成了 %s", reloaded.Config)
 	}
 }
+
+// ---- #123 保存期代理地址校验 ----
+//
+// 口径（prd.md「决策」）：Create 总是校验；Update 只校验「新值」—— proxy 与库里现存值相同时不校验，
+// 否则 Web / APP 整份回传 config 时，本校验上线前存进去的非法值会让用户改任何字段都存不进去。
+
+// notifyProxyRequestBody 先把 config 序列化成字符串再塞进请求体，免得手写两层转义。
+// config 为 nil 时请求体里不带 config 键。
+func notifyProxyRequestBody(t *testing.T, fields map[string]interface{}, config map[string]string) string {
+	t.Helper()
+
+	body := make(map[string]interface{}, len(fields)+1)
+	for key, value := range fields {
+		body[key] = value
+	}
+	if config != nil {
+		raw, err := json.Marshal(config)
+		if err != nil {
+			t.Fatalf("marshal config: %v", err)
+		}
+		body["config"] = string(raw)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal request body: %v", err)
+	}
+	return string(data)
+}
+
+func mustCreateNotifyChannelRow(t *testing.T, name, channelType, config string) *model.NotifyChannel {
+	t.Helper()
+
+	channel := &model.NotifyChannel{Name: name, Type: channelType, Config: config, Enabled: true}
+	if err := database.DB.Create(channel).Error; err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	return channel
+}
+
+func mustReloadNotifyChannel(t *testing.T, id uint) model.NotifyChannel {
+	t.Helper()
+
+	var channel model.NotifyChannel
+	if err := database.DB.First(&channel, id).Error; err != nil {
+		t.Fatalf("reload channel: %v", err)
+	}
+	return channel
+}
+
+func mustDecodeStoredNotifyConfig(t *testing.T, channel model.NotifyChannel) map[string]string {
+	t.Helper()
+
+	var cfg map[string]string
+	if err := json.Unmarshal([]byte(channel.Config), &cfg); err != nil {
+		t.Fatalf("stored config is not map[string]string: %v\n  config: %s", err, channel.Config)
+	}
+	return cfg
+}
+
+// TestCreateNotificationChannelRejectsMalformedProxy：新建渠道时非法代理地址 400、点名字段、不落库；
+// 合法值照常创建（校验只拦格式错误，不误伤）。
+func TestCreateNotificationChannelRejectsMalformedProxy(t *testing.T) {
+	testutil.SetupTestEnv(t)
+
+	engine := newProtectedRouter()
+	headers := mustNotificationAdminHeaders(t, "notify-proxy-create-admin")
+	fields := map[string]interface{}{"name": "企业微信应用", "type": "wecom_app"}
+	config := map[string]string{
+		"corp_id":  "ww-demo",
+		"secret":   "secret-demo",
+		"agent_id": "1000001",
+		"proxy":    "127.0.0.1:7890",
+	}
+
+	rec := performJSONRequest(engine, http.MethodPost, "/api/v1/notifications",
+		notifyProxyRequestBody(t, fields, config), headers, "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("非法代理地址应当 400，实际 %d: %s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "(proxy)") || !strings.Contains(body, "代理地址") {
+		t.Errorf("错误信息应当点名 proxy 字段，实际: %s", body)
+	}
+	var count int64
+	database.DB.Model(&model.NotifyChannel{}).Where("name = ?", "企业微信应用").Count(&count)
+	if count != 0 {
+		t.Fatalf("被拒绝的请求不应落库，实际存在 %d 条", count)
+	}
+
+	config["proxy"] = "http://127.0.0.1:7890"
+	rec = performJSONRequest(engine, http.MethodPost, "/api/v1/notifications",
+		notifyProxyRequestBody(t, fields, config), headers, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("合法代理地址应当创建成功，实际 %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestUpdateNotificationChannelRejectsMalformedProxyWithoutType：只带 config、不带 type 的 PUT
+// （老调用就是这样）按库里的类型校验；改成非法值 400 且原 config 不变，改成合法值 200。
+func TestUpdateNotificationChannelRejectsMalformedProxyWithoutType(t *testing.T) {
+	testutil.SetupTestEnv(t)
+
+	channel := mustCreateNotifyChannelRow(t, "企业微信应用", "wecom_app",
+		`{"agent_id":"1000001","corp_id":"ww-demo","secret":"secret-demo"}`)
+	engine := newProtectedRouter()
+	headers := mustNotificationAdminHeaders(t, "notify-proxy-update-admin")
+	path := "/api/v1/notifications/" + jsonNumber(channel.ID)
+	config := map[string]string{
+		"corp_id":  "ww-demo",
+		"secret":   "secret-demo",
+		"agent_id": "1000001",
+		"proxy":    "127.0.0.1:7890",
+	}
+
+	rec := performJSONRequest(engine, http.MethodPut, path,
+		notifyProxyRequestBody(t, map[string]interface{}{"name": "企业微信应用"}, config), headers, "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("非法代理地址应当 400，实际 %d: %s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "(proxy)") {
+		t.Errorf("错误信息应当点名 proxy 字段，实际: %s", body)
+	}
+	if reloaded := mustReloadNotifyChannel(t, channel.ID); reloaded.Config != channel.Config {
+		t.Fatalf("被拒绝的请求不应改动已有 config，实际变成了 %s", reloaded.Config)
+	}
+
+	config["proxy"] = "socks5://user:pass@127.0.0.1:1080"
+	rec = performJSONRequest(engine, http.MethodPut, path,
+		notifyProxyRequestBody(t, map[string]interface{}{"name": "企业微信应用"}, config), headers, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("合法代理地址应当保存成功，实际 %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := mustDecodeStoredNotifyConfig(t, mustReloadNotifyChannel(t, channel.ID))["proxy"]; got != config["proxy"] {
+		t.Errorf("合法代理地址应当原样落库，实际 %q", got)
+	}
+}
+
+// TestUpdateNotificationChannelValidatesProxyAgainstEffectiveType 断言 Update 按「保存之后的类型」校验：
+// 请求带了非空字符串 type 就用它，否则（不带、或不是字符串）用库里的类型。
+func TestUpdateNotificationChannelValidatesProxyAgainstEffectiveType(t *testing.T) {
+	testutil.SetupTestEnv(t)
+
+	engine := newProtectedRouter()
+	headers := mustNotificationAdminHeaders(t, "notify-proxy-type-admin")
+
+	t.Run("type 改成 telegram 同时带非法 proxy", func(t *testing.T) {
+		channel := mustCreateNotifyChannelRow(t, "改类型-1", "webhook", `{"url":"https://example.com/webhook"}`)
+		rec := performJSONRequest(engine, http.MethodPut, "/api/v1/notifications/"+jsonNumber(channel.ID),
+			notifyProxyRequestBody(t,
+				map[string]interface{}{"name": "改类型-1", "type": "telegram"},
+				map[string]string{"token": "t", "chat_id": "c", "proxy": "127.0.0.1:7890"}),
+			headers, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("按新类型 telegram 校验，非法代理地址应当 400，实际 %d: %s", rec.Code, rec.Body.String())
+		}
+		reloaded := mustReloadNotifyChannel(t, channel.ID)
+		if reloaded.Type != "webhook" || reloaded.Config != channel.Config {
+			t.Fatalf("被拒绝的请求不应改动类型与 config，实际 type=%q config=%s", reloaded.Type, reloaded.Config)
+		}
+	})
+
+	t.Run("旧 config 里原本就带着垃圾 proxy，切到 telegram 也算新值", func(t *testing.T) {
+		// webhook 不声明 proxy，这个值从来没被校验过；切到 telegram 后它第一次生效，不能算「存量」。
+		channel := mustCreateNotifyChannelRow(t, "改类型-2", "webhook",
+			`{"proxy":"127.0.0.1:7890","url":"https://example.com/webhook"}`)
+		rec := performJSONRequest(engine, http.MethodPut, "/api/v1/notifications/"+jsonNumber(channel.ID),
+			notifyProxyRequestBody(t,
+				map[string]interface{}{"name": "改类型-2", "type": "telegram"},
+				map[string]string{"token": "t", "chat_id": "c", "proxy": "127.0.0.1:7890", "url": "https://example.com/webhook"}),
+			headers, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("切换类型后旧值应按新值校验，实际 %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("type 不是字符串时按库里的类型校验", func(t *testing.T) {
+		channel := mustCreateNotifyChannelRow(t, "改类型-3", "wecom_app",
+			`{"agent_id":"1000001","corp_id":"ww-demo","secret":"secret-demo"}`)
+		rec := performJSONRequest(engine, http.MethodPut, "/api/v1/notifications/"+jsonNumber(channel.ID),
+			notifyProxyRequestBody(t,
+				map[string]interface{}{"name": "改类型-3", "type": 123},
+				map[string]string{"corp_id": "ww-demo", "secret": "secret-demo", "agent_id": "1000001", "proxy": "127.0.0.1:7890"}),
+			headers, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("type 不是字符串时应按库里的 wecom_app 校验，实际 %d: %s", rec.Code, rec.Body.String())
+		}
+		if reloaded := mustReloadNotifyChannel(t, channel.ID); reloaded.Type != "wecom_app" {
+			t.Fatalf("被拒绝的请求不应改动类型，实际 %q", reloaded.Type)
+		}
+	})
+}
+
+// TestUpdateNotificationChannelKeepsUnchangedLegacyProxy 是「只拦新值」的核心回归：
+// 本校验上线前就存进库的非法代理地址，原样回传时必须能保存；改成另一个非法值才拦。
+func TestUpdateNotificationChannelKeepsUnchangedLegacyProxy(t *testing.T) {
+	testutil.SetupTestEnv(t)
+
+	// 模拟升级前的 telegram 渠道：proxy 漏写了 scheme（当时发送链路静默直连，用户未必察觉）。
+	channel := mustCreateNotifyChannelRow(t, "TG 存量", "telegram",
+		`{"chat_id":"c","proxy":"127.0.0.1:7890","token":"t"}`)
+	engine := newProtectedRouter()
+	headers := mustNotificationAdminHeaders(t, "notify-proxy-legacy-admin")
+	path := "/api/v1/notifications/" + jsonNumber(channel.ID)
+
+	// Web 与 APP 保存时都整份回传 config 并带上 type；这里只改了 chat_id。
+	rec := performJSONRequest(engine, http.MethodPut, path,
+		notifyProxyRequestBody(t,
+			map[string]interface{}{"name": "TG 存量", "type": "telegram"},
+			map[string]string{"token": "t", "chat_id": "c-new", "proxy": "127.0.0.1:7890"}),
+		headers, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("未改动的存量代理地址不应挡住别的字段保存，实际 %d: %s", rec.Code, rec.Body.String())
+	}
+	cfg := mustDecodeStoredNotifyConfig(t, mustReloadNotifyChannel(t, channel.ID))
+	if cfg["chat_id"] != "c-new" || cfg["proxy"] != "127.0.0.1:7890" {
+		t.Fatalf("应当保存 chat_id 且原样保留存量 proxy，实际 %#v", cfg)
+	}
+
+	// 不带 type 的老调用同样放行。
+	rec = performJSONRequest(engine, http.MethodPut, path,
+		notifyProxyRequestBody(t,
+			map[string]interface{}{"name": "TG 存量"},
+			map[string]string{"token": "t", "chat_id": "c-newer", "proxy": "127.0.0.1:7890"}),
+		headers, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("不带 type 时未改动的存量代理地址同样应放行，实际 %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 改成另一个非法值就是新值：拦下，库里保持上一次成功保存的结果。
+	before := mustReloadNotifyChannel(t, channel.ID)
+	rec = performJSONRequest(engine, http.MethodPut, path,
+		notifyProxyRequestBody(t,
+			map[string]interface{}{"name": "TG 存量", "type": "telegram"},
+			map[string]string{"token": "t", "chat_id": "c-newer", "proxy": "localhost:7890"}),
+		headers, "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("改成另一个非法代理地址应当 400，实际 %d: %s", rec.Code, rec.Body.String())
+	}
+	if after := mustReloadNotifyChannel(t, channel.ID); after.Config != before.Config {
+		t.Fatalf("被拒绝的请求不应改动已有 config，实际从 %s 变成了 %s", before.Config, after.Config)
+	}
+}

@@ -122,6 +122,27 @@ func logLevelForStatusCode(statusCode string) string {
 }
 
 func detectPanelLogLevel(line string) string {
+	// [任务删除] 的留痕会把用户可控的文字（用户名、脚本路径、删除失败的错误原文）拼进行里，只能按固定文案判级，
+	// 而且必须先判失败行、再判成功行（handler/task_script_cleanup.go 的两行文案）：
+	//   - 失败行固定含「失败，已保留」→ ERROR。先判它：路径、用户名或错误原文里就算出现「一并删除了脚本」，
+	//     也不会被下面的成功行判定降成 INFO，按 warn/error 筛选时不会漏掉（见 R2-5）。逐段检查脚本路径失败的那行
+	//     （service/task_script_cleanup.go 的 addMember）也用这句。
+	//   - 成功行含「一并删除了脚本」→ 固定 INFO：用户名与文件名可能带 debug/scanner/trace 等词，会被下面的关键字
+	//     启发式误判成 DEBUG——面板日志默认按 info 过滤，这条不可撤销操作的留痕在默认视图里就看不到了（见 B2）。
+	// 反过来，成功行的路径里若含「失败，已保留」会被判成 ERROR：误判只朝 ERROR 方向走，默认 info 视图照样可见，可以接受。
+	// 已知取舍（R3-BE-2）：受保护的只有含「失败，已保留」的行。其它 [任务删除] 失败行的错误原文（如
+	// service/task_script_cleanup.go「解析脚本目录失败」那行 %v 里的绝对路径），或非删除类日志里拼进的用户可控名字
+	// （如 notifier.go 发通知失败那行的渠道名），只要同时含「[任务删除]」和「一并删除了脚本」，仍会判成 INFO。
+	// 没改是因为触发都要人为构造，影响只在日志级别、不涉及删不删文件；要彻底关掉，得把成功行判定换成锚在用户可控
+	// 字段之前的固定结构正则（见 R2-5 的另一种修法），「失败，已保留」先判 ERROR 的逻辑保留。
+	if strings.Contains(line, "[任务删除]") {
+		if strings.Contains(line, "失败，已保留") {
+			return PanelLogLevelError
+		}
+		if strings.Contains(line, "一并删除了脚本") {
+			return PanelLogLevelInfo
+		}
+	}
 	lower := strings.ToLower(strings.TrimSpace(line))
 	switch {
 	case strings.Contains(lower, " panic"), strings.Contains(lower, "fatal"), strings.Contains(lower, " failed"), strings.Contains(lower, " error"), strings.Contains(lower, "无法"), strings.Contains(lower, "失败"):

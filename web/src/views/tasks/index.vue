@@ -15,6 +15,7 @@ import ViewManager from './components/ViewManager.vue'
 import TaskCronList from './components/TaskCronList.vue'
 import { DEFAULT_CRON_DAILY_MIDNIGHT } from './components/CronInput.vue'
 import BatchAddLabelDialog from './components/BatchAddLabelDialog.vue'
+import TaskDeleteDialog from './components/TaskDeleteDialog.vue'
 import DdSplitButton from '@/components/ui/DdSplitButton.vue'
 import type { SplitButtonItem } from '@/components/ui/DdSplitButton.vue'
 import { getDisplayTaskLabels, classifyDisplayTaskLabels } from './taskLabels'
@@ -126,6 +127,12 @@ const selectedIdSet = computed(() => new Set(selectedIds.value))
 const taskTableRef = ref<any>(null)
 const nameLabelPrefs = ref<TaskNameLabelPrefs>(readStoredTaskNameLabelPrefs())
 const batchLabelVisible = ref(false)
+// 删除确认弹窗（单删与批量共用，issue #124）。taskIds 存打开那一刻的快照，而不是直接绑 selectedIds：
+// 弹窗里的预览和最终提交必须针对同一批任务，不能被中途的选中变化带偏。
+const deleteDialogVisible = ref(false)
+const deleteDialogMode = ref<'single' | 'batch'>('single')
+const deleteDialogTaskIds = ref<number[]>([])
+const deleteDialogTaskName = ref('')
 // push_scope 由 GET /tasks/notification-channels 下发：'bound' 表示该渠道不参与广播，
 // 任务不在表单里显式选中它，它就一条通知都收不到 —— 表单需要据此打标。
 const notificationChannels = ref<{ id: number; name: string; type: string; enabled: boolean; push_scope?: string }[]>([])
@@ -1151,17 +1158,15 @@ async function handleToggle(task: any) {
   }
 }
 
-async function handleDelete(task: any) {
+// 删除的确认、请求与成败提示都在 TaskDeleteDialog 里：它会先向服务端预览这个任务用到的脚本，
+// 让用户选择是否一并删除（默认不勾）。这里只保留权限闸并打开弹窗，删完的收尾见 handleDeleteSuccess。
+// 桌面行内菜单（onTaskAction）与移动端「更多」下拉都走到这里。
+function handleDelete(task: any) {
   if (!ensureCanOperate('当前账号没有删除任务权限')) return
-  try {
-    await ElMessageBox.confirm(`确定删除任务 "${task.name}"？`, '确认删除', { type: 'warning' })
-    await taskApi.delete(task.id)
-    ElMessage.success('任务已删除')
-    loadTasks()
-  } catch (err: any) {
-    if (err === 'cancel' || err?.toString?.() === 'cancel') return
-    ElMessage.error(err?.response?.data?.error || '删除失败')
-  }
+  deleteDialogMode.value = 'single'
+  deleteDialogTaskIds.value = [task.id]
+  deleteDialogTaskName.value = task.name ?? ''
+  deleteDialogVisible.value = true
 }
 
 // 复制的入口是下拉菜单项（DdSplitButton / el-dropdown-item），没有 loading 位可绑
@@ -1312,24 +1317,51 @@ async function handleBatchAction(action: string) {
     ElMessage.warning('请先选择任务')
     return
   }
+  // 批量删除改走 TaskDeleteDialog（可选同时删除脚本），不再用下面的通用确认框
+  if (action === 'delete') {
+    deleteDialogMode.value = 'batch'
+    deleteDialogTaskIds.value = [...selectedIds.value]
+    deleteDialogTaskName.value = ''
+    deleteDialogVisible.value = true
+    return
+  }
   const confirmMap: Record<string, { title: string; msg: string; type: 'warning' | 'info' }> = {
-    delete: { title: '批量删除', msg: `确定删除选中的 ${selectedIds.value.length} 个任务？`, type: 'warning' },
     run: { title: '批量运行', msg: `确定运行选中的 ${selectedIds.value.length} 个任务？`, type: 'info' },
     enable: { title: '批量启用', msg: `确定启用选中的 ${selectedIds.value.length} 个任务？`, type: 'info' },
     disable: { title: '批量禁用', msg: `确定禁用选中的 ${selectedIds.value.length} 个任务？`, type: 'warning' },
     stop: { title: '批量停止', msg: `确定停止选中的 ${selectedIds.value.length} 个任务？`, type: 'warning' },
   }
   const confirm = confirmMap[action]
-  if (confirm) {
-    await ElMessageBox.confirm(confirm.msg, confirm.title, { type: confirm.type })
-  }
+  // 确认框必须放在 try 里：点「取消」或关掉确认框时 ElMessageBox 会 reject（'cancel' / 'close'），
+  // 原来写在 try 外面，这个 reject 会逃出 handler，被 Vue 当成事件处理器的未捕获错误打到控制台。
   try {
+    if (confirm) {
+      await ElMessageBox.confirm(confirm.msg, confirm.title, { type: confirm.type })
+    }
     await taskApi.batch(selectedIds.value, action)
     ElMessage.success('操作成功')
     loadTasks()
   } catch (err: any) {
-    if (err === 'cancel' || err?.toString() === 'cancel') return
+    if (err === 'cancel' || err === 'close' || err?.toString?.() === 'cancel') return
     ElMessage.error(err?.response?.data?.error || '操作失败')
+  }
+}
+
+// 删除成功（单删或批量）后的收尾：
+// - 批量：清掉选中态。原来批量删除后不清 selectedIds，移动端「已选 N 项」会残留已删除的 id；
+// - 单删：被删的这一行若正好被勾着，也从选中项里摘掉，否则批量条会带着一个已不存在的 id；
+// - 详情弹窗开着的正是被删的任务时关掉它，免得对着一条已删除的记录继续操作。
+function handleDeleteSuccess(payload: { mode: 'single' | 'batch'; taskIds: number[] }) {
+  loadTasks()
+  if (payload.mode === 'batch') {
+    clearSelection()
+  } else {
+    for (const id of payload.taskIds) {
+      if (isSelected(id)) toggleSelected(id, false)
+    }
+  }
+  if (detailTask.value && payload.taskIds.includes(detailTask.value.id)) {
+    detailVisible.value = false
   }
 }
 
@@ -2056,6 +2088,14 @@ async function handleImport(event: Event) {
       v-model:visible="batchLabelVisible"
       :task-ids="selectedIds"
       @success="handleBatchLabelSuccess"
+    />
+
+    <TaskDeleteDialog
+      v-model:visible="deleteDialogVisible"
+      :mode="deleteDialogMode"
+      :task-ids="deleteDialogTaskIds"
+      :task-name="deleteDialogTaskName"
+      @success="handleDeleteSuccess"
     />
   </div>
 </template>

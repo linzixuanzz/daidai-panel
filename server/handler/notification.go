@@ -69,6 +69,14 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// 保存期按键校验（#123，目前只有渠道代理 proxy）：代理地址格式错了，发送链路会静默回落直连，
+	// 企业微信「企业可信 IP」场景下表现为没有任何提示的 60020。新建渠道没有「存量值」，一律校验。
+	// 备份恢复与青龙导入刻意不走这里（spec 规定不得因单个渠道整批失败），由发送期显式报错兜底。
+	if err := model.ValidateNotifyChannelConfig(req.Type, normalizedConfig); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
 	// 不带该字段（例如独立发版的 APP）时 req.PushScope 是空串，归一后即「默认推送」，
 	// 与升级前的行为完全一致。拼错的取值一律 400，不做「就近纠正」：
 	// 把 "bind" 悄悄当成 default 落库，等于把用户的隔离意图反着执行。
@@ -118,6 +126,22 @@ func (h *NotificationHandler) Update(c *gin.Context) {
 	// 另外注意：漏把新键登记进 allowed 的表现极其难查 —— 前端切换后保存提示「更新成功」，
 	// 刷新又变回原值，全程不报错、无日志。加字段时务必同步这张白名单。
 	allowed := map[string]bool{"name": true, "type": true, "config": true, "push_scope": true}
+
+	// config 的保存期校验（#123）要按「这次保存之后渠道的类型」来做，所以进循环前先定下来。
+	// 请求里的 type 只有是**非空字符串**时才采用：PUT 可以不带 type（只改 name / config 的老调用就是这样），
+	// 而且下面的循环对 type 不做任何校验、原样写入，非字符串的 type 也会落进来 —— 这两种情况都按库里的 ch.Type 校验。
+	// 用原值而不是 TrimSpace 之后的值：写进库的就是原值，校验要对齐「实际会存成什么类型」。
+	effectiveType := ch.Type
+	if rawType, ok := req["type"].(string); ok && rawType != "" {
+		effectiveType = rawType
+	}
+	// 判断 config 里哪些值算「新值」的基准。只有类型没变时，库里的旧值才算「已经在这个类型下存过」；
+	// 类型变了，旧 config 里的值在新类型下从没被接受过（例如 webhook 不声明 proxy，从来不校验），全部按新值校验。
+	previousConfig := ""
+	if effectiveType == ch.Type {
+		previousConfig = ch.Config
+	}
+
 	updates := make(map[string]interface{})
 	for k, v := range req {
 		if !allowed[k] {
@@ -154,6 +178,16 @@ func (h *NotificationHandler) Update(c *gin.Context) {
 			}
 			normalizedConfig, err := model.NormalizeNotifyChannelConfig(rawConfig)
 			if err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			// 保存期按键校验（#123，目前只有 proxy），但**只拦新值**：与库里现存值相同的不再校验。
+			// Web 与 APP 保存时都整份回传 config，若无条件校验，本校验上线前存进去的非法代理地址
+			// 会让用户改任何别的字段都 400 —— 违反「坏记录必须能被编辑保存」。存量非法值由发送期兜底。
+			//
+			// 注意：只改 type、不带 config 的请求走不到这里，不会按新类型重新校验库里的 config。
+			// 这里返回时 updates 还没写库，被拒的请求不会改动任何已有字段。
+			if err := model.ValidateNotifyChannelConfigChange(effectiveType, normalizedConfig, previousConfig); err != nil {
 				response.BadRequest(c, err.Error())
 				return
 			}

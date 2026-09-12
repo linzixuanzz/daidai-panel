@@ -606,10 +606,138 @@ panel.add_or_update_env(
         method: 'DELETE',
         path: '/api/tasks/:id',
         title: '删除任务',
-        description: '删除指定任务',
+        description: '删除指定任务，需要 operator 及以上角色。任务的执行日志会一起删除，删除后无法恢复；正在运行的这次执行不会被中断。默认只删任务、不动脚本文件。带上 delete_script=1 时，服务端会从这条任务的 command 按真实执行口径解析出脚本，逐项判断能不能一起删：被其他任务（含已禁用的）共用、位于订阅目录、是脚本目录根下的 notify.py / sendNotify.js 或全局钩子 task_before.sh / task_after.sh / extra.sh、路径经过软链接、位于 .git / node_modules 等受保护目录、任务正在运行或排队中……任何不确定的情况都保留，只删能确定没人再用的普通文件（不删目录、不动版本历史）。请求里不接受「要删哪个文件」，confirm_script_path 只能收窄范围、不能扩大。建议先调 POST /api/tasks/delete-preview 看清会删什么、会保留什么。用 Open API 应用令牌带 delete_script 时，应用的 scopes 除 tasks 外还必须包含 scripts（或 *），否则返回 403「应用令牌缺少 scripts 权限，不能同时删除脚本」，任务和脚本都不会动。',
         auth: 'jwt',
         pathParams: [{ name: 'id', type: 'integer', required: true, description: '任务 ID' }],
-        responseExample: JSON.stringify({ message: '删除成功' }, null, 2),
+        queryParams: [
+          { name: 'delete_script', type: 'boolean', description: '是否同时删除任务的脚本文件。按 Go 的 strconv.ParseBool 解析：1 / t / true（含 T / TRUE / True）为开；0、false、非法值（如 abc）或空值一律按「没开」处理，走原逻辑、不报 400', example: '1' },
+          { name: 'confirm_script_path', type: 'string', description: '确认要删除的脚本路径，只在 delete_script 为真时有意义，只能收窄范围。不传：删除服务端判定为可删的脚本（给不先调预览的调用方用）；传了：只有与服务端解析出的 path 完全相等（大小写敏感）时才删，否则保留并标 not_confirmed；传空值（confirm_script_path=）：一个都不删。请原样回传预览接口给的 path，不要自己拼', example: 'ops/clean.sh' },
+        ],
+        responseExample: JSON.stringify({
+          '不带 delete_script（与旧版逐字节相同）': { message: '删除成功' },
+          '带 delete_script=1': {
+            message: '删除成功',
+            scripts: {
+              tasks: [{ id: 13, name: '清理临时文件', found: true, running: false, script_status: 'resolved', script_path: 'ops/clean.sh', note: '' }],
+              deleted: [{ path: 'ops/clean.sh', task_ids: [13], deletable: true, reason: '', detail: '', shared_by: [], warnings: [] }],
+              skipped: [],
+            },
+          },
+        }, null, 2),
+        responseFields: [
+          { name: 'message', type: 'string', description: '恒为「删除成功」，带不带 delete_script 都一样。任务不存在时返回 404「任务不存在」（带不带开关都一样，此时什么都不删）' },
+          { name: 'scripts', type: 'object', description: '只有 delete_script 为真时才出现。tasks：本次任务的解析结果（字段同 POST /api/tasks/delete-preview 的 tasks[]）；deleted：已删除的脚本；skipped：保留下来的脚本，reason 是机器可读的原因、detail 是给人看的中文说明（可原样展示）。deleted / skipped 的每一项字段同预览接口的 scripts[]' },
+          { name: '不带参数时', type: 'tip', description: '不带 delete_script（或它为假）时，响应与旧版逐字节一致：只有 {"message":"删除成功"}，没有 scripts 字段，脚本文件原样保留。APP 与老的 Open API 调用方无需任何改动' },
+          { name: 'reason 取值', type: 'tip', description: '判定原因（预览与执行都会出现，按此顺序取第一个命中的，例外见下）：check_failed（检查出错，为安全起见保留）→ hidden_path（位于 .git、node_modules 等受保护目录）→ symlink（路径经过软链接）→ not_regular_file（不是普通文件，例如名字像脚本的文件夹）→ managed_helper（脚本目录根下的 notify.py / sendNotify.js；脚本目录根下的 task_before.sh / task_after.sh / extra.sh 全局钩子也一律保留）→ subscription_managed（订阅管理的文件）→ task_not_deleted（仅执行阶段：任务行没删掉）→ shared（仍被其他任务使用）→ referenced_in_hook（被其他任务的前置/后置命令或订阅的拉取前/后命令提到）→ task_running（任务正在运行或排队中）。执行阶段另有：not_confirmed（不在确认列表里）/ changed（确认之后文件变了）/ not_found（文件已经不存在）/ remove_failed（删除失败，详情见面板日志）。顺序有两处例外：一是执行阶段先把文件与确认时的状态比对，文件没了报 not_found、被换过报 changed，之后才做上面这串结构性复核（脚本目录解析失败、读取任务或订阅失败这类环境错误除外，它们始终最先判、直接 check_failed）；二是预览时读取文件状态（Lstat）出错、逐段检查路径上的软链接 / 目录联接时出错，也按 check_failed 处理，但排在 hidden_path 之后才判定。deletable 当且仅当 reason 为空时为 true；以后可能新增取值，遇到不认识的请按「保留」处理并展示 detail' },
+          { name: '路径口径', type: 'tip', description: 'path / script_path 一律是相对脚本目录的正斜杠路径（如 jd/sign.js），不回显绝对路径，也不回显底层错误原文；所有数组恒为 []，不会是 null' },
+          { name: '批量删除的开关', type: 'tip', description: '批量入口 PUT /api/tasks/batch（action=delete）与 DELETE /api/tasks/batch/delete 的开关叫 delete_scripts，放在 JSON 请求体里，必须是 JSON bool（true / false）。传成字符串 "true" 会让整个请求绑定失败、返回 400「请求参数错误」，任务也不会被删' },
+        ],
+      },
+      {
+        id: 'tasks-delete-preview',
+        method: 'POST',
+        path: '/api/tasks/delete-preview',
+        title: '预览删除任务时的脚本处理',
+        description: '只读接口，不删任何东西：给一批任务 ID，返回每个任务解析出的脚本、这些脚本能否随任务一起删除、不能删的原因。需要 operator 及以上角色（viewer 返回 403「权限不足」）。脚本路径只从任务的 command 按真实执行口径解析，判定规则与 DELETE /api/tasks/:id 带 delete_script 时完全一致。面板的删除弹窗先调它展示「将删除 / 将保留」，用户勾选后再把 deletable=true 的 path 原样作为 confirm_script_path(s) 传给删除接口。用 Open API 应用令牌调用时，scopes 必须同时包含 scripts（或 *），否则返回 403「应用令牌缺少 scripts 权限，不能同时删除脚本」。',
+        auth: 'jwt',
+        bodyParams: [
+          { name: 'task_ids', type: 'array', required: true, description: '任务 ID 数组（非负整数）。按首次出现的顺序去重，去重后为空返回 400「请选择要删除的任务」；缺字段或不是整数数组返回 400「请求参数错误」。不存在的 ID 不报错，对应项的 script_status 为 task_not_found', example: '[12,15,99]' },
+        ],
+        responseExample: JSON.stringify({
+          data: {
+            checked: true,
+            tasks: [
+              { id: 12, name: '京东签到', found: true, running: false, script_status: 'resolved', script_path: 'jd/sign.js', note: '' },
+              { id: 15, name: '模块任务', found: true, running: false, script_status: 'no_script', script_path: '', note: '命令运行的是 Python 模块 foo，没有对应的脚本文件。' },
+              { id: 99, name: '', found: false, running: false, script_status: 'task_not_found', script_path: '', note: '任务不存在（可能已被删除）。' },
+            ],
+            scripts: [
+              { path: 'jd/sign.js', task_ids: [12], deletable: false, reason: 'shared', detail: '仍被 1 个其他任务使用：京东签到（备用），删除后它会无法运行。', shared_by: [{ id: 31, name: '京东签到（备用）', text_match: false }], warnings: ['文件名 sign 常见于公共库（如 sendNotify、utils、sign），可能被其他脚本引用，确认不再需要再删。'] },
+            ],
+          },
+        }, null, 2),
+        responseFields: [
+          { name: 'data.checked', type: 'boolean', description: '恒为 true。是哨兵字段：调用方靠它区分「真的查过」和「没查成」（例如面板是旧版、没有这个接口）' },
+          { name: 'data.tasks', type: 'array', description: '按请求顺序，每个 ID 一项：id / name / found / running / script_status / script_path / note。script_status=task_not_found 表示任务不存在；found=false 也可能是查库出错、无法确认；running=true 表示任务正在运行或排队中（删除任务不会中断这次执行，它用到的脚本会保留）；note 是给人看的说明' },
+          { name: 'data.tasks[].script_status', type: 'string', description: 'resolved（解析出脚本，一定出现在 scripts 里）/ no_script（命令是依赖命令或 python -m 模块，没有脚本文件）/ not_found（命令里的脚本已经不存在）/ outside_scripts_dir（脚本不在脚本目录内，面板不会删）/ unresolved（命令格式有误，识别不出脚本；查库出错、无法确认任务时也是它，此时 found=false）/ task_not_found（任务不存在）' },
+          { name: 'data.tasks[].script_path', type: 'string', description: '只在 resolved 与 not_found 时有值（not_found 时只用于展示）；其余状态为空串' },
+          { name: 'data.scripts', type: 'array', description: '按真实文件合并（多个选中的任务用同一个脚本只出现一项，task_ids 全部列出），按 path 升序。每项：path / task_ids / deletable / reason / detail / shared_by / warnings；reason 的全部取值见 DELETE /api/tasks/:id' },
+          { name: 'data.scripts[].shared_by', type: 'array', description: '本次范围外、仍在引用这个文件的任务 [{id, name, text_match}]，含已禁用的。只要有共用方就会填，不论 reason 是什么。text_match=true 表示那个任务的命令不是直接运行这个脚本（或者命令当前跑不起来），但命令文本里指向了它' },
+          { name: 'data.scripts[].warnings', type: 'array', description: '只提示、不阻断删除，例如文件名常见于公共库（sendNotify、utils、sign 等），可能被其他脚本 require / import' },
+          { name: '预览只是参考', type: 'tip', description: '真正删除时，服务端会基于删除后剩下的任务重新判定，再按 confirm 列表收窄。预览之后有人改了命令、复制了任务，结果以删除时为准（多出来的共用方会让脚本被保留，不会多删）' },
+        ],
+      },
+      {
+        id: 'tasks-batch',
+        method: 'PUT',
+        path: '/api/tasks/batch',
+        title: '批量操作任务',
+        description: '对多个任务执行同一个动作，需要 operator 及以上角色（Web 任务页的批量操作走这里）。逐个处理：不存在的 ID 静默跳过，个别任务处理不了（例如启用时校验不通过）也只是跳过，不会让整批报错；run 遇到已经在运行中的任务不会重复触发，但仍计入 count。action=delete 时会连同执行日志一起删除，正在运行的这次执行不会被中断；再带上 delete_scripts=true 可同时删除这些任务的脚本，判定规则与 DELETE /api/tasks/:id 的 delete_script 完全一致（建议先调 POST /api/tasks/delete-preview）。用 Open API 应用令牌带 delete_scripts 时，scopes 还必须包含 scripts（或 *），否则返回 403「应用令牌缺少 scripts 权限，不能同时删除脚本」，任务和脚本都不会动。',
+        auth: 'jwt',
+        bodyParams: [
+          { name: 'ids', type: 'array', required: true, description: '任务 ID 数组', example: '[12,13]' },
+          { name: 'action', type: 'string', required: true, description: 'enable（启用）/ disable（禁用）/ delete（删除，连同执行日志）/ run（立即运行）/ stop（停止运行中的任务）/ pin（置顶）/ unpin（取消置顶）。取值区分大小写，也不去首尾空格；不在上面列表里的 action（如 Delete、RUN）不报错、什么都不做，但仍按查到的任务计入 count，message 里原样带出它（如「批量Delete: 1 个任务」）', example: 'delete' },
+          { name: 'delete_scripts', type: 'boolean', description: '是否同时删除脚本，只在 action=delete 时生效，其它 action 带了也会被忽略（响应里不会出现 scripts）。必须是 JSON bool：传成字符串 "true" 会让整个请求绑定失败，返回 400「请求参数错误」，任务也不会被删', example: 'true' },
+          { name: 'confirm_script_paths', type: 'array', description: '确认要删除的脚本路径列表，只能收窄范围。不传或传 null：删除服务端判定为可删的全部脚本；传了：只删与列表中某一项完全相等（大小写敏感）的路径，其余可删项保留并标 not_confirmed；传 []：一个都不删。请原样回传预览接口给的 path', example: '["ops/clean.sh"]' },
+        ],
+        responseExample: JSON.stringify({
+          '不带 delete_scripts（与旧版逐字节相同）': { count: 2, message: '批量delete: 2 个任务' },
+          'action=delete 且 delete_scripts=true': {
+            count: 2,
+            message: '批量delete: 2 个任务',
+            scripts: {
+              tasks: [
+                { id: 12, name: '京东签到', found: true, running: false, script_status: 'resolved', script_path: 'jd/sign.js', note: '' },
+                { id: 13, name: '清理临时文件', found: true, running: false, script_status: 'resolved', script_path: 'ops/clean.sh', note: '' },
+              ],
+              deleted: [{ path: 'ops/clean.sh', task_ids: [13], deletable: true, reason: '', detail: '', shared_by: [], warnings: [] }],
+              skipped: [{ path: 'jd/sign.js', task_ids: [12], deletable: false, reason: 'shared', detail: '仍被 1 个其他任务使用：京东签到（备用），删除后它会无法运行。', shared_by: [{ id: 31, name: '京东签到（备用）', text_match: false }], warnings: ['文件名 sign 常见于公共库（如 sendNotify、utils、sign），可能被其他脚本引用，确认不再需要再删。'] }],
+            },
+          },
+        }, null, 2),
+        responseFields: [
+          { name: 'count', type: 'integer', description: '实际处理的任务数：只计查到的任务，不存在的 ID 不计；enable 校验不通过、stop 一个没在运行的任务、run 启动失败（RunNow 报错）的也不计。注意：run 对已经在运行中的任务不会重复触发，但仍计入 count；action 不在取值列表里时什么都不做，查到的任务同样计入 count（见 action）。' },
+          { name: 'message', type: 'string', description: '「批量{action}: {count} 个任务」，例如「批量delete: 2 个任务」' },
+          { name: 'scripts', type: 'object', description: '只有 action=delete 且 delete_scripts=true 时才出现，字段同 DELETE /api/tasks/:id 的 scripts；脚本只针对真实存在的任务处理' },
+          { name: '不带参数时', type: 'tip', description: '不带 delete_scripts（或它为 false）时，响应与旧版逐字节一致，脚本文件原样保留。带开关时 count 与 message 的口径也不变，只是多一个 scripts 字段' },
+        ],
+      },
+      {
+        id: 'tasks-batch-delete',
+        method: 'DELETE',
+        path: '/api/tasks/batch/delete',
+        title: '批量删除任务',
+        description: '批量删除任务，连同它们的执行日志，需要 operator 及以上角色（APP 的批量删除走这里；Web 走 PUT /api/tasks/batch 的 action=delete）。注意这是一个带 JSON 请求体的 DELETE。正在运行的这次执行不会被中断。带上 delete_scripts=true 可同时删除这些任务的脚本，判定规则与 DELETE /api/tasks/:id 的 delete_script 完全一致（建议先调 POST /api/tasks/delete-preview）。用 Open API 应用令牌带 delete_scripts 时，scopes 还必须包含 scripts（或 *），否则返回 403「应用令牌缺少 scripts 权限，不能同时删除脚本」，任务和脚本都不会动。',
+        auth: 'jwt',
+        bodyParams: [
+          { name: 'task_ids', type: 'array', required: true, description: '任务 ID 数组；传 [] 合法，得到 count=0', example: '[12,13]' },
+          { name: 'delete_scripts', type: 'boolean', description: '是否同时删除脚本。必须是 JSON bool：传成字符串 "true" 会让整个请求绑定失败，返回 400「请求参数错误」，任务也不会被删', example: 'true' },
+          { name: 'confirm_script_paths', type: 'array', description: '确认要删除的脚本路径列表，只能收窄范围，语义同 PUT /api/tasks/batch：不传或 null 不收窄，传 [] 一个都不删', example: '["ops/clean.sh"]' },
+        ],
+        responseExample: JSON.stringify({
+          '不带 delete_scripts（与旧版逐字节相同）': { count: 2, message: '已删除 2 个任务' },
+          '带 delete_scripts=true': {
+            count: 2,
+            message: '已删除 2 个任务',
+            scripts: {
+              tasks: [
+                { id: 12, name: '京东签到', found: true, running: false, script_status: 'resolved', script_path: 'jd/sign.js', note: '' },
+                { id: 13, name: '清理临时文件', found: true, running: false, script_status: 'resolved', script_path: 'ops/clean.sh', note: '' },
+              ],
+              deleted: [
+                { path: 'jd/sign.js', task_ids: [12], deletable: true, reason: '', detail: '', shared_by: [], warnings: ['文件名 sign 常见于公共库（如 sendNotify、utils、sign），可能被其他脚本引用，确认不再需要再删。'] },
+                { path: 'ops/clean.sh', task_ids: [13], deletable: true, reason: '', detail: '', shared_by: [], warnings: [] },
+              ],
+              skipped: [],
+            },
+          },
+        }, null, 2),
+        responseFields: [
+          { name: 'count', type: 'integer', description: '等于传入 task_ids 的个数，不存在的、重复的 ID 也计入。这是现有行为，与 PUT /api/tasks/batch「只计查到的任务」的口径不同，保留不改；脚本只针对真实存在的任务处理' },
+          { name: 'message', type: 'string', description: '「已删除 {count} 个任务」' },
+          { name: 'scripts', type: 'object', description: '只有 delete_scripts=true 时才出现，字段同 DELETE /api/tasks/:id 的 scripts' },
+          { name: '不带参数时', type: 'tip', description: '不带 delete_scripts（或它为 false）时，响应与旧版逐字节一致，脚本文件原样保留' },
+        ],
       },
       {
         id: 'tasks-run',
@@ -1162,12 +1290,12 @@ Transfer-Encoding: chunked
         method: 'POST',
         path: '/api/notifications',
         title: '创建通知渠道',
-        description: '创建新的通知渠道，支持：webhook / email / telegram(支持 api_host、proxy 单独代理) / dingtalk / wecom(企业微信机器人，支持 text/markdown/markdown_v2/image/news/template_card) / wecom_app(企业微信应用，支持 text/markdown/image/file/video/news/mpnews/template_card，并支持 base_url 反代基础地址) / bark / pushplus(支持 channel 选择发送渠道：wechat/app/extension/webhook/clawbot/cp/qq/mail/sms/voice，webhook、cp 与 qq 需配合 option 填渠道编码；QQ 发给个人时 option 留空，发给群才填群配置编码) / serverchan / feishu / gotify / pushdeer / pushme / chanify / igot / qmsg / pushover / discord / slack / ntfy / wxpusher(WxPusher / ClawBot(iLink)，支持 url、verify_pay_type) / custom',
+        description: '创建新的通知渠道，支持：webhook / email / telegram(支持 api_host、proxy 单独代理) / dingtalk / wecom(企业微信机器人，支持 text/markdown/markdown_v2/image/news/template_card) / wecom_app(企业微信应用，支持 text/markdown/image/file/video/news/mpnews/template_card，并支持 base_url 反代基础地址、proxy 正向代理（http/https/socks5，留空使用系统代理）) / bark / pushplus(支持 channel 选择发送渠道：wechat/app/extension/webhook/clawbot/cp/qq/mail/sms/voice，webhook、cp 与 qq 需配合 option 填渠道编码；QQ 发给个人时 option 留空，发给群才填群配置编码) / serverchan / feishu / gotify / pushdeer / pushme / chanify / igot / qmsg / pushover / discord / slack / ntfy / wxpusher(WxPusher / ClawBot(iLink)，支持 url、verify_pay_type) / custom',
         auth: 'jwt',
         bodyParams: [
           { name: 'name', type: 'string', required: true, description: '渠道名称' },
           { name: 'type', type: 'string', required: true, description: '渠道类型', example: 'dingtalk' },
-          { name: 'config', type: 'object', required: true, description: '渠道配置（各类型字段不同，例如 email 可填 smtp_ssl，telegram 可填 proxy，wecom_app 可填 base_url，wxpusher 可填 url / verify_pay_type）' },
+          { name: 'config', type: 'object', required: true, description: '渠道配置（各类型字段不同，例如 email 可填 smtp_ssl，telegram 可填 proxy，wecom_app 可填 base_url / proxy，wxpusher 可填 url / verify_pay_type）' },
           { name: 'push_scope', type: 'string', description: '推送范围：default（默认推送，参与广播）/ bound（绑定推送，只有被任务绑定或调用时显式指定才推送）。留空按 default 处理', example: 'default' },
         ],
         responseExample: JSON.stringify({ message: '创建成功', data: { id: 1 } }, null, 2),

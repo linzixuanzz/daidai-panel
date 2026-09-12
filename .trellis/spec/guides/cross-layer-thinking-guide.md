@@ -253,7 +253,10 @@ v3.2.0 前名单里还有一个 `monaco`，随编辑器换成 CodeMirror 6（由
 
 `web/public/fonts/*.woff2`（`scripts/fetch-fonts.mjs` 抓取）与
 `web/src/demo/fixtures/*.json`（`server/cmd/gen-demo-fixtures` 生成）都属于这一类：
-**生成器不在构建链上，CI 只跑 `npm ci && vite build`，不联网也不跑 Go**。
+**生成器不在构建链上**：构建时不会重新生成它们，也不联网。
+CI（`.github/workflows/checks.yml`）会跑 `go test ./...`，其中 `TestCommittedDemoFixturesMatchRegistry`
+会把生成器的输出与仓库里的 fixture 逐字比对，注册表改了而 fixture 没重新生成时 CI 直接红——
+改完注册表记得 `cd server; go run ./cmd/gen-demo-fixtures` 再提交。字体仍然没有这类对账。
 
 于是有两条必须成立，否则干净检出后 CI 必挂或线上静默降级：
 

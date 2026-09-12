@@ -110,6 +110,10 @@ func notifySelect(key, label, placeholder string, options []SystemConfigOption) 
 	return field
 }
 
+// notifyChannelProxyPlaceholder 是渠道级正向代理字段（telegram / wecom_app 的 proxy）共用的提示文案。
+// 两个渠道语义一致（留空回落系统设置 proxy_url），文案也保持一致，免得用户以为两边规则不同。
+const notifyChannelProxyPlaceholder = "http/socks5 代理，如 http://127.0.0.1:7890；留空使用系统设置中的代理"
+
 // required 标记「留空时 notifier.go 会直接返回错误」。加这个标记前先去 notifier.go 里确认。
 func (f NotifyFieldDefinition) required() NotifyFieldDefinition {
 	f.Required = true
@@ -191,7 +195,10 @@ var registeredNotifyChannels = []NotifyChannelDefinition{
 			notifyInput("message_thread_id", "Topic ID (可选)", "群组话题 ID，留空则发到默认话题"),
 			notifyInput("api_host", "API 地址 (可选)", "自定义 API 地址，留空使用官方").
 				withDefault("https://api.telegram.org"),
-			notifyInput("proxy", "代理地址 (可选)", "http/socks5 代理地址"),
+			// placeholder 与 wecom_app 的 proxy 统一成同一句（#123）：两者语义完全一致
+			// （留空回落系统设置 proxy_url），只改文案、不改语义。
+			// 不写 Default：留空是「回落」而不是某个固定值，理由同 wecom_app。
+			notifyInput("proxy", "代理地址 (可选)", notifyChannelProxyPlaceholder),
 		},
 	},
 	{
@@ -249,6 +256,17 @@ var registeredNotifyChannels = []NotifyChannelDefinition{
 			notifyPassword("secret", "应用 Secret", "应用 Secret").required(),
 			notifyInput("agent_id", "Agent ID", "应用 AgentId").required(),
 			notifyInput("base_url", "反代基础地址 (可选)", "留空使用 https://qyapi.weixin.qq.com，也可填你的 Nginx 反代地址"),
+			// proxy 是正向代理（http/https/socks5），与上面的 base_url（反向代理基础地址）是两件事，可以叠加：
+			// 先按 base_url 拼出请求地址，再经 proxy 发出。取 token 与发消息两次请求都走它。
+			// 留空回落系统设置 proxy_url，再空走进程环境变量 HTTP(S)_PROXY / 直连 —— 与 telegram 完全一致。
+			//
+			// 主要场景是企业微信「企业可信 IP」（#123，2022-06 之后新建的自建应用都受限）：
+			// 让请求从已加入可信 IP 的机器出网，避免 errcode 60020。
+			//
+			// 不写 Default：留空的语义是「回落」，没有固定的回退值（口径见 NotifyFieldDefinition.Default）。
+			// 不标 required：notifier.go 不对它判空。非法值在保存期（ValidateNotifyChannelConfig）
+			// 与发送期（sendWecomAppWithContext）都会显式报错，不会静默直连。
+			notifyInput("proxy", "代理地址 (可选)", notifyChannelProxyPlaceholder),
 			notifyInput("to_user", "成员账号 (可选)", "多个成员用 | 分隔，留空默认 @all"),
 			notifyInput("to_party", "部门 ID (可选)", "多个部门用 | 分隔"),
 			notifyInput("to_tag", "标签 ID (可选)", "多个标签用 | 分隔"),

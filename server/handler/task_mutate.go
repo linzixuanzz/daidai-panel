@@ -383,13 +383,27 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	// 可选开关 delete_script（#124）：不带时整段不进入，下面的删除语句与响应和改动前逐字节一致。
+	// 带了则先校验应用令牌的 scripts scope 并拍快照（此时任务还没删），删完任务再判定、删脚本。
+	var scriptCleanup *taskScriptCleanupCtx
+	if on, confirm := parseDeleteScriptQuery(c); on {
+		var ok bool
+		if scriptCleanup, ok = beginTaskScriptCleanup(c, []uint{uint(taskID)}, confirm); !ok {
+			return
+		}
+	}
+
 	if scheduler := service.GetSchedulerV2(); scheduler != nil {
 		scheduler.RemoveJob(uint(taskID))
 	}
 	database.DB.Where("task_id = ?", taskID).Delete(&model.TaskLog{})
 	database.DB.Delete(&task)
 
-	response.Success(c, gin.H{"message": "删除成功"})
+	resp := gin.H{"message": "删除成功"}
+	if scriptCleanup != nil {
+		resp["scripts"] = finishTaskScriptCleanup(c, scriptCleanup)
+	}
+	response.Success(c, resp)
 }
 
 func (h *TaskHandler) Pin(c *gin.Context) {

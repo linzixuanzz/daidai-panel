@@ -1911,6 +1911,8 @@ def: SystemConfigDefinition{
 - 归一规则：字符串原样；布尔 / 数字 / null 转成字符串（**安全可逆**，同时让老客户端写坏的记录一编辑就自愈）；对象 / 数组直接 400 并指出是哪个键（**不可逆**，`fmt.Sprint` 出来是 Go 语法垃圾）。
 - 数字必须用 `json.Decoder` + `UseNumber()` 解析。默认的 `interface{}` 反序列化得到 `float64`，`fmt.Sprint(float64(1000000))` 是 `"1e+06"`，会直接毁掉用户填的整数。
 - `/notifications/types` 的响应只允许新增键，不允许改名或改类型；`type` / `name` / 顺序是老客户端的契约，改动必须同步更新 `TestNotifyChannelTypesRemainBackwardCompatible` 的基线。
+- **`proxy` 键（telegram、wecom_app 声明）语义统一**：渠道值非空用它；空则回落系统设置 `proxy_url`；再空走进程环境变量 `HTTP(S)_PROXY`，最后才直连（`NewHTTPClientWithProxy`）。wecom_app 的取 token 与发消息共用同一个 client。`proxy` 是正向代理，与 wecom_app 的 `base_url`（反代基础地址）可叠加。
+- 保存期校验：`model.ValidateNotifyChannelConfig(type, normalized)`（Create）/ `ValidateNotifyChannelConfigChange(type, normalized, previous)`（Update）。只校验该渠道类型**声明过**的键，校验表目前只登记 `proxy`（复用 `normalizeProxyURL`）；空值、未知类型、解不开的 JSON 一律放行。
 
 ### 4. Validation & Error Matrix
 
@@ -1925,11 +1927,21 @@ def: SystemConfigDefinition{
 - config 为空串 → 归一成 `"{}"`
 - `PUT` 的 `config` 字段不是 JSON 字符串 → `400`，且不得改动已有 config
 - 备份里带着坏 config → 恢复时尽力归一；归一不了就保留原文继续恢复，**不得让整批恢复失败**
+- `proxy` 为**新填写或改动过**的非法值 → Create / Update `400`，错误点名字段：`通知渠道配置项「代理地址 (可选)」(proxy) 无效：…`，且不改动库里的数据
+- 类型不变时 `proxy` 与库里现存值（两侧 TrimSpace 后）相同 → 放行 `200`，**哪怕它本身非法**（Web / APP 保存时整份回传 config，无条件校验会让存量记录改任何字段都存不进去）
+- 切换渠道类型（`req["type"]` 为非空字符串且不等于库里的类型）→ 新类型声明的键一律按新值校验；`req["type"]` 不是字符串时按库里的类型校验
+- 备份恢复、青龙导入 → 不做这层校验；wecom_app 发送时渠道代理非法 → **发送期显式报错、不发出任何请求**（不能交给 `NewHTTPClientWithProxy`：它遇到解析失败的地址会静默回落环境代理或直连，可信 IP 场景下只剩一个无头绪的 60020）
+
+- 网络错误（`*url.Error`）→ 只保留底层原因（`stripRequestURL`），**不回显请求 URL**：wecom_app 的 gettoken 带 corpsecret、message/send 带 access_token，telegram 的路径带 bot token；这些错误会流到测试按钮、`/notifications/send` 的响应（operator 与 Open API 可见，而渠道配置只有 admin 能读）和面板日志。telegram 网络错误前缀为「请求 Telegram API（scheme://host）失败: 」，host 经 `redactProxyURL` 去掉 userinfo 与路径。
+- HTTP≥400 的回显正文、wecom_app errcode 附带的 `errmsg` → `redactSecrets` 把密钥的原文 / QueryEscape / EscapedPath / PathEscape 四种形态（`secretForms`，先长后短）替换成 `***`，再截断到 512 字节（`notifyErrorBodyEchoLimit`）；telegram 改用 `redactTelegramBotPath`，**只替换 `/bot` 之后紧跟的 token**（另外覆盖整条 URL 被再转义一遍后的 `%2Fbot…` 形态；token 脱离 `/bot` 单独回显时不脱敏），避免误填的短 token 把「HTTP 404」这类状态码和业务文案改坏；业务错误（HTTP 200 的 `ok:false`）同样要脱敏，自建网关的 description 也可能回显请求路径
+- wecom_app errcode 60020 → 追加「企业可信 IP」提示，只罗列本次生效的代理 / 反代配置（地址只留 scheme://host），并写明「以 errmsg 里的 from ip 为准」；`base_url` 主机是 `qyapi.weixin.qq.com` 时说明是官方地址、未经反代，其余用条件句「若该地址是反代服务器…」，**不自行断言出口路径**；其它 errcode 的文案逐字不变
+
+> **Warning**：`proxy` 这类「别的渠道已经读过」的键落在绑定用例的盲区里。`TestNotifySchemaCoversAllConfigKeysReadByNotifier` 比的是全渠道**并集**，给 wecom_app 漏读或漏声明 `proxy` 它都不会红，必须靠 `TestNotifyChannelProxyFieldDeclared` 与 `TestSendWecomApp*` 这类定向用例兜住。
 
 ### 5. Good/Base/Bad Cases
 
 - Good：面板给某渠道加一个新 config 键，改完 `notifier.go` 跑测试立刻变红，提示去注册表补声明；补完 Web 和 APP 不发版就能渲染出这个输入框。
-- Base：22 个渠道 / 90 个字段槽原样下发，老客户端只读 `type` 和 `name`，对多出来的 `icon` / `fields` 无感。
+- Base：22 个渠道 / 93 个字段槽原样下发，老客户端只读 `type` 和 `name`，对多出来的 `icon` / `fields` 无感。
 - Bad：客户端把 `smtp_ssl` 写成 JSON 布尔 `false`。服务端 `Unmarshal` 到 `map[string]string` 直接失败，该渠道所有通知全挂，报的还是一句用户看不懂的 `cannot unmarshal bool into Go value of type string`。
 - Bad：为了「严格」把非字符串值一律 400。库里已经存在的坏记录会因为「原有的坏值」而永远存不进去，用户只能去改数据库。
 - Bad：把嵌套对象 `fmt.Sprint` 成 `map[Authorization:Bearer xxx]` 存下去。把「发不出去」换成了「发出去的是垃圾」，更难排查。
@@ -1946,11 +1958,19 @@ def: SystemConfigDefinition{
 - `TestNotifyChannelTypesRemainBackwardCompatible` / `TestNotifyChannelDefinitionsReturnsDeepCopy`
 - `TestNormalizeNotifyChannelConfigCoercesScalarValues` / `TestNormalizeNotifyChannelConfigRejectsUnrecoverableValues` / `TestNormalizeNotifyChannelConfigIsIdempotent`
 - `TestCreateNotificationChannelCoercesNonStringConfigValues` / `TestUpdateNotificationChannelHealsLegacyBrokenConfig`
+- `proxy` 相关（issue #123）：
+  - `TestNotifyChannelProxyFieldDeclared`（给「声明」这一半单独上锁：telegram 与 wecom_app 都恰好声明一次，input、非必填、无 Default、无 ShowWhen）
+  - `TestValidateNotifyChannelConfigProxy` / `TestValidateNotifyChannelConfigIgnoresUndeclaredOrUnknown` / `TestValidateNotifyChannelConfigChangeOnlyChecksNewValues`（含旧值两侧带空白的放行例）
+  - `TestCreateNotificationChannelRejectsMalformedProxy` / `TestUpdateNotificationChannelRejectsMalformedProxyWithoutType` / `TestUpdateNotificationChannelValidatesProxyAgainstEffectiveType` / `TestUpdateNotificationChannelKeepsUnchangedLegacyProxy`
+  - `TestSendWecomAppUsesChannelProxy` / `TestSendWecomAppChannelProxyOverridesGlobal` / `TestSendWecomAppFallsBackToGlobalProxy`（回归锁，修复前就是绿的）/ `TestSendWecomAppRejectsMalformedProxy`
+  - 行为用例一律用 **loopback httptest 源站 + 记录代理、双向计数**；不要用 `.invalid` 域名（本机 fake-ip 会应答 503，突变时报错不指向「直连了」）
+- `TestCommittedDemoFixturesMatchRegistry`（`server/cmd/gen-demo-fixtures`：生成到临时目录与仓库 fixture 做 CRLF 归一后逐字比对，陈旧的演示站 fixture 在 CI 里直接红）
 - 修改后至少运行：
 
 ```bash
 cd server
-go test ./model ./service ./handler -run "TestNotify|TestNormalizeNotifyChannelConfig|TestNotifier|TestCreateNotificationChannel|TestUpdateNotificationChannel" -count=1
+go test ./model ./service ./handler -run "TestNotify|TestNormalizeNotifyChannelConfig|TestNotifier|TestCreateNotificationChannel|TestUpdateNotificationChannel|TestValidateNotifyChannelConfig|TestSendWecomApp|TestSendTelegram|TestRedactSecrets" -count=1
+go test ./cmd/gen-demo-fixtures -count=1
 go test ./...
 ```
 
@@ -2778,4 +2798,110 @@ bash -n Magisk/service.sh
 ```sh
 # 正确：额外把 heredoc 与内联脚本抽出来，各自再过一遍 bash / dash / busybox ash。
 bash scripts/check-shell-syntax.sh
+```
+
+---
+
+## 场景：删除任务时一并删除脚本（issue #124）
+
+### 1. Scope / Trigger
+
+- 触发：改动 `server/service/task_script_target.go`、`task_script_cleanup.go`、`task_script_reparse_*.go`、`task_script_ctime_*.go`、`server/handler/task_script_cleanup.go`、三个删除入口（`task_mutate.go` 的 `Delete`、`task_batch.go` 的 `Batch` / `BatchDelete`）、`server/middleware/openapi.go` 的 `AppTokenHasScope`、`server/service/panel_log.go` 的 `[任务删除]` 判级，或前端 `web/src/views/tasks/components/TaskDeleteDialog.vue`、演示站 `web/src/demo/db.ts` 的 `planDemoTaskScriptDeletion` 时必须看本节。
+- 原因：删脚本不可撤销（面板没有回收站），误删的代价远大于少删。判定必须以**真实执行口径**为准，**任何不确定都保留文件并说明原因**。
+
+### 2. Signatures
+
+- 预览：`POST /api/v1/tasks/delete-preview`，body `{"task_ids":[uint]}` → `{"data":{"checked":true,"tasks":[TaskInfo],"scripts":[Item]}}`（operator；应用令牌另需 scripts scope）
+- 执行（三个既有入口各加可选开关）：
+  - `DELETE /tasks/:id?delete_script=1&confirm_script_path=<p>`
+  - `PUT /tasks/batch`，body `{ids, action:"delete", delete_scripts: bool, confirm_script_paths: []string|null}`
+  - `DELETE /tasks/batch/delete`，body `{task_ids, delete_scripts, confirm_script_paths}`
+- service：`ResolveTaskScriptTarget(command string, base scriptsBase) TaskScriptTarget`；`PreviewTaskScriptDeletion(ids []uint, env TaskScriptCleanupEnv)`；`CollectTaskScriptTargets(ids, env) *TaskScriptCleanup`（删任务**之前**调）；`(*TaskScriptCleanup).Execute(confirm *[]string) TaskScriptDeleteResult`（删任务**之后**调，持包级锁）
+- handler：`parseDeleteScriptQuery` / `beginTaskScriptCleanup` / `finishTaskScriptCleanup` / `(*TaskHandler).DeletePreview`
+- 其它：`middleware.AppTokenHasScope(c, "scripts")`、`(*TaskExecutor).HasRunningProcess(taskID)`、测试注入点 `isReparsePointFn`
+
+### 3. Contracts
+
+- **不带开关时三个入口的响应逐字节不变**；开关打开只在原响应上追加 `scripts` 字段，`message` / `count` 口径不变。
+- 路径**只**由服务端从 `tasks.command` 按 `ParseCommandExecutionPlan`（真实执行口径）解析；请求里不接受文件路径。`confirm_script_path(s)` 只能收窄：没传 = 不收窄（给不先调预览的 APP / Open API）；空串或 `[]` = 一个都不删。
+- 返回的数组恒为 `[]`；路径一律相对脚本目录、正斜杠；不回显绝对路径，也不回显底层错误原文（原文只进面板日志）。
+- 保留原因 `reason`（服务端文案是唯一来源，前端原样展示，不另写映射）：`check_failed` / `hidden_path` / `symlink` / `not_regular_file` / `managed_helper` / `subscription_managed` / `task_not_deleted` / `shared` / `referenced_in_hook` / `task_running`；执行阶段另有 `not_confirmed` / `changed` / `not_found` / `remove_failed`。执行阶段先报 `not_found` / `changed` 再做结构性复核；逐段检查出错按 `check_failed` 处理但排在 `hidden_path` 之后。
+- 共用判定：其他任务**全表加载后在 Go 里过滤**；同一文件用 `os.SameFile` 认；非 script 类的命令（托管命令、`python -m`、解析失败）按命令文本匹配（`text_match=true`，`python -m a.b` 映射到 `a/b.py`、`a/b/__main__.py` 及各级 `__init__.py`）；其他任务与订阅的前置/后置命令按 token 匹配（`referenced_in_hook`，含 `python -m` 与 node 省略扩展名的写法；钩子里先 `cd` 进子目录再 `python -m` 的，模块候选按「整路径相等或以 `/候选` 结尾」比较，偏差只朝多保留走）。共用提示按共用方人数写「删除后它 / 它们会无法运行」。
+- 只对**普通文件** `os.Remove`；删除前 Lstat + 身份复核（`SameFile` + size + modtime，Linux 另比 ctime，Windows 在 Collect 时固化文件身份）；**绝不 `RemoveAll`、不删父目录、不动 `script_versions`**。
+- 路径逐段 `Lstat`（只在字面路径与真实路径一致时才查）：任一段 `Mode()&(ModeSymlink|ModeIrregular)!=0`，或 Windows 中间目录段带 `FILE_ATTRIBUTE_REPARSE_POINT`，即判 `symlink` 保留。Go 1.23+ 起 Windows 目录联接报 `ModeIrregular` 而不是 `ModeSymlink`；末级文件不查 reparse 属性（Data Deduplication 文件是普通文件）。脚本目录本身或其上级挂在联接下时，`resolveScriptsBase` 退回 `Real=Abs`，与执行解析器口径一致。
+- 脚本目录根下的 `notify.py` / `sendNotify.js` / `task_before.sh` / `task_after.sh` / `extra.sh` 按 `managed_helper` 一律保留（面板隐式引用它们：删了会被静默替换，或全局钩子静默失效）。
+- 应用令牌带开关或调预览，必须 `AppTokenHasScope(c,"scripts")`，否则 `403` 且任务和文件都不动。以后在别的 handler 里给新开关动其它资源时照此仿写。
+- 留痕：每删一个文件写一行「`[任务删除] <用户>(<IP>) 删除任务 [ids] 时一并删除了脚本 <path>`」判 INFO；删除失败与逐段检查失败写含「失败，已保留」的行判 ERROR。`detectPanelLogLevel` **先判失败行再判成功行**，文件名、用户名里出现这些字眼时误判只会朝 ERROR 走。
+
+### 4. Validation & Error Matrix
+
+- 预览 `task_ids` 绑定失败 → `400「请求参数错误」`；去重后为空 → `400「请选择要删除的任务」`（`binding:"required"` 会放行 `[]`，必须显式判断）
+- viewer 调预览或带开关 → `403「权限不足」`；应用令牌缺 scripts → `403`，什么都不删
+- `delete_scripts` 传成字符串 → 整个请求绑定失败 `400`，任务也不删
+- `?delete_script=0` / `abc` / 空 → 走旧逻辑，响应逐字节不变
+- 单删任务不存在 → `404「任务不存在」`（带不带开关都一样；前端弹窗收到 404 会提示并刷新列表）
+- 其他任务仍引用 → `shared`；订阅目录 / 单文件订阅下载目标 → `subscription_managed`（不看 `subscription:` 标签，标签可伪造）；运行中或排队中（status 2 / 0.5，或执行器进程表里还有）→ `task_running`；确认后文件被替换 → `changed`；确认后文件消失 → `not_found`（前端按「已经不存在」计为达成）
+- 读任务快照出错 → 每个任务 `found=false`、`script_status=unresolved`、独立 note，`scripts=[]`；前端按「没能检查脚本文件」展示，不说「没有可删的脚本」
+
+### 5. Good/Base/Bad Cases
+
+- Good：选中共用同一脚本的两个任务一起删 → 合并成一项、`task_ids` 两个，可删。
+- Base：不勾选 → 请求与改动前逐字节一致（单删不带 params，批量只带 `{ids, action}`）。
+- Bad：查「其他任务」写成 `Where("id NOT IN ?", ids)`。集合为空或 nil 时 GORM 生成 `NOT IN (NULL)`，查出 0 行，共用判定静默失效 → 误删。
+- Bad：用 `extractTaskScriptPath` 解析。它只做文本处理、不查文件系统：`task a.py b.js` 返回不存在的「a.py b.js」，目录外的绝对路径原样返回。
+- Bad：把 `plan.FullPath` 当字面路径。它已经 EvalSymlinks，删软链接会删到链接目标。
+- Bad：只看 `ModeSymlink` 判断软链接。Windows 目录联接会穿过去，删到脚本目录外。
+- Bad：对整条错误文本做密钥替换。误填的短 token 会把「HTTP 404」改成「HTTP ***0***」；telegram 只替换 `/bot` 之后那一段。
+
+### 6. Tests Required
+
+见 `server/handler/task_delete_scripts_test.go`、`server/service/task_script_cleanup_test.go`、`task_script_target_test.go`、`task_script_cleanup_linux_test.go`、`task_script_cleanup_windows_test.go`、`panel_log_test.go`：
+
+- 兼容（**先写，并要求在改动前的代码上就是绿的**）：`TestTaskDeleteGoldenWithoutScriptSwitch` / `TestTaskDeleteGoldenNotFound` / `TestTaskBatchDeleteGoldenWithoutScriptSwitch` / `TestTaskBatchDeleteEndpointGoldenWithoutScriptSwitch` / `TestTaskBatchNonDeleteActionIgnoresScriptSwitch` / `TestTaskDeleteGoldenAppTokenWithoutScriptSwitch`（逐字节比较响应体；覆盖 `delete_script=0/abc/空`、只带 confirm、`delete_scripts:false`、`confirm_script_paths:null`）
+- 接口：`TestTaskDeleteWithScriptSwitchDeletesScript` / `TestTaskBatchDeleteScriptsMergesAndKeepsShared` / `TestTaskDeleteScriptsConfirmNarrowing` / `TestTaskDeleteScriptsNestedArraysNeverNull` / `TestTaskDeleteScriptsAppScopeMatrix` / `TestTaskDeletePreviewValidation` / `TestTaskDeletePreviewMatchesExecution` / `TestTaskBatchDeleteScriptsRejectsNonBoolSwitch`
+- 共用判定：`TestCollectOtherTasksNeverUsesNotIn`（行为 + AST 双层，**最重要的一条**）/ `TestTaskScriptPreviewSharedDetection` / `TestTaskScriptPreviewSharedDetailText` / `TestTaskScriptPreviewModuleSharedDetection` / `TestTaskScriptPreviewBrokenCommandSharedDetection` / `TestTaskScriptPreviewHookReferences`
+- 结构性保护：`TestTaskScriptPreviewStructuralProtections` / `TestTaskScriptPreviewSymlinkKept` / `TestTaskScriptCleanupSymlinkedScriptsDirStillDeletable` / `TestPathHasLinkSegment` / `TestTaskScriptReparsePointSegmentsViaInjectedCheck` / `TestTaskScriptLinkCheckFailureIsLogged`；linux：`TestTaskScriptAliasAbsolutePathKeptAsSymlink` / `TestTaskScriptHintPathUnderSymlinkedScriptsDir`；windows（`mklink /J` 与 `FSCTL_SET_REPARSE_POINT`，不许 skip）：`TestTaskScriptJunctionKept` / `TestTaskScriptJunctionAboveScriptsDir` / `TestTaskScriptDedupReparseFileDeletable`
+- 订阅与 helper：`TestTaskScriptPreviewGitSubscription` / `TestTaskScriptPreviewGitSubscriptionAtScriptsRoot` / `TestTaskScriptPreviewSingleFileSubscriptionAndLabels` / `TestSingleFileSubscriptionDestPathMatchesPull` / `TestTaskScriptPreviewManagedHelpersAndWarnings` / `TestTaskScriptPreviewGlobalHooksKept`
+- 状态、文案与日志：`TestTaskScriptPreviewRunningStates` / `TestTaskExecutorHasRunningProcess` / `TestTaskScriptPreviewSnapshotError` / `TestTaskScriptPreviewReasonPriority` / `TestTaskScriptPreviewTaskStatusesAndNotes` / `TestDetectPanelLogLevelForScriptDeletion`
+- 执行阶段：`TestTaskScriptExecuteDeletesOnlyTheFile` / `TestTaskScriptExecuteConfirmNarrowing` / `TestTaskScriptExecuteDetectsChangesAfterCollect` / `TestTaskScriptExecuteSameSizeReplacementChanged` / `TestTaskScriptExecuteSymlinkReplacementChanged` / `TestTaskScriptExecuteRechecksReferencesAfterCollect` / `TestTaskScriptExecuteConcurrentOnlyOneRemoves`
+- 解析：`TestParseCommandExecutionPlanRecordsScriptToken` / `TestResolveTaskScriptTargetClassifiesCommands`（顺带钉住解析器的错误文案）/ `TestResolveTaskScriptTargetTextCandidatesForNonScriptKinds` / `TestResolveTaskScriptTargetSymlink*`
+- 修改后至少运行：
+
+```bash
+cd server
+go test ./service ./handler -run "TestTaskScript|TestTaskDelete|TestTaskBatch|TestCollectOtherTasks|TestPathHasLinkSegment|TestResolveTaskScriptTarget|TestParseCommandExecutionPlanRecordsScriptToken|TestTaskExecutorHasRunningProcess|TestSingleFileSubscriptionDestPath|TestDetectPanelLogLevel" -count=1
+go test ./...
+```
+
+- windows / linux 专属用例在另一平台不参与编译（CI 是 ubuntu）：改 `pathHasLinkSegment` / `isReparsePoint` 时 Windows 本机要跑一遍；软链接用例交叉编译到 linux 后在 WSL 里跑，要先 `cd` 到 `server/service` 源码目录，否则读相对路径的用例会假红。
+- Web 没有单测：`TaskDeleteDialog.vue` 靠 `npm run build`（vue-tsc）加浏览器实测，覆盖单删、批量、预览失败降级、移动端全屏、观察者无入口、快速关开不串、文件已不存在、任务已不存在；演示站判定改动后要与服务端逐条对拍。
+
+> **突变验证**：把「其他任务」的查询改成 `Where("id NOT IN ?", ids)`，`TestCollectOtherTasksNeverUsesNotIn` 必须变红；把 `pathHasLinkSegment` 短路成 `return false, nil`，`TestPathHasLinkSegment` 与 `TestTaskScriptReparsePointSegmentsViaInjectedCheck` 在 Linux 上也必须变红（`TestTaskScriptJunctionKept` 只在 Windows 上兜）。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```go
+// 错误：ids 为空或 nil 时生成 NOT IN (NULL)，查出 0 行，共用判定静默失效。
+database.DB.Where("id NOT IN ?", ids).Find(&others)
+```
+
+```go
+// 错误：FullPath 已解析软链接；RemoveAll 还会把「名字像脚本的目录」整个删掉。
+os.RemoveAll(plan.FullPath)
+```
+
+#### Correct
+
+```go
+// 正确：全表加载，在 Go 里剔除本次范围内的任务。
+database.DB.Select("id", "name", "command", "status", "task_before", "task_after").Find(&all)
+```
+
+```go
+// 正确：删除前 Lstat 复核是普通文件且身份未变，只删这一个文件。
+if li, err := os.Lstat(literalAbs); err == nil && li.Mode().IsRegular() && sameFileIdentity(li, collected) {
+    err = os.Remove(realPath)
+}
 ```

@@ -51,6 +51,12 @@ type CommandExecutionPlan struct {
 	Mode               commandExecutionMode
 	EnvName            string
 	AccountSpec        string
+
+	// ScriptToken 是命令里被认作脚本路径的那段原始文本（多个 token 按空格拼回），如 "./a.py"、"demo folder/my script.py"。
+	// 执行链路不读它。它存在的原因：FullPath 已经被 ResolveWithinBase 用 EvalSymlinks 解析过，
+	// 拿不到用户写的字面路径；而「删除任务时一并删除脚本」必须对字面路径做 Lstat 才能认出软链接
+	// （见 task_script_target.go）。只在解析出脚本文件时赋值，托管命令与 python -m 为空串。
+	ScriptToken string
 }
 
 type taskAccountSelection struct {
@@ -189,6 +195,7 @@ optionsDone:
 	}
 
 	plan.FullPath = fullPath
+	plan.ScriptToken = strings.Join(taskShellTokens[:pathTokenCount], " ")
 	plan.WorkDir = filepath.Dir(fullPath)
 	plan.ScriptArgs = scriptArgs
 	remainder := taskShellTokens[pathTokenCount:]
@@ -283,6 +290,7 @@ func parseInterpreterCommandPlan(interpreter string, tokens []string, scriptsDir
 	return &CommandExecutionPlan{
 		Interpreter: interpreter,
 		FullPath:    fullPath,
+		ScriptToken: strings.Join(tokens[:pathTokenCount], " "),
 		WorkDir:     filepath.Dir(fullPath),
 		ScriptArgs:  append([]string{}, tokens[pathTokenCount:]...),
 		Mode:        commandModeNormal,

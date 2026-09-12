@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -15,9 +16,11 @@ import (
 	"net/http"
 	"net/smtp"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"daidai-panel/database"
 	"daidai-panel/model"
@@ -564,6 +567,28 @@ func sendTelegram(cfg map[string]string, title, content string) error {
 			}
 		}
 		if err := httpPostCheckedWithClient(client, apiURL, body, nil, checkTelegramResult); err != nil {
+			var uerr *url.Error
+			if errors.As(err, &uerr) {
+				// apiURL 的路径里带着 bot token（/bot<token>/sendMessage）。网络错误是 *url.Error，原样返回会把
+				// 整条 URL 连同 token 带进测试按钮回显、/notifications/send 响应与日志（#123）。
+				// 剥掉 URL 之后只剩「dial tcp …」「unsupported protocol scheme ""」这类原因，用户看不出是哪个请求、
+				// 该改哪个输入框，所以补一层前缀：只留 scheme://host（api_host 可能是带鉴权路径的反代地址）。
+				where := redactProxyURL(apiHost)
+				if where == redactedUnparsableURL {
+					// 占位句自带括号，直接套进前缀会变成「（（地址无法解析））」；点名 api_host，用户才知道该改哪里。
+					where = "api_host 地址无法解析"
+				}
+				return fmt.Errorf("请求 Telegram API（%s）失败: %w", where, stripRequestURL(err))
+			}
+			// 业务错误（checkTelegramResult）与 HTTP 状态错误不加前缀。但 HTTP≥400 的正文可能是正向代理的错误页，
+			// 里面回显着带 bot token 的完整请求 URL（api_host 为 http:// 且配了代理时），所以要脱敏 ——
+			// 只替换「/bot」后面那段，不碰状态码和业务文案（理由见 redactTelegramBotPath）。
+			// 自建网关或反代的业务错误 description 也可能回显请求路径（HTTP 200，走不到 HTTP≥400 这条），
+			// 所以业务错误同样要脱敏，不能收窄成只处理 HTTP 状态错误。
+			// 文本没变就原样返回，不重新包一层。
+			if redacted := redactTelegramBotPath(err.Error(), token); redacted != err.Error() {
+				return errors.New(redacted)
+			}
 			return err
 		}
 	}
@@ -697,22 +722,42 @@ func sendWecomAppWithContext(cfg map[string]string, title, content string, conte
 		return fmt.Errorf("企业微信应用 agent_id 无效")
 	}
 
+	// 渠道级正向代理（#123）。必须写成 cfg["proxy"] 字面量：schema 绑定用例的 AST 扫描只认这种写法，
+	// 挪进参数不叫 cfg 的 helper 就会从扫描器视野里消失。
+	proxy := strings.TrimSpace(cfg["proxy"])
+	if proxy != "" {
+		// 必须在发出任何请求之前显式失败：NewHTTPClientWithProxy 遇到解析失败的地址（最常见的是漏写 scheme 的
+		// 127.0.0.1:7890）会静默回落进程环境代理或直连，可信 IP 场景下表现为一个没有任何提示的 60020。
+		// 口径与系统设置 proxy_url 相同。存量记录、备份恢复与青龙导入进来的值不经过保存期校验，全靠这里兜底。
+		// 错误信息不回显地址本身：代理地址可能带账号密码。
+		if _, err := model.NormalizeSystemConfigValue("proxy_url", proxy); err != nil {
+			return fmt.Errorf("企业微信应用代理地址无效：%v（请填写完整地址，如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080）", err)
+		}
+	}
+
 	tokenURL := fmt.Sprintf(
 		"%s?corpid=%s&corpsecret=%s",
 		resolveWecomAppEndpoint(cfg, wecomAppTokenURL, "/cgi-bin/gettoken"),
 		url.QueryEscape(corpID),
 		url.QueryEscape(secret),
 	)
-	client := NewHTTPClient(10 * time.Second)
+	// 取 token 与发消息共用这一个 client，所以两次请求都经过渠道代理。渠道代理为空时回落系统设置 proxy_url，
+	// 再空走进程环境变量 HTTP(S)_PROXY / 直连 —— 与 telegram 同一套优先级（见 http_client.go）。
+	// base_url 与 proxy 可以叠加：先按 base_url 拼出地址，再经 proxy 发出。
+	client := NewHTTPClientWithProxy(10*time.Second, proxy)
 	tokenResp, err := client.Get(tokenURL)
 	if err != nil {
-		return fmt.Errorf("获取企业微信应用 access_token 失败: %w", err)
+		// tokenURL 的 query 里带着 corpsecret，不能让 *url.Error 把整条 URL 带进错误信息。
+		return fmt.Errorf("获取企业微信应用 access_token 失败: %w", stripRequestURL(err))
 	}
 	defer tokenResp.Body.Close()
 
 	tokenBody, _ := io.ReadAll(tokenResp.Body)
 	if tokenResp.StatusCode >= 400 {
-		return fmt.Errorf("获取企业微信应用 access_token 失败: HTTP %d: %s", tokenResp.StatusCode, strings.TrimSpace(string(tokenBody)))
+		// 正文可能是正向代理的错误页（Squid 默认模板带 %U），里面回显着带 corpsecret 的完整请求 URL。
+		// stripRequestURL 只管得到 *url.Error，这里的正文要单独脱敏。
+		return fmt.Errorf("获取企业微信应用 access_token 失败: HTTP %d: %s", tokenResp.StatusCode,
+			redactSecrets(strings.TrimSpace(string(tokenBody)), secret))
 	}
 
 	var tokenPayload struct {
@@ -724,7 +769,15 @@ func sendWecomAppWithContext(cfg map[string]string, title, content string, conte
 		return fmt.Errorf("解析企业微信应用 access_token 响应失败: %w", err)
 	}
 	if tokenPayload.ErrCode != 0 {
-		return fmt.Errorf("获取企业微信应用 access_token 失败: %s", tokenPayload.ErrMsg)
+		// 60020 时追加「企业可信 IP」排查提示，其它 errcode 提示为空串、原有文案一字不变。
+		// errmsg 也按 corpsecret 脱敏：企业微信官方的 errmsg 不回显请求参数，但 base_url 指向的自建网关或反代
+		// 可能把带 corpsecret 的请求行写进 errmsg（HTTP 200，走不到上面 HTTP≥400 的脱敏）。
+		// secret 是正常长度时官方 errmsg 里没有它、也远不到截断长度，文案原样保留（TestSendWecomAppReturnsEnterpriseError 逐字锁住）。
+		// 已知取舍：secret 误填成 1–2 个字符这类极短值时，errmsg 里相同的字符也会被换成 ***（如 secret 为 "in" 时
+		// 「invalid credential」变成「***valid credential」）。仍保留整条替换、不改成只锚 corpsecret= 后面那段：
+		// 网关以别的形态回显密钥时锚定就兜不住了，这里宁可改坏极端配置下的文案，也不削弱脱敏。
+		return fmt.Errorf("获取企业微信应用 access_token 失败: %s%s", redactSecrets(tokenPayload.ErrMsg, secret),
+			wecomAppTrustedIPHint(tokenPayload.ErrCode, proxy, cfg["base_url"]))
 	}
 	if strings.TrimSpace(tokenPayload.AccessToken) == "" {
 		return fmt.Errorf("企业微信应用 access_token 为空")
@@ -848,19 +901,24 @@ func sendWecomAppWithContext(cfg map[string]string, title, content string, conte
 
 	req, err := http.NewRequest(http.MethodPost, sendURL, bytes.NewReader(data))
 	if err != nil {
-		return err
+		// 解析失败同样是 *url.Error，带着含 access_token 的完整 URL。
+		return stripRequestURL(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	sendResp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("发送企业微信应用消息失败: %w", err)
+		// sendURL 的 query 里带着 access_token，不能让 *url.Error 把整条 URL 带进错误信息。
+		return fmt.Errorf("发送企业微信应用消息失败: %w", stripRequestURL(err))
 	}
 	defer sendResp.Body.Close()
 
 	sendBody, _ := io.ReadAll(sendResp.Body)
 	if sendResp.StatusCode >= 400 {
-		return fmt.Errorf("发送企业微信应用消息失败: HTTP %d: %s", sendResp.StatusCode, strings.TrimSpace(string(sendBody)))
+		// 同取 token：代理错误页回显的是带 access_token 的 message/send 地址。
+		// 这一步的 URL 里没有 secret，顺带把它也脱掉没有代价（反代服务器的错误页回显什么不由我们决定）。
+		return fmt.Errorf("发送企业微信应用消息失败: HTTP %d: %s", sendResp.StatusCode,
+			redactSecrets(strings.TrimSpace(string(sendBody)), tokenPayload.AccessToken, secret))
 	}
 
 	var sendPayload struct {
@@ -888,13 +946,215 @@ func sendWecomAppWithContext(cfg map[string]string, title, content string, conte
 		if v := strings.TrimSpace(sendPayload.UnlicensedUser); v != "" {
 			details = append(details, "unlicenseduser="+v)
 		}
+		// 60020 时追加「企业可信 IP」排查提示（两个分支都挂），其它 errcode 提示为空串、原有文案一字不变。
+		hint := wecomAppTrustedIPHint(sendPayload.ErrCode, proxy, cfg["base_url"])
+		// errmsg 脱敏的理由同取 token。这一步的请求行带的是 access_token，secret 顺带也脱掉（同 HTTP≥400 分支）。
+		errMsg := redactSecrets(sendPayload.ErrMsg, tokenPayload.AccessToken, secret)
 		if len(details) > 0 {
-			return fmt.Errorf("发送企业微信应用消息失败: %s (%s)", sendPayload.ErrMsg, strings.Join(details, ", "))
+			return fmt.Errorf("发送企业微信应用消息失败: %s (%s)%s", errMsg, strings.Join(details, ", "), hint)
 		}
-		return fmt.Errorf("发送企业微信应用消息失败: %s", sendPayload.ErrMsg)
+		return fmt.Errorf("发送企业微信应用消息失败: %s%s", errMsg, hint)
 	}
 
 	return nil
+}
+
+// stripRequestURL 去掉 *url.Error 里的完整请求 URL，只留底层原因（#123）。
+//
+// 为什么需要：client.Get / client.Do / http.NewRequest 失败时返回 *url.Error，其 Error() 形如
+// `Get "<完整 URL>": <原因>`。企业微信应用 gettoken 的 query 带 corpsecret、message/send 带 access_token，
+// telegram 的路径带 bot token。这段文字会流到测试按钮回显、/notifications/send 的响应
+// （operator 角色与 Open API 可见，而渠道配置本身只有 admin 能读）、托管脚本日志与面板日志。
+//
+// 剩下的原因只含主机与端口，例如 `proxyconnect tcp: dial tcp 127.0.0.1:7890: connect: connection refused`，
+// 代理地址里的账号密码不会出现在里面。只减少信息、不改变成败。
+//
+// 应当作用在原始错误上、再用 fmt.Errorf 包装。若传入的是已经包过一层的错误，errors.As 仍能找到里面的
+// *url.Error，但返回的只是它的底层原因，外层前缀会一起丢掉（依然不含 URL）。
+func stripRequestURL(err error) error {
+	var uerr *url.Error
+	if !errors.As(err, &uerr) {
+		return err
+	}
+	if uerr.Err == nil {
+		return fmt.Errorf("%s 请求失败", uerr.Op)
+	}
+	return uerr.Err
+}
+
+// notifyErrorBodyEchoLimit 是错误信息里回显响应正文的上限（字节）。
+// 代理 / 反代的错误页往往是整页 HTML，原样拼进错误会把测试按钮回显和日志撑得很长；512 字节足够看清状态与原因。
+const notifyErrorBodyEchoLimit = 512
+
+// redactSecrets 把 s 里出现的密钥换成 ***，再截断到 notifyErrorBodyEchoLimit 字节（#123）。
+//
+// 为什么需要：HTTP≥400 时会把响应正文拼进错误信息，而正向代理的错误页会回显完整请求 URL ——
+// 企业微信应用 gettoken 带 corpsecret、message/send 带 access_token，telegram 的路径带 bot token。
+// stripRequestURL 只处理 *url.Error，管不到这条路。https 目标走 CONNECT，Go 只取状态行，不受影响。
+// 企业微信应用 errcode 分支的 errmsg 也走这里：自建网关或反代可能把请求行写进 errmsg。
+// telegram 不直接用它，见 redactTelegramBotPath。
+//
+// 每个密钥按 secretForms 列出的四种形态替换。先去掉首尾空白再求形态：转义是逐字符的，核心部分的转义一定是
+// 整串转义的子串，所以无论两端的空白被转成了什么，核心都会被替换掉。空密钥必须跳过：ReplaceAll 的 old 为空串时
+// 会在每个字符之间都插入 ***。
+//
+// 两个约束决定了顺序：
+//   - 先长后短：一个密钥是另一个的子串时，先替换短的会把长的拆开，留下一截明文；
+//   - 先替换再截断：先截断的话，恰好跨在截断点上的密钥只剩前半截，匹配不上，前半截原样漏出去。
+//
+// 截断退到 UTF-8 字符边界，不留半个汉字。不传密钥时只做截断。
+func redactSecrets(s string, secrets ...string) string {
+	var cores []string
+	for _, secret := range secrets {
+		if core := strings.TrimSpace(secret); core != "" {
+			cores = append(cores, core)
+		}
+	}
+	for _, form := range secretForms(cores...) {
+		s = strings.ReplaceAll(s, form, "***")
+	}
+
+	if len(s) <= notifyErrorBodyEchoLimit {
+		return s
+	}
+	cut := notifyErrorBodyEchoLimit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…（已截断）"
+}
+
+// secretForms 列出每个密钥在文本里可能出现的形态，去重后先长后短（理由见 redactSecrets）。
+//
+// 形态有四种：
+//   - 原文；
+//   - url.QueryEscape：query 里的写法（企业微信的 corpsecret、access_token）；
+//   - EscapedPath：Go 写请求行时路径里的写法（encodePath，不转义 / ; ,），telegram 的 /bot<token> 就以这种形态出现在请求行里；
+//   - url.PathEscape：按段转义的回显（/ ; , 也会被转义）。它与 EscapedPath 恰好在这几个字符上不同，
+//     token 同时含这类字符和需要转义的字符（如 "123:ab/c d"）时，只有 EscapedPath 对得上请求行，所以两种都要。
+//
+// 只转义、不 TrimSpace：传原文还是去掉首尾空白的核心，由调用方决定。空串跳过，理由同 redactSecrets。
+func secretForms(secrets ...string) []string {
+	var forms []string
+	seen := make(map[string]bool)
+	for _, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		for _, form := range []string{secret, url.QueryEscape(secret), (&url.URL{Path: secret}).EscapedPath(), url.PathEscape(secret)} {
+			if !seen[form] {
+				seen[form] = true
+				forms = append(forms, form)
+			}
+		}
+	}
+	sort.SliceStable(forms, func(i, j int) bool { return len(forms[i]) > len(forms[j]) })
+	return forms
+}
+
+// redactTelegramBotPath 把 s 里「/bot」后面紧跟的 bot token 换成 ***，再截断到 notifyErrorBodyEchoLimit 字节（#123）。
+//
+// 为什么不像企业微信那样对整条文本做 redactSecrets：token 被误填成 "4"、"Not" 这种短值时，整条替换会把
+// 「HTTP 404」改成「HTTP ***0***」、把 description 改成「*** Found」，状态码和业务文案都看不懂了。
+// bot token 只出现在请求路径 /bot<token>/sendMessage 里，所以只替换跟在「/bot」后面的那段，别处不碰。
+//
+// 覆盖两类回显：
+//   - 「/bot」原样、后面的 token 是 secretForms 四种形态之一：请求行原样回显（EscapedPath），或按 query、
+//     按段转义了路径（如 "/bot123456%3Atok-xyz"）。替换成 /bot***。
+//   - 「/bot」连同 token 整串又被转义了一遍：拦截页把整条原 URL 转义后塞进 query 参数或 mailto 正文时，
+//     「/bot」变成了 %2Fbot，上一类锚不住。所以再对 "/bot"+token 整串求形态，替换时保留该形态里「/bot」的写法
+//     （原文、EscapedPath 是 /bot，QueryEscape、PathEscape 是 %2Fbot），后接 ***。
+//
+// 仍不覆盖：token 脱离「/bot」单独回显（例如 description 里只写了 token）时不脱敏。这是锚定「/bot」换来的代价，
+// 官方 Bot API 不会这样回显。
+//
+// apiURL 拼的是没去空白的 token，所以原文和去掉首尾空白的核心都要求形态：开头带空白时请求行里是 /bot%20<核心>，
+// 只按核心匹配的话「/bot」锚不住，整段原样漏出去。核心那一组兜住「结尾空白被写成别的样子（如 +）」和
+// 「两端空白在回显里被整个去掉」；开头空白被写成 + 等其它字符时，夹在 /bot 与核心之间，锚不住。
+func redactTelegramBotPath(s, token string) string {
+	for _, form := range secretForms(token, strings.TrimSpace(token)) {
+		s = strings.ReplaceAll(s, "/bot"+form, "/bot***")
+	}
+	// 整串形态。token 全是空白时核心为空，不能拼出光秃秃的 "/bot" 去替换：那样每个 /bot 后面都会被插一个 ***。
+	var whole []string
+	for _, t := range []string{token, strings.TrimSpace(token)} {
+		if t != "" {
+			whole = append(whole, "/bot"+t)
+		}
+	}
+	for _, form := range secretForms(whole...) {
+		prefix := "/bot"
+		if strings.HasPrefix(form, "%2Fbot") {
+			prefix = "%2Fbot"
+		}
+		s = strings.ReplaceAll(s, form, prefix+"***")
+	}
+	return redactSecrets(s)
+}
+
+// wecomAppTrustedIPErrCode 是企业微信「企业可信 IP」拦截的错误码：
+// 2022-06 之后新建的自建应用，请求出口 IP 不在该应用的「企业可信 IP」名单内时返回它（#123）。
+const wecomAppTrustedIPErrCode = 60020
+
+// wecomAppTrustedIPHint 在 errcode 60020 时给出排查提示，其它错误码返回空串。
+//
+// 文案刻意不断言请求实际走了哪条路：面板没配代理时请求仍可能走进程环境变量 HTTP(S)_PROXY；
+// base_url 可能指向反代服务器（此时企业微信看到的是它的出口 IP），也可能填的就是官方地址（根本没有反代）。
+// 所以只罗列本次生效的配置，实际出口 IP 以 errmsg 里的 from ip 为准。
+//
+// 只收字符串、不收 cfg：让所有 cfg 读取都留在 sendWecomAppWithContext 里，
+// schema 绑定用例（AST 只认名为 cfg 的标识符）才能完整看见。
+// 取 token 与发消息两处都挂：gettoken 是否也会返回 60020 没有找到官方原文，两处都挂没有副作用。
+func wecomAppTrustedIPHint(errCode int, channelProxy, baseURL string) string {
+	if errCode != wecomAppTrustedIPErrCode {
+		return ""
+	}
+
+	var route []string
+	if p := strings.TrimSpace(channelProxy); p != "" {
+		route = append(route, "渠道代理 "+redactProxyURL(p))
+	} else if p := strings.TrimSpace(model.GetRegisteredConfig("proxy_url")); p != "" {
+		route = append(route, "系统代理 "+redactProxyURL(p))
+	} else {
+		route = append(route, "未配置面板代理（可能直连，也可能走进程环境变量 HTTP(S)_PROXY）")
+	}
+	if b := strings.TrimSpace(baseURL); b != "" {
+		if isWecomAppOfficialHost(b) {
+			// 用户照 placeholder「留空使用 https://qyapi.weixin.qq.com」把官方地址原样填进来时，请求直达企业微信，
+			// 根本没有反代；再说「经反代转发」会把排查引向一台不存在的服务器。
+			route = append(route, "base_url 为企业微信官方地址（未经反代）")
+		} else {
+			// 只说「若」：面板无从知道这个地址背后是不是真的反代服务器，实际出口以 from ip 为准。
+			route = append(route, "经 base_url 反代 "+redactProxyURL(b)+" 转发（若该地址是反代服务器，企业微信看到的是它的出口 IP）")
+		}
+	}
+
+	return "；企业微信返回 60020：出口 IP 不在该应用的「企业可信 IP」名单内，实际出口 IP 以 errmsg 里的 from ip 为准。" +
+		"请在管理后台「应用管理 → 本应用 → 企业可信 IP」加入该 IP，或在本渠道填写「代理地址」经可信服务器转发。本次配置：" +
+		strings.Join(route, "；")
+}
+
+// wecomAppOfficialHost 是企业微信 API 的官方主机名，与 wecomAppTokenURL / wecomAppSendURL 的默认值一致。
+// 单独写成常量而不是从那两个变量里解析：测试会把它们改指 loopback 源站。
+const wecomAppOfficialHost = "qyapi.weixin.qq.com"
+
+// isWecomAppOfficialHost 判断 base_url 是否就是企业微信官方地址（主机名不区分大小写，端口与路径不管）。
+func isWecomAppOfficialHost(baseURL string) bool {
+	u, err := url.Parse(baseURL)
+	return err == nil && strings.EqualFold(u.Hostname(), wecomAppOfficialHost)
+}
+
+// redactedUnparsableURL 是 redactProxyURL 解析不了时的占位句。调用方要改写它时按这个常量比较，别抄字面量。
+const redactedUnparsableURL = "（地址无法解析）"
+
+// redactProxyURL 只保留 scheme://host，丢掉 userinfo、路径与 query：代理地址可能带账号密码，
+// 反代地址的路径里也可能藏着鉴权片段。解析不了时不回显原文，免得把整串（含密码）原样吐出来。
+func redactProxyURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return redactedUnparsableURL
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 func sendBark(cfg map[string]string, title, content string) error {

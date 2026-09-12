@@ -242,6 +242,19 @@ func (e *TaskExecutor) StopTask(taskID uint) bool {
 	return false
 }
 
+// HasRunningProcess 判断执行器进程表里是否还登记着这个任务的进程。
+// 给「删除任务时一并删除脚本」兜底：库里 status 不一定是运行中（例如禁用了一个正在跑的任务，
+// status 已经改写，但进程还在），这时删掉脚本会让它这次的重试找不到文件。
+// 只读不改，接收者为 nil（测试或启动早期执行器还没建好）时返回 false。
+func (e *TaskExecutor) HasRunningProcess(taskID uint) bool {
+	if e == nil {
+		return false
+	}
+	e.processLock.Lock()
+	defer e.processLock.Unlock()
+	return len(e.runningProcesses[taskID]) > 0
+}
+
 func (e *TaskExecutor) StopAllRunningTasks() int {
 	if e == nil {
 		return 0

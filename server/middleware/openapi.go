@@ -44,6 +44,24 @@ func loadOpenAppByUsername(username string) (*model.OpenApp, error) {
 	return &app, nil
 }
 
+// AppTokenHasScope 判断当前请求是否具备某个「额外」scope，给 handler 内部按需校验用。
+//
+// 适用场景：路由组上的 OpenAPIAccess 只校验了一个 scope（例如 tasks），但某个可选开关会顺带动到
+// 另一类资源（例如删除任务时一并删除脚本，动的是 scripts 的文件）。RequireRole 对应用令牌只看
+// app_scope_authorized、不看角色，所以这类开关必须在 handler 里再调一次本函数，否则只有 tasks
+// 权限的应用就凭空获得了删脚本的能力。仿写新开关时别漏了这一步。
+//
+// 口径：用户令牌恒为 true（用户的权限由 RequireRole 按角色控制）；应用令牌要求应用存在、已启用，
+// 且 scopes 含 scope 或 *，与 OpenAPIAccess 用的是同一套判定。
+func AppTokenHasScope(c *gin.Context, scope string) bool {
+	username := c.GetString("username")
+	if !isAppToken(username, c.GetString("role")) {
+		return true
+	}
+	app, err := loadOpenAppByUsername(username)
+	return err == nil && app.Enabled && appScopeAllowed(app.Scopes, scope)
+}
+
 func RequireUserToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		username := c.GetString("username")

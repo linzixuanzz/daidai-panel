@@ -13,6 +13,7 @@ import {
   buildSystemBadges,
   buildSystemStats,
   db,
+  executeDemoTaskScriptDeletion,
   filterEnvs,
   filterLogs,
   filterTasks,
@@ -25,6 +26,7 @@ import {
   nextRunTimes,
   nowIso,
   paginate,
+  planDemoTaskScriptDeletion,
   reorderEnv,
   reorderTask,
   saveScriptContent,
@@ -34,6 +36,7 @@ import {
   toLogDict,
   toTaskDict,
 } from './db'
+import type { DemoTaskScriptDeleteResult } from './db'
 import { DEMO_PANEL_VERSION, demoPanelSettings } from './shortcuts'
 import { cancelDemoTaskRun, startDemoTaskRun } from './taskRuns'
 import type { DemoOpenApp, DemoTask, DemoTaskLog, DemoUser } from './types'
@@ -217,6 +220,21 @@ function notFound(message: string): never {
   throw new AxiosError(message, 'ERR_BAD_REQUEST', undefined, null, {
     status: 404,
     statusText: 'Not Found',
+    data: { error: message },
+    headers: {},
+    config: { headers: {} },
+  } as unknown as AxiosResponse)
+}
+
+/**
+ * 需要 400 语义时用它，形状同 notFound（data 是 { error }）。
+ * 只给「服务端在同一处也会回 400」的地方用，文案逐字抄服务端；
+ * 别拿它顶替 blocked() —— 那是「演示环境做不了」，会额外弹一条 warning。
+ */
+function badRequest(message: string): never {
+  throw new AxiosError(message, 'ERR_BAD_REQUEST', undefined, null, {
+    status: 400,
+    statusText: 'Bad Request',
     data: { error: message },
     headers: {},
     config: { headers: {} },
@@ -1024,6 +1042,66 @@ route('POST', '/tasks/import', (ctx) => {
 })
 
 // ---- 批量操作（静态路径必须先于 /tasks/:id 系列声明才不会被抢） ------------
+
+// ---- 删除任务时一并删除脚本（issue #124） ----------------------------------
+// 判定逻辑与文案都在 db.ts 的 planDemoTaskScriptDeletion / executeDemoTaskScriptDeletion
+// （抄 server/service/task_script_cleanup.go）。这里只负责读开关、排好「plan → 删任务 → execute」的顺序。
+// 三个删除入口不带开关时，响应与改动前一模一样；带开关时只在原响应上追加 scripts 字段。
+// 演示站没有应用令牌，服务端那条「应用令牌缺 scripts 权限 → 403、什么都不删」不模拟。
+
+/** Go strconv.ParseBool 认作 true 的全部写法 */
+const PARSE_BOOL_TRUE_VALUES = ['1', 't', 'T', 'TRUE', 'true', 'True']
+
+/**
+ * DELETE /tasks/:id 的删脚本开关，抄服务端 parseDeleteScriptQuery：
+ *   - delete_script 按 ParseBool 判定，假值与非法值（=0、=abc、=）一律当「没开」，不报 400；
+ *   - confirm_script_path 用「键在不在」区分没传与传了空串（服务端用 c.GetQuery）。
+ *     传了空串 = 一个都不删。normalizeRequest 会丢掉值为 undefined / null 的 axios params，
+ *     这与真实 axios 不把它们拼进查询串的行为一致，所以前端不传 confirm 时这里读到的就是「没传」。
+ */
+function readSingleDeleteScript(ctx: DemoRequestContext): { on: boolean; confirm: string[] | null } {
+  const on = PARSE_BOOL_TRUE_VALUES.includes(ctx.params['delete_script'] ?? '')
+  const confirm = 'confirm_script_path' in ctx.params ? [ctx.params['confirm_script_path'] ?? ''] : null
+  return { on, confirm }
+}
+
+/**
+ * 两个批量删除入口的删脚本开关，抄服务端的请求结构体：
+ *   - delete_scripts 是 JSON bool，只有 === true 才生效；
+ *   - confirm_script_paths 是 *[]string：没传或 null = 不收窄，数组 = 只删列表里的路径（[] = 一个都不删）。
+ * 服务端对类型不对的值（比如 delete_scripts: "true"）会让整个请求绑定失败 → 400、任务也不删；
+ * 演示站不复刻绑定错误：delete_scripts 不是 true 就当没开，confirm_script_paths 不是数组时按 [] 处理
+ * （宁可一个都不删，也不要把它当成「没传」去删全部可删项）。
+ */
+function readBatchDeleteScripts(ctx: DemoRequestContext): { on: boolean; confirm: string[] | null } {
+  const body = bodyObject(ctx)
+  const raw = body['confirm_script_paths']
+  let confirm: string[] | null = null
+  if (Array.isArray(raw)) {
+    confirm = raw.filter((item): item is string => typeof item === 'string')
+  } else if (raw !== undefined && raw !== null) {
+    confirm = []
+  }
+  return { on: body['delete_scripts'] === true, confirm }
+}
+
+/**
+ * 删除任务前预览「脚本会怎么处理」。
+ * ⚠️ 必须铺：不铺会落进 createFallbackBody 的 {data:[]}，前端靠 checked 哨兵判成「没查成」，
+ *    弹窗只会显示「没能检查脚本文件」，演示站里这个功能等于不可用。
+ * 静态路径，写在 /tasks/:id 系列之前（本文件的约定，见上面批量区块的注释）。
+ */
+route('POST', '/tasks/delete-preview', (ctx) => {
+  const raw = bodyObject(ctx)['task_ids']
+  // 服务端是 []uint + binding:"required"：缺字段、null、元素不是非负整数都会绑定失败
+  if (!Array.isArray(raw) || !raw.every((value) => typeof value === 'number' && Number.isInteger(value) && value >= 0)) {
+    return badRequest('请求参数错误')
+  }
+  // binding:"required" 会放行 []，服务端要显式判空（去重不会把非空数组变空，所以这里直接判长度是等价的）
+  if (raw.length === 0) return badRequest('请选择要删除的任务')
+  return { data: planDemoTaskScriptDeletion(raw as number[]).preview }
+})
+
 route('PUT', '/tasks/batch/enable', (ctx) => {
   const ids = idList(ctx, 'task_ids', 'ids')
   for (const task of db().tasks) {
@@ -1040,11 +1118,18 @@ route('PUT', '/tasks/batch/disable', (ctx) => {
   return { message: `已禁用 ${ids.length} 个任务`, success_count: ids.length }
 })
 
+// APP 的批量删除走这里（Web 走下面的 PUT /tasks/batch）。count 等于传入 id 的个数、含不存在的 id，
+// 这是服务端的现有怪癖，保留不改。
 route('DELETE', '/tasks/batch/delete', (ctx) => {
   const ids = idList(ctx, 'task_ids', 'ids')
   const current = db()
+  const cleanup = readBatchDeleteScripts(ctx)
+  // plan 必须在删任务之前拍快照：删掉之后就拿不到命令了（服务端是 Collect → 原删除语句 → Execute 同一顺序）
+  const plan = cleanup.on ? planDemoTaskScriptDeletion(ids) : null
   current.tasks = current.tasks.filter((task) => !ids.includes(task.id))
-  return { message: `已删除 ${ids.length} 个任务`, count: ids.length }
+  const response: Record<string, unknown> = { message: `已删除 ${ids.length} 个任务`, count: ids.length }
+  if (plan) response['scripts'] = executeDemoTaskScriptDeletion(plan, cleanup.confirm)
+  return response
 })
 
 // 批量运行【刻意】和单个运行不一样：这里直接记一次已完成的执行，不走 startDemoTaskRun。
@@ -1075,11 +1160,17 @@ route('PUT', '/tasks/batch/add-labels', (ctx) => {
   return { message: `已为 ${ids.length} 个任务添加标签`, success_count: ids.length }
 })
 
+// Web 的批量操作走这里。count 只有 action=delete 与服务端同口径（只计实际存在并被删掉的任务）。
+// 其它 action（含不认识的 action）的 count 仍等于传入 id 的个数、含不存在的 id；服务端只计查到的任务，
+// 还会扣掉 enable 校验不通过、run 启动失败、stop 没在运行的。message 也不是服务端的「批量{action}: N 个任务」。
+// 这两处是演示站的既有差异，保留不改。
 route('PUT', '/tasks/batch', (ctx) => {
   const body = bodyObject(ctx)
   const ids = idList(ctx, 'ids', 'task_ids')
   const action = String(body['action'] ?? '')
   const current = db()
+  let scripts: DemoTaskScriptDeleteResult | null = null
+  let count = ids.length
 
   switch (action) {
     case 'enable':
@@ -1088,9 +1179,19 @@ route('PUT', '/tasks/batch', (ctx) => {
     case 'disable':
       current.tasks.forEach((task) => { if (ids.includes(task.id)) task.status = TASK_STATUS_DISABLED })
       break
-    case 'delete':
+    case 'delete': {
+      // 删脚本开关只在 action=delete 时读，其它 action 带了也忽略、响应里不出现 scripts（与服务端一致）。
+      // plan 必须在删任务之前拍快照，理由同 DELETE /tasks/batch/delete。
+      const cleanup = readBatchDeleteScripts(ctx)
+      const plan = cleanup.on ? planDemoTaskScriptDeletion(ids) : null
+      const before = current.tasks.length
       current.tasks = current.tasks.filter((task) => !ids.includes(task.id))
+      // 只计实际存在并被删掉的任务，与服务端一致：服务端逐个 id 查库，查到才删、才计数，重复的 id 第二次已经查不到。
+      // 删除弹窗会直接显示「已删除 {count} 个任务」，按传入 id 数算会多报。
+      count = before - current.tasks.length
+      if (plan) scripts = executeDemoTaskScriptDeletion(plan, cleanup.confirm)
       break
+    }
     case 'run':
       ids.forEach((id) => {
         const task = findTask(id)
@@ -1100,7 +1201,10 @@ route('PUT', '/tasks/batch', (ctx) => {
     default:
       break
   }
-  return { message: `已处理 ${ids.length} 个任务`, count: ids.length }
+  // 带开关时只在原响应上追加 scripts，count 与 message 的口径不受开关影响
+  const response: Record<string, unknown> = { message: `已处理 ${count} 个任务`, count }
+  if (scripts) response['scripts'] = scripts
+  return response
 })
 
 /**
@@ -1250,10 +1354,18 @@ route('PUT', '/tasks/:id', (ctx) => {
 })
 
 route('DELETE', '/tasks/:id', (ctx) => {
+  // 任务不存在先 404，带不带删脚本开关都一样（与服务端一致）
   const task = requireTask(ctx)
   const current = db()
+  const cleanup = readSingleDeleteScript(ctx)
+  // plan 必须在删任务之前拍快照，理由同 DELETE /tasks/batch/delete
+  const plan = cleanup.on ? planDemoTaskScriptDeletion([task.id]) : null
   current.tasks = current.tasks.filter((row) => row.id !== task.id)
-  return { message: '任务已删除' }
+  // message 与服务端的「删除成功」不一致是既有差异：前端弹窗用固定文案、不读它。
+  // 这里刻意不顺手改，保证不带开关时响应与改动前一模一样。
+  const response: Record<string, unknown> = { message: '任务已删除' }
+  if (plan) response['scripts'] = executeDemoTaskScriptDeletion(plan, cleanup.confirm)
+  return response
 })
 
 // ===========================================================================

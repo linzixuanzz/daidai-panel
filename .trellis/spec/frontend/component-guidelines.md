@@ -806,7 +806,7 @@ indentCompartment.reconfigure([indentUnit.of(' '.repeat(width)), EditorState.tab
 ### 2. Signatures
 
 - `GET /api/notifications/types` -> `[{type, name, fields: NotifyFieldDefinition[]}]`
-  真源：`server/model/notify_channel_registry.go`（22 渠道 / 90 字段槽 / 56 唯一键）
+  真源：`server/model/notify_channel_registry.go`（22 渠道 / 93 字段槽 / 56 唯一键）
 - `GET /api/configs` -> `{data: {key: {...}}}`
   真源：`server/model/system_config_registry.go`（47 项）
 
