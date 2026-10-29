@@ -456,6 +456,40 @@ function markDebugCodeChanged() {
 }
 
 /*
+  调试窗 / 代码运行器在桌面端铺满整个视口（issue #171，也是 #169 第 2 条的成因）。
+
+  ① 桌面端 .route-shell 带 `contain: layout`（web/src/layouts/MainLayout.vue），它会成为后代
+     position: fixed 元素的包含块。这两个弹窗是原地渲染的，「全屏」遮罩于是只盖住内容区，
+     侧栏、顶栏还能点——调试窗开着就能走去别的页面，回来时它还盖在新打开的脚本上。
+     这里只在弹窗开着时撤掉 containment：两个弹窗都带 destroy-on-close，关掉（离场动画结束）后
+     .el-dialog 节点会被移除，:has 不再命中，containment 自动恢复，其它时候布局不受影响。
+  ② 为什么不用 append-to-body：脚本页在 keep-alive 里，Vue 的 Teleport 在 keep-alive 停用时
+     不会把已传送到 body 的内容收回，用浏览器后退离开时弹窗会浮在别的页面上，只能在停用时强制关掉、
+     丢掉调试状态。原地渲染 + 这条规则能保住「离开再回来，调试窗和正在跑的调试都还在」。
+
+  选择器必须带 `.layout-main >`：MainLayout 里那条是 scoped 的 `.route-shell[data-v-x]`，特异性 (0,2,0)，
+  不加就同分、谁赢要看样式注入顺序；加上后是 (0,3,0)（:has 取参数的特异性）。
+  移动端（≤768）.route-shell 本来就是 contain: none，这条规则在那里不起额外作用。
+  规则必须写在这个非 scoped 块里：scoped 编译可能给 :has() 里的选择器也加上 data-v，就匹配不到弹窗了。
+*/
+.layout-main > .route-shell:has(.script-execution-fullscreen-dialog) {
+  contain: none;
+}
+
+/*
+  同一个包含块问题的另一处来源：调试窗开着时离开再回来，MainLayout 的切页进场动画
+  （.page-shell-enter-active，带 transform 动画和 will-change: transform，约 280ms）会让页面根
+  暂时成为 fixed 后代的包含块。实测弹窗先缩在内容区里，约 320ms 后才铺满，能看到一下跳动。
+  弹窗开着时直接跳过这次进场动画：animation: none 时 Vue Transition 读到时长为 0，进场立刻结束。
+  选择器带 `.route-shell >`：MainLayout 那条是 scoped 的 `.page-shell-enter-active[data-v-x]`（0,2,0），
+  加上后是 (0,3,0)。不动 z-index / position，进场类只会多留一两帧。
+*/
+.route-shell > .page-shell-enter-active:has(.script-execution-fullscreen-dialog) {
+  animation: none;
+  will-change: auto;
+}
+
+/*
   不加 both / forwards：动画收尾后 transform 自然清空。
   否则残留 transform 会让 .el-overlay-dialog 成为编辑器内部 position:fixed 浮层
   （搜索面板/补全/悬浮提示）的包含块，导致弹层错位。to 为单位变换，视觉无跳变。

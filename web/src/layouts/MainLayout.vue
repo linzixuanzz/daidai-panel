@@ -1217,6 +1217,7 @@ async function loadVersion() {
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  // 脚本页的调试窗 / 代码运行器打开时会撤掉这里的 containment 以铺满视口，见 views/scripts/components/ScriptExecutionDialogs.vue（issue #171）
   contain: layout style;
 
   > :deep(*) {

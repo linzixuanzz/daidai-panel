@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ElMessageBox } from 'element-plus'
+import { watch } from 'vue'
+import { useRoute } from 'vue-router'
 import ScriptExecutionDialogs from './components/ScriptExecutionDialogs.vue'
 import ScriptManageDialogs from './components/ScriptManageDialogs.vue'
 import ScriptsEditorPane from './components/ScriptsEditorPane.vue'
@@ -105,6 +107,22 @@ const {
   handleRunCode,
   handleStopRunner
 } = execution
+
+// 带 ?file= 进来（任务页点脚本、删除任务弹窗里点脚本）时先关掉调试窗和代码运行器（issue #169）：
+// 页面在 keep-alive 里，调试窗开着时离开，回来时它还原样盖在新打开的脚本上，看到的仍是刚才调试的脚本。
+// 置 false 后 useScriptExecution 里现有的 watch 会顺带停止运行。
+// 不用 immediate：首次挂载时两个弹窗本来就是关的；判空规则与 useScriptWorkspace 打开文件的 watch 保持一致。
+const route = useRoute()
+watch(
+  () => route.query.file,
+  (fileParam) => {
+    if (typeof fileParam !== 'string' || !fileParam.trim()) {
+      return
+    }
+    showDebugDialog.value = false
+    showCodeRunner.value = false
+  }
+)
 
 async function handleDebugSave() {
   if (!selectedFile.value || isBinary.value) {
