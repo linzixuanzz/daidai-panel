@@ -73,7 +73,10 @@ function onNewAction(key: string) {
 }
 
 // ===== 目录树排序（issue #160）=====
-// 纯前端排序：目录始终在文件前，同层按所选规则；时间相同或缺失按名称兜底，创建时间拿不到用 mtime 兜底。
+// 纯前端排序：目录始终在文件前，同层按所选规则；时间相同或缺失按名称兜底。
+// 「创建时间」取 btime 与 mtime 中较早的那个（issue #169）：迁移拷贝（cp -a）、解压备份会把所有文件的 btime
+// 刷成拷贝那一刻（全员相同、排序退回按名称），mtime 却保留原值；btime 比 mtime 晚就说明它记的不是真正的创建时间。
+// 只有其一时取那一个，都没有当 0。只影响排序比较，接口返回的原始值不变。
 type ScriptSortMode = 'name_asc' | 'name_desc' | 'btime_desc' | 'btime_asc' | 'mtime_desc'
 const SCRIPTS_SORT_MODE_KEY = 'dd:scripts:sort_mode'
 const sortOptions: { value: ScriptSortMode; label: string }[] = [
@@ -116,7 +119,10 @@ function sortTreeNodes(nodes: TreeNode[], mode: ScriptSortMode): TreeNode[] {
     if (a.isLeaf !== b.isLeaf) return a.isLeaf ? 1 : -1
     let diff = 0
     if (mode === 'btime_desc' || mode === 'btime_asc') {
-      diff = (a.btime ?? a.mtime ?? 0) - (b.btime ?? b.mtime ?? 0)
+      // 两个都有取较早者；只有一个用那一个；都没有当 0
+      const aCreated = a.btime != null && a.mtime != null ? Math.min(a.btime, a.mtime) : (a.btime ?? a.mtime ?? 0)
+      const bCreated = b.btime != null && b.mtime != null ? Math.min(b.btime, b.mtime) : (b.btime ?? b.mtime ?? 0)
+      diff = aCreated - bCreated
       if (mode === 'btime_desc') diff = -diff
     } else if (mode === 'mtime_desc') {
       diff = (b.mtime ?? 0) - (a.mtime ?? 0)

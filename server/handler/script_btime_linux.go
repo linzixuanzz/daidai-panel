@@ -18,5 +18,9 @@ func fileBirthTime(path string, _ os.FileInfo) (float64, bool) {
 	if stx.Mask&unix.STATX_BTIME == 0 {
 		return 0, false
 	}
+	// 秒数 <= 0 说明文件系统给的是无效值（未初始化 / 1970 之前），当作拿不到，交给前端用 mtime 兜底（issue #169）
+	if stx.Btime.Sec <= 0 {
+		return 0, false
+	}
 	return float64(stx.Btime.Sec), true
 }
