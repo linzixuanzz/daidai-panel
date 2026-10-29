@@ -652,6 +652,22 @@ if (commitBoundary && !endedWithLineBreak && !sawCarriageReturn) {
   （缩进宽度可配之后这两个都会变）。只看其中一个的表现是「切了缩进宽度，参考线还停在老列位上」——
   正文缩进已经变了、线没跟上，看起来像画歪了。
 
+#### 查找面板（`utils/searchPanel.ts`，v3.4.1 issue #170）🔴
+CodeMirror 自带面板换成了自己的中文面板。挂法固定两条一起挂：
+`search({ top: true, createPanel: createSearchPanel })` + `searchPanelTheme`（`CodeMirrorEditor.vue`）。
+- **面板对象必须自己带 `top: true`**：自定义面板不读 `search({ top })` 的配置，漏了面板跑到编辑器底部。
+- **查找框必须带 `main-field="true"`**：`openSearchPanel`（Ctrl+F）靠它找输入框聚焦、带入选中文字；`mount()` 里 `select()`。
+- **不要复用 `.cm-textfield` / `.cm-button`**：CodeMirror 基础主题把它们写成 70% 字号（14px 下约 10px，#170 说的「字很小」就是它）。
+  一律用 `.cm-dd-search*` 自有类名；桌面 13px，≤768 的 16px 在 `CodeMirrorEditor.vue` 的媒体查询里用 `:deep()` 补（iOS 聚焦放大）。
+- `update(u)` 三件事：别处发来的 `setSearchQuery`（`!value.eq(当前)`）同步回输入框与切换；`docChanged` / 查询变了才重扫匹配，
+  `selectionSet` 只重算「第几个」；`startState.readOnly !== state.readOnly` 时显隐替换箭头与替换行。
+- `keydown` 先走 `runScopeHandlers(view, e, 'search-panel')`（Esc、F3、Ctrl+G 都在这里），再处理 Enter / Shift+Enter；
+  组字中（`isComposing` / `keyCode 229`）一律不处理，`input` 也等 `compositionend` 再提交。
+- 匹配状态：查找框空 → 不显示；正则写错 → 「正则有误」；0 个 → 「无结果」；与主选区 from/to 完全相同的匹配是当前项 →
+  「第 N 个，共 M 个」，否则「共 M 个」；计数到 1000 封顶显示「1000+」。
+- 替换行默认收起，展开状态是模块级变量（本页记住、不存 localStorage）；去掉了自带面板的「all」（没开 `drawSelection`，多选区画不出来）。
+- 查看态（没点「编辑」）正文是 `contenteditable=false` 且没有 tabindex，点不进焦点，Ctrl+F 归浏览器自己的查找——原本如此，测查找面板要先进编辑态。
+
 ### 4. Validation & Error Matrix
 - CodeMirror 侧改了 prop 但没配 Compartment / watch -> 点了开关没反应、按钮还高亮，**构建与 vue-tsc 全绿**
 - Monaco 侧只改了 `create()` 的 options、没补 `updateOptions` 的 watch -> **同样是点了开关没反应**，
