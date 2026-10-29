@@ -42,6 +42,7 @@ import {
 } from "@/utils/codeEditor";
 import { indentGuides } from "@/utils/indentGuides";
 import { selectionWhitespace } from "@/utils/selectionWhitespace";
+import { createSearchPanel, searchPanelTheme } from "@/utils/searchPanel";
 import { PANEL_APPEARANCE_CHANGE_EVENT } from "@/utils/panelAppearance";
 
 /**
@@ -347,7 +348,11 @@ onMounted(() => {
         foldGutter(),
         closeBrackets(),
         autocompletion(),
-        search({ top: true }),
+        // 查找面板换成自己的中文版（issue #170，见 utils/searchPanel.ts）：
+        // 正常字号、匹配计数「第 N 个，共 M 个」、去掉多选区画不出来的「all」。
+        // 面板样式在 searchPanelTheme 里，两条要一起挂。
+        search({ top: true, createPanel: createSearchPanel }),
+        searchPanelTheme,
         highlightSelectionMatches(),
         keymap.of([
           // closeBracketsKeymap 只有一条 Backspace（在 `()` 正中间时把整对一起删掉），
@@ -591,6 +596,14 @@ function resolveMinHeight(value: string | number | undefined) {
    这里把移动端编辑器字号提到 16px 照留，作为不依赖 UA 判定的兜底：UA 认不出的设备也不会被放大。 */
 @media (max-width: 768px) {
   .code-editor-wrapper {
+    font-size: 16px;
+  }
+
+  /* 查找面板（utils/searchPanel.ts）的输入框同理提到 16px：桌面端是 13px，iOS 上一聚焦就会放大整页。
+     窄屏下输入框不设上限、占满一行，按钮折到下一行（行容器本身是 flex-wrap），不会撑出横向滚动。 */
+  .code-editor-wrapper :deep(.cm-dd-search-input) {
+    max-width: none;
+    height: 32px;
     font-size: 16px;
   }
 }
