@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-var Version = "3.4.1"
+var Version = "3.4.2"
 
 func compareVersions(current, latest string) bool {
 	cur := parseVersion(current)
