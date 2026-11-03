@@ -27,6 +27,11 @@ import {
   isPasskeySupported,
   resolvePasskeyErrorMessage,
 } from "@/utils/passkey";
+import {
+  isValidNewPassword,
+  NEW_PASSWORD_PLACEHOLDER,
+  NEW_PASSWORD_RULE_MESSAGE,
+} from "@/utils/password";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -434,6 +439,11 @@ async function handleSubmit() {
       ElMessage.error("两次输入的密码不一致");
       return;
     }
+    // 只有初始化（设置新密码）才校验复杂度；登录不校验，老用户的弱密码照样能登
+    if (!isValidNewPassword(form.value.password)) {
+      ElMessage.warning(NEW_PASSWORD_RULE_MESSAGE);
+      return;
+    }
   }
   if (require2FA.value && !form.value.totp_code) {
     ElMessage.warning("请输入两步验证码");
@@ -608,7 +618,7 @@ const themeTitle = computed(() => {
               <el-input
                 v-model="form.password"
                 :type="pwdVisible ? 'text' : 'password'"
-                placeholder="密码"
+                :placeholder="isInit ? '密码' : `密码（${NEW_PASSWORD_PLACEHOLDER}）`"
                 :prefix-icon="Lock"
                 size="large"
                 @focus="handlePasswordFocus"

@@ -881,8 +881,8 @@ func runResetPassword(rt *cliRuntime, args []string) error {
 	if newPassword == "" {
 		return fmt.Errorf("用法: ddp reset-password <用户名> <新密码>")
 	}
-	if !validator.ValidatePassword(newPassword) {
-		return fmt.Errorf("新密码长度需在 6-128 位之间")
+	if !validator.ValidateNewPassword(newPassword) {
+		return fmt.Errorf("新%s", validator.NewPasswordRuleMessage)
 	}
 
 	var user model.User

@@ -15,8 +15,6 @@ import (
 // 回放请求带上原请求的这几个头和 RemoteAddr，调用审计与限流里记下的就是 MCP 客户端的真实 IP，
 // 而且只在原请求确实来自可信代理时才会被采信（判定逻辑在 ResolveClientIP 里，这里不重复）。
 var mcpClientIPHeaders = []string{
-	"CF-Connecting-IP",
-	"True-Client-IP",
 	"X-Forwarded-For",
 	"X-Real-IP",
 	"X-Original-Forwarded-For",

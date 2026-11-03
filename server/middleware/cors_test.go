@@ -204,6 +204,55 @@ func TestCORSRejectsDifferentProxyHostnameEvenWhenOriginHasPort(t *testing.T) {
 	}
 }
 
+// Origin: null 来自沙箱 iframe / data: / file: 页面，不能当成可信来源放行。
+func TestCORSRejectsNullOrigin(t *testing.T) {
+	prev := config.C
+	t.Cleanup(func() { config.C = prev })
+	config.C = &config.Config{}
+
+	engine := newCORSRouter(t)
+
+	preflight := httptest.NewRequest(http.MethodOptions, "/login", nil)
+	preflight.Host = "panel.example.com"
+	preflight.Header.Set("Origin", "null")
+	preflight.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, preflight)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for null origin preflight, got %d", rec.Code)
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("expected no allow-origin for null origin, got %q", rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/login", nil)
+	req.Host = "panel.example.com"
+	req.Header.Set("Origin", "null")
+	rec = httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for null origin request, got %d", rec.Code)
+	}
+}
+
+// 不带 Origin 的请求（脚本、APP）照常放行。
+func TestCORSAllowsMissingOrigin(t *testing.T) {
+	prev := config.C
+	t.Cleanup(func() { config.C = prev })
+	config.C = &config.Config{}
+
+	engine := newCORSRouter(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/login", nil)
+	req.Host = "panel.example.com"
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 without origin, got %d", rec.Code)
+	}
+}
+
 func TestParseForwardedHostsExtractsMultipleHosts(t *testing.T) {
 	hosts := parseForwardedHosts(`for=192.0.2.60;proto=http;host=example.com, for=198.51.100.17;host="cdn.example.com"`)
 	if len(hosts) != 2 {

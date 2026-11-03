@@ -20,7 +20,7 @@ var (
 // StartLogCleanupWorker 启动周期清理后台 worker：
 // 启动后延迟一小段时间先清一次，之后每 6 小时清理一次。
 // 清理「数据库 TaskLog 旧记录」与「磁盘旧 .log 文件」（按 log_retention_days 判定，无开关），
-// 以及「已过期的 token 黑名单行」。
+// 以及「已过期的 token 黑名单行」「已过期的登录失败计数」「90 天前的登录日志」。
 func StartLogCleanupWorker() {
 	logCleanupOnce.Do(func() {
 		logCleanupStop = make(chan struct{})
@@ -58,6 +58,18 @@ func logCleanupLoop() {
 func runPeriodicCleanup() {
 	cleanupOldLogs()
 	cleanupExpiredTokenBlocklist()
+	cleanupLoginSecurityTables()
+}
+
+// cleanupLoginSecurityTables 清理登录相关的两张表：过期的失败计数行、90 天前的登录日志。
+// 这两张表都由免登录的 /auth/login 写入，不清理就会被持续的登录尝试无限撑大。
+func cleanupLoginSecurityTables() {
+	if removed := CleanExpiredAttempts(); removed > 0 {
+		log.Printf("login security cleanup: removed %d expired login attempts", removed)
+	}
+	if removed := CleanOldLoginLogs(); removed > 0 {
+		log.Printf("login security cleanup: removed %d login logs older than %d days", removed, LoginLogRetentionDays)
+	}
 }
 
 // cleanupExpiredTokenBlocklist 清掉已经过期、留着也不改变鉴权结果的 token 黑名单行。

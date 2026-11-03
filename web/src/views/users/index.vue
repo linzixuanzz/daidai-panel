@@ -9,6 +9,7 @@ import { toast } from '@/utils/toast'
 import { scrollListToTop } from '@/utils/scrollToTop'
 import DdBadge from '@/components/ui/DdBadge.vue'
 import { formatDateTime } from '@/utils/datetime'
+import { isValidNewPassword, NEW_PASSWORD_PLACEHOLDER, NEW_PASSWORD_RULE_MESSAGE } from '@/utils/password'
 
 const authStore = useAuthStore()
 const { isMobile, dialogFullscreen } = useResponsive()
@@ -111,9 +112,9 @@ function openCreate() {
   showCreateDialog.value = true
 }
 
+// 新建用户、重置密码都是设置新密码，与后端同一规则
 function validatePassword(pwd: string): string | null {
-  if (pwd.length < 6) return '密码至少 6 位'
-  if (pwd.length > 128) return '密码不能超过 128 位'
+  if (!isValidNewPassword(pwd)) return NEW_PASSWORD_RULE_MESSAGE
   return null
 }
 
@@ -438,7 +439,7 @@ function getRoleName(role: string) {
           <el-input v-model="createForm.username" placeholder="3-32 位字母/数字/下划线" />
         </el-form-item>
         <el-form-item label="密码">
-          <el-input v-model="createForm.password" type="password" show-password placeholder="6-128 位密码" />
+          <el-input v-model="createForm.password" type="password" show-password :placeholder="NEW_PASSWORD_PLACEHOLDER" />
         </el-form-item>
         <el-form-item label="角色">
           <el-radio-group v-model="createForm.role">
@@ -460,7 +461,7 @@ function getRoleName(role: string) {
           <el-input :model-value="resetPwdForm.username" disabled />
         </el-form-item>
         <el-form-item label="新密码">
-          <el-input v-model="resetPwdForm.password" type="password" show-password placeholder="6-128 位密码" />
+          <el-input v-model="resetPwdForm.password" type="password" show-password :placeholder="NEW_PASSWORD_PLACEHOLDER" />
         </el-form-item>
       </el-form>
       <!-- 重置密码会撤销该用户所有登录并清掉他的通行密钥（后端行为），提前告诉管理员 -->

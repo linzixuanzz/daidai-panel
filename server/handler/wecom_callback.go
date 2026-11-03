@@ -45,7 +45,9 @@ func NewWecomCallbackHandler(engine http.Handler) *WecomCallbackHandler {
 
 func (h *WecomCallbackHandler) RegisterRoutes(r *gin.RouterGroup) {
 	r.GET("/wecom/callback/:id", h.Verify)
-	r.POST("/wecom/callback/:id", h.Receive)
+	// 公网免鉴权入口：声明长度超过 1MB 直接 413，连 body 都不收。
+	// Receive 里自己还有一道 64KB 的 LimitReader，这里是更外层、不读 body 就能拒绝的那一道。
+	r.POST("/wecom/callback/:id", middleware.BodyLimit(wecomCallbackRequestBodyLimit), h.Receive)
 
 	// 接入配置本身的增删改查。这一组是普通的管理接口（登录 + 管理员），和上面两条公开路由
 	// 只是共用一个 /wecom 前缀，没有任何关系 —— 别看见 /wecom 就以为整段都是免鉴权的。
@@ -254,6 +256,9 @@ const (
 	// wecomMaxCallbackBodySize 给请求体封顶。企业微信的消息包只有几 KB，
 	// 而这是一条公网免鉴权路由，不限长就等于给「发个 1GB 的 body 把内存打满」留口子。
 	wecomMaxCallbackBodySize = 64 << 10
+
+	// wecomCallbackRequestBodyLimit 是路由层的请求体上限（middleware.BodyLimit）。
+	wecomCallbackRequestBodyLimit = 1 << 20
 )
 
 // wecomEncryptedEnvelope 是企业微信 POST 过来的外层信封。

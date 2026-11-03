@@ -67,8 +67,8 @@ func (h *AuthHandler) Init(c *gin.Context) {
 		switch err {
 		case service.ErrInvalidUsername:
 			response.BadRequest(c, "用户名需 1-32 位，支持中文、字母、数字和下划线")
-		case service.ErrPasswordTooShort:
-			response.BadRequest(c, "密码长度需 6-128 位")
+		case service.ErrWeakPassword:
+			response.BadRequest(c, validator.NewPasswordRuleMessage)
 		default:
 			response.BadRequest(c, err.Error())
 		}
@@ -355,8 +355,8 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		switch err {
 		case service.ErrInvalidPassword:
 			response.BadRequest(c, "当前密码不正确")
-		case service.ErrPasswordTooShort:
-			response.BadRequest(c, "新密码长度需 6-128 位")
+		case service.ErrWeakPassword:
+			response.BadRequest(c, "新"+validator.NewPasswordRuleMessage)
 		default:
 			response.InternalError(c, "修改密码失败")
 		}
@@ -559,6 +559,10 @@ func (h *AuthHandler) ServeAvatar(c *gin.Context) {
 	c.File(filePath)
 }
 
+// publicEntryBodyLimit 是免登录公开入口（登录、初始化、续期、通行密钥登录、开放 API 换令牌）的请求体上限。
+// 这些接口的正常请求体都在几 KB 以内（通行密钥的断言最大也就几 KB），64KB 留足余量。
+const publicEntryBodyLimit = 64 << 10
+
 func (h *AuthHandler) RegisterRoutes(r *gin.RouterGroup) {
 	// RegisterRoutes 会被 /api/v1 与 /api 两个分组各调用一次（router.go）。
 	// 限流器必须在每次注册时现构造：以前它是 handler 上的一个字段，两个前缀因此共用
@@ -567,16 +571,24 @@ func (h *AuthHandler) RegisterRoutes(r *gin.RouterGroup) {
 	loginLimiter := middleware.RateLimit(5, time.Minute)
 	// 通行密钥登录（issue #175）单独一个限流器：免登录的 begin / finish 共用，每个前缀各自现构造，理由同上
 	passkeyLimiter := middleware.RateLimit(20, time.Minute)
+	// 续期限流：网页与 APP 只在 access 过期（默认 480 小时）收到 401 时才续期一次，
+	// 多个标签页同时 401 也只发一次（request.ts 有排队），30 次/分钟正常使用碰不到，
+	// 只用来挡住拿 refresh 令牌狂刷的请求。
+	refreshLimiter := middleware.RateLimit(30, time.Minute)
+	// 首次初始化只该发生一次，限流宽松些，只防有人在面板刚装好时并发抢注。
+	initLimiter := middleware.RateLimit(10, time.Minute)
+	// 公开入口统一给请求体封顶，理由见 middleware.BodyLimit。
+	bodyLimit := middleware.BodyLimit(publicEntryBodyLimit)
 
 	auth := r.Group("/auth")
 	{
 		auth.GET("/check-init", h.CheckInit)
-		auth.POST("/init", h.Init)
-		auth.POST("/login", loginLimiter, h.Login)
-		auth.POST("/passkey/login/begin", passkeyLimiter, h.PasskeyLoginBegin)
-		auth.POST("/passkey/login/finish", passkeyLimiter, h.PasskeyLoginFinish)
+		auth.POST("/init", initLimiter, bodyLimit, h.Init)
+		auth.POST("/login", loginLimiter, bodyLimit, h.Login)
+		auth.POST("/passkey/login/begin", passkeyLimiter, bodyLimit, h.PasskeyLoginBegin)
+		auth.POST("/passkey/login/finish", passkeyLimiter, bodyLimit, h.PasskeyLoginFinish)
 		auth.POST("/logout", middleware.JWTAuth(), h.Logout)
-		auth.POST("/refresh", h.Refresh)
+		auth.POST("/refresh", refreshLimiter, bodyLimit, h.Refresh)
 		auth.GET("/user", middleware.JWTAuth(), h.GetUser)
 		auth.PUT("/password", middleware.JWTAuth(), h.ChangePassword)
 		auth.PUT("/username", middleware.JWTAuth(), h.ChangeUsername)

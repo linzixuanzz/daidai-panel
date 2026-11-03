@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createQrCodeDataUrl } from '@/utils/qrcode'
 import { toast } from '@/utils/toast'
+import { isValidNewPassword, NEW_PASSWORD_RULE_MESSAGE } from '@/utils/password'
 
 const backupUploadMaxSize = 512 * 1024 * 1024
 
@@ -468,8 +469,9 @@ export function useSettingsSecurity() {
       ElMessage.warning('两次输入的密码不一致')
       return
     }
-    if (newPassword.value.length < 6) {
-      ElMessage.warning('密码至少 6 位')
+    // 与后端同一规则（只管新密码）
+    if (!isValidNewPassword(newPassword.value)) {
+      ElMessage.warning(`新${NEW_PASSWORD_RULE_MESSAGE}`)
       return
     }
     try {

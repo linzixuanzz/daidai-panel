@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"sort"
 
@@ -18,7 +19,31 @@ import (
 const (
 	MaxLoginAttempts = 5
 	LockDuration     = 15 * time.Minute
+
+	// 登录日志 / 失败计数里用户名、客户端名、UA 的长度上限（按字符数）。
+	// 这几项都来自免登录的 /auth/login 请求，原样落库就能被人用超长字段把表撑大。
+	// 真实用户名最长 32 位，客户端名与 UA 正常也远小于这个长度，截断不影响排查。
+	loginFieldMaxRunes     = 128
+	loginUserAgentMaxRunes = 512
+
+	// LoginLogRetentionDays：登录日志只留 90 天，周期清理里删更早的行。
+	LoginLogRetentionDays = 90
 )
+
+// truncateRunes 按字符截断，不会把多字节的中文切成半个乱码。
+func truncateRunes(value string, maxRunes int) string {
+	if utf8.RuneCountInString(value) <= maxRunes {
+		return value
+	}
+	runes := []rune(value)
+	return string(runes[:maxRunes])
+}
+
+// loginAttemptUsername 是失败计数表里用户名的统一口径：写入和查询都要截成同一个值，
+// 否则超长用户名写进去是截断后的，查的时候用原值就对不上。
+func loginAttemptUsername(username string) string {
+	return truncateRunes(username, loginFieldMaxRunes)
+}
 
 func RecordLoginLog(userID uint, username, ip, clientName, userAgent string, status int, message string) {
 	RecordLoginLogWithMethod(userID, username, ip, clientName, userAgent, status, message, "")
@@ -29,10 +54,10 @@ func RecordLoginLog(userID uint, username, ip, clientName, userAgent string, sta
 func RecordLoginLogWithMethod(userID uint, username, ip, clientName, userAgent string, status int, message, method string) {
 	log := model.LoginLog{
 		UserID:     userID,
-		Username:   username,
+		Username:   truncateRunes(username, loginFieldMaxRunes),
 		IP:         ip,
-		ClientName: clientName,
-		UserAgent:  userAgent,
+		ClientName: truncateRunes(clientName, loginFieldMaxRunes),
+		UserAgent:  truncateRunes(userAgent, loginUserAgentMaxRunes),
 		Method:     method,
 		Status:     status,
 		Message:    message,
@@ -41,6 +66,7 @@ func RecordLoginLogWithMethod(userID uint, username, ip, clientName, userAgent s
 }
 
 func CheckLoginLock(ip, username string) (bool, time.Duration) {
+	username = loginAttemptUsername(username)
 	var attempt model.LoginAttempt
 	err := database.DB.Where("ip = ? AND username = ?", ip, username).
 		Take(&attempt).Error
@@ -60,6 +86,7 @@ func CheckLoginLock(ip, username string) (bool, time.Duration) {
 }
 
 func GetLoginAttemptCount(ip, username string) int {
+	username = loginAttemptUsername(username)
 	var attempt model.LoginAttempt
 	err := database.DB.Where("ip = ? AND username = ?", ip, username).
 		Take(&attempt).Error
@@ -70,6 +97,7 @@ func GetLoginAttemptCount(ip, username string) int {
 }
 
 func RecordFailedLogin(ip, username string) int {
+	username = loginAttemptUsername(username)
 	var attempt model.LoginAttempt
 	err := database.DB.Where("ip = ? AND username = ?", ip, username).
 		Take(&attempt).Error
@@ -100,11 +128,26 @@ func RecordFailedLogin(ip, username string) int {
 }
 
 func ClearLoginAttempts(ip, username string) {
+	username = loginAttemptUsername(username)
 	database.DB.Where("ip = ? AND username = ?", ip, username).Delete(&model.LoginAttempt{})
 }
 
-func CleanExpiredAttempts() {
-	database.DB.Where("expires_at < ?", time.Now()).Delete(&model.LoginAttempt{})
+// CleanExpiredAttempts 删掉已过期的失败计数行（由周期清理调用）。
+// 没过期的行不动：锁定判断、验证码阈值都还要读它。
+func CleanExpiredAttempts() int64 {
+	if database.DB == nil {
+		return 0
+	}
+	return database.DB.Where("expires_at < ?", time.Now()).Delete(&model.LoginAttempt{}).RowsAffected
+}
+
+// CleanOldLoginLogs 删掉 LoginLogRetentionDays 天之前的登录日志（由周期清理调用）。
+func CleanOldLoginLogs() int64 {
+	if database.DB == nil {
+		return 0
+	}
+	cutoff := time.Now().AddDate(0, 0, -LoginLogRetentionDays)
+	return database.DB.Where("created_at < ?", cutoff).Delete(&model.LoginLog{}).RowsAffected
 }
 
 // CreateSessionWithRefresh 落一行登录会话。返回的 error 调用方必须处理：会话行落不下去就不能发 token，

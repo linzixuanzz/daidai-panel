@@ -2,6 +2,7 @@ package handler
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"html"
@@ -24,10 +25,23 @@ import (
 	"daidai-panel/config"
 )
 
-type OpenAPIHandler struct{}
+// openAPITokenFailureLimit / openAPITokenFailureWindow：同一 IP 换令牌失败 10 次后，10 分钟内不再受理。
+const (
+	openAPITokenFailureLimit  = 10
+	openAPITokenFailureWindow = 10 * time.Minute
+)
+
+type OpenAPIHandler struct {
+	// tokenFailures 只数 POST /open-api/token 的失败（app_key 不存在、secret 不对）。
+	// 挂在 handler 上而不是每次注册时现构造：/api 与 /api/v1 两个前缀共用同一个 handler，
+	// 共用计数才能防住「换个前缀接着猜」。
+	tokenFailures *middleware.FailureLimiter
+}
 
 func NewOpenAPIHandler() *OpenAPIHandler {
-	return &OpenAPIHandler{}
+	return &OpenAPIHandler{
+		tokenFailures: middleware.NewFailureLimiter(openAPITokenFailureLimit, openAPITokenFailureWindow),
+	}
 }
 
 func generateRandomKey(length int) string {
@@ -258,8 +272,19 @@ func (h *OpenAPIHandler) Token(c *gin.Context) {
 		return
 	}
 
+	// 先看这个 IP 是不是已经失败太多次：封住期间连正确的凭据也不受理，否则猜密钥的人能一直试下去。
+	// 只有失败才计数，凭据正确的脚本再频繁取令牌也不会被挡。
+	ip := middleware.ResolveClientIP(c)
+	if h.tokenFailures != nil && h.tokenFailures.Blocked(ip) {
+		response.TooManyRequests(c, "凭证错误次数过多，请 10 分钟后再试")
+		return
+	}
+
 	var app model.OpenApp
 	if err := database.DB.Where("app_key = ?", req.AppKey).First(&app).Error; err != nil {
+		if h.tokenFailures != nil {
+			h.tokenFailures.RecordFailure(ip)
+		}
 		response.Unauthorized(c, "凭证无效")
 		return
 	}
@@ -269,7 +294,11 @@ func (h *OpenAPIHandler) Token(c *gin.Context) {
 		return
 	}
 
-	if app.AppSecret != req.AppSecret {
+	// 定长比较：逐字节比较会因为「前几位对上了就多比一会儿」泄漏耗时差，可被用来逐位猜密钥。
+	if subtle.ConstantTimeCompare([]byte(app.AppSecret), []byte(req.AppSecret)) != 1 {
+		if h.tokenFailures != nil {
+			h.tokenFailures.RecordFailure(ip)
+		}
 		response.Unauthorized(c, "凭证无效")
 		return
 	}
@@ -515,7 +544,8 @@ func buildPanelAbsoluteURL(c *gin.Context, relative string) string {
 func (h *OpenAPIHandler) RegisterRoutes(r *gin.RouterGroup) {
 	openapi := r.Group("/open-api")
 	{
-		openapi.POST("/token", h.Token)
+		// 公开入口给请求体封顶（64KB 远超 app_key + app_secret 的体积）；失败计数在 handler 里做。
+		openapi.POST("/token", middleware.BodyLimit(publicEntryBodyLimit), h.Token)
 		// 企业微信菜单触发（issue #145）。与上面的 /token 一样直接挂在无中间件的 openapi 组上：
 		// 菜单链接带不了 Authorization 头，鉴权靠 handler 内的票据校验 + 两级总开关。
 		openapi.GET("/trigger", h.TaskTrigger)

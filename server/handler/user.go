@@ -68,8 +68,8 @@ func (h *UserHandler) Create(c *gin.Context) {
 		response.BadRequest(c, "用户名需 1-32 位，支持中文、字母、数字和下划线")
 		return
 	}
-	if !validator.ValidatePassword(req.Password) {
-		response.BadRequest(c, "密码长度需 6-128 位")
+	if !validator.ValidateNewPassword(req.Password) {
+		response.BadRequest(c, validator.NewPasswordRuleMessage)
 		return
 	}
 	if req.Role == "" {
@@ -204,8 +204,8 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	if !validator.ValidatePassword(req.Password) {
-		response.BadRequest(c, "密码长度需 6-128 位")
+	if !validator.ValidateNewPassword(req.Password) {
+		response.BadRequest(c, validator.NewPasswordRuleMessage)
 		return
 	}
 

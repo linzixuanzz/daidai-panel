@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"daidai-panel/database"
@@ -13,15 +14,15 @@ import (
 )
 
 var (
-	ErrUserNotFound     = errors.New("用户不存在")
-	ErrInvalidPassword  = errors.New("密码错误")
-	ErrUserDisabled     = errors.New("账号已被禁用")
-	ErrUserExists       = errors.New("用户名已存在")
-	ErrInvalidUsername  = errors.New("用户名格式无效")
-	ErrPasswordTooShort = errors.New("密码过短")
-	ErrTOTPRequired     = errors.New("需要两步验证码")
-	ErrInvalidTOTP      = errors.New("两步验证码错误")
-	ErrSessionRevoked   = errors.New("登录会话已失效")
+	ErrUserNotFound    = errors.New("用户不存在")
+	ErrInvalidPassword = errors.New("密码错误")
+	ErrUserDisabled    = errors.New("账号已被禁用")
+	ErrUserExists      = errors.New("用户名已存在")
+	ErrInvalidUsername = errors.New("用户名格式无效")
+	ErrWeakPassword    = errors.New(validator.NewPasswordRuleMessage)
+	ErrTOTPRequired    = errors.New("需要两步验证码")
+	ErrInvalidTOTP     = errors.New("两步验证码错误")
+	ErrSessionRevoked  = errors.New("登录会话已失效")
 )
 
 type AuthService struct{}
@@ -36,7 +37,12 @@ func (s *AuthService) NeedInit() bool {
 	return count == 0
 }
 
+// initAdminMu 把「还没初始化吗 + 建管理员」包成一步：
+// 面板刚装好时两个并发的 /auth/init 都能看到 0 个用户，不加锁就会建出两个管理员。
+var initAdminMu sync.Mutex
+
 func (s *AuthService) InitAdmin(username, password string) (*model.User, error) {
+	// 先在锁外判一次：已初始化的面板直接拒，返回顺序与原来一致；拿到锁后还要再判一次才算数。
 	if !s.NeedInit() {
 		return nil, errors.New("系统已初始化")
 	}
@@ -44,13 +50,21 @@ func (s *AuthService) InitAdmin(username, password string) (*model.User, error) 
 	if !validator.ValidateUsername(username) {
 		return nil, ErrInvalidUsername
 	}
-	if !validator.ValidatePassword(password) {
-		return nil, ErrPasswordTooShort
+	if !validator.ValidateNewPassword(password) {
+		return nil, ErrWeakPassword
 	}
 
+	// 哈希放在锁外算：bcrypt 要几十毫秒，没必要让并发请求排队等它。
 	hash, err := crypto.HashPassword(password)
 	if err != nil {
 		return nil, err
+	}
+
+	initAdminMu.Lock()
+	defer initAdminMu.Unlock()
+
+	if !s.NeedInit() {
+		return nil, errors.New("系统已初始化")
 	}
 
 	user := &model.User{
@@ -196,8 +210,8 @@ func (s *AuthService) ChangePassword(username, oldPassword, newPassword string) 
 		return 0, ErrInvalidPassword
 	}
 
-	if !validator.ValidatePassword(newPassword) {
-		return 0, ErrPasswordTooShort
+	if !validator.ValidateNewPassword(newPassword) {
+		return 0, ErrWeakPassword
 	}
 
 	hash, err := crypto.HashPassword(newPassword)

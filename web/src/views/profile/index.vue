@@ -44,6 +44,11 @@ import SponsorWall from "./components/SponsorWall.vue";
 import SecurityPasskeyCard from "@/views/settings/components/SecurityPasskeyCard.vue";
 import { useRouter } from "vue-router";
 import { canAdminister } from "@/utils/roles";
+import {
+  isValidNewPassword,
+  NEW_PASSWORD_PLACEHOLDER,
+  NEW_PASSWORD_RULE_MESSAGE,
+} from "@/utils/password";
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -331,8 +336,9 @@ async function handleChangePassword() {
     ElMessage.warning("请完整填写密码信息");
     return;
   }
-  if (passwordForm.value.newPassword.length < 6) {
-    ElMessage.warning("新密码至少 6 位");
+  // 与后端同一规则（只管新密码，旧密码不校验格式）
+  if (!isValidNewPassword(passwordForm.value.newPassword)) {
+    ElMessage.warning(`新${NEW_PASSWORD_RULE_MESSAGE}`);
     return;
   }
   if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
@@ -932,7 +938,7 @@ onUnmounted(() => {
                   v-model="passwordForm.newPassword"
                   type="password"
                   show-password
-                  placeholder="至少 6 位"
+                  :placeholder="NEW_PASSWORD_PLACEHOLDER"
                 />
               </el-form-item>
               <el-form-item label="确认新密码">

@@ -8,9 +8,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// forwardedIPHeaders 只认反代会改写的头。
+// 不认 CF-Connecting-IP / True-Client-IP：面板和自带的 nginx 都不会写这两个头，而是原样透传，
+// 客户端随手一填就能让限流、登录锁定、IP 白名单全部失效。
+// 走 Cloudflare 的用户把 Cloudflare 回源网段填进「可信代理 CIDR」，由 X-Forwarded-For 链解析真实 IP。
 var forwardedIPHeaders = []string{
-	"CF-Connecting-IP",
-	"True-Client-IP",
 	"X-Forwarded-For",
 	"X-Real-IP",
 	"X-Original-Forwarded-For",

@@ -266,7 +266,10 @@ func CORS() gin.HandlerFunc {
 
 	return cors.New(cors.Config{
 		AllowOriginWithContextFunc: func(c *gin.Context, origin string) bool {
-			if origin == "" || origin == "null" {
+			// 空 Origin 放行：脚本、APP 等非浏览器客户端本来就不带 Origin。
+			// 不再放行 "null"：沙箱 iframe、data:/file: 页面发出的请求都是这个值，
+			// 放行它等于让任意页面借沙箱绕过来源校验、带着凭据跨域读接口。
+			if origin == "" {
 				return true
 			}
 			if matchesConfiguredOrigin(origin, allowedOrigins) {

@@ -134,6 +134,7 @@ const binaryProxyOptions = [
       />
       <span class="form-hint">
         支持 IP、CIDR、逗号或换行分隔。留空会恢复默认私网段与本机地址；保存后客户端 IP 解析会按这份列表判断可信代理。
+        经 Cloudflare 等 CDN 访问时，把 CDN 的回源 IP 段也填进来，面板会从 X-Forwarded-For 里取出真实访客 IP（不再读取 CF-Connecting-IP 这类可被伪造的请求头）。
       </span>
     </div>
 
