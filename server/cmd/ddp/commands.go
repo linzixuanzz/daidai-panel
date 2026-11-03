@@ -913,7 +913,9 @@ func runResetPassword(rt *cliRuntime, args []string) error {
 		return fmt.Errorf("密码哈希失败: %w", err)
 	}
 
-	if err := database.DB.Model(&user).Update("password", hash).Error; err != nil {
+	// 与网页改密一致：新密码与清掉该用户的全部通行密钥在同一事务里落库
+	removedPasskeys, err := service.SetPasswordAndClearPasskeys(user.ID, hash)
+	if err != nil {
 		return fmt.Errorf("更新密码失败: %w", err)
 	}
 
@@ -925,6 +927,10 @@ func runResetPassword(rt *cliRuntime, args []string) error {
 	revoked := service.RevokeAllUserSessions(user.ID)
 
 	fmt.Printf("已重置用户 %s 的密码，已撤销 %d 个登录会话\n", user.Username, revoked)
+	// 确实清掉了通行密钥才多打一行，没有时输出与原来一致
+	if removedPasskeys > 0 {
+		fmt.Printf("已清除该用户添加的 %d 个通行密钥\n", removedPasskeys)
+	}
 	return nil
 }
 

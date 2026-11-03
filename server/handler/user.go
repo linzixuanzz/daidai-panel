@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"strconv"
 
 	"daidai-panel/database"
@@ -12,6 +13,7 @@ import (
 	"daidai-panel/service"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type UserHandler struct{}
@@ -170,7 +172,14 @@ func (h *UserHandler) Delete(c *gin.Context) {
 	// 用户行随后被删，这行会话成了孤儿，再没有哪条改用户状态的路径会撤它，
 	// 被删的管理员能拿着这枚 access 调管理员接口到自然过期。
 	// 删不掉就回 500、不撤销：用户还在、状态没变，按同一口径不需要撤销。
-	if err := database.DB.Delete(&user).Error; err != nil {
+	// 通行密钥行跟用户行在同一个事务里删：SQLite 删掉最大 id 的用户后新建用户可能复用这个 id，
+	// 留着孤儿行，新用户就会继承被删用户的通行密钥。
+	if err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&user).Error; err != nil {
+			return err
+		}
+		return tx.Where("user_id = ?", user.ID).Delete(&model.Passkey{}).Error
+	}); err != nil {
 		response.InternalError(c, "删除用户失败")
 		return
 	}
@@ -206,9 +215,19 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	database.DB.Model(&user).Update("password", hashed)
+	// 新密码与清掉该用户的全部通行密钥放在同一事务里；落库之后再撤销会话（先落库、再撤销）
+	removedPasskeys, err := service.SetPasswordAndClearPasskeys(user.ID, hashed)
+	if err != nil {
+		response.InternalError(c, "密码重置失败")
+		return
+	}
 	service.RevokeAllUserSessions(user.ID)
-	response.Success(c, gin.H{"message": "密码重置成功"})
+	// 确实清掉了通行密钥才多说一句；没有通行密钥时文案与原来逐字相同
+	message := "密码重置成功"
+	if removedPasskeys > 0 {
+		message = fmt.Sprintf("密码重置成功，该用户已添加的 %d 个通行密钥也已清除", removedPasskeys)
+	}
+	response.Success(c, gin.H{"message": message})
 }
 
 func (h *UserHandler) RegisterRoutes(r *gin.RouterGroup) {

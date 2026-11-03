@@ -318,6 +318,30 @@ func snapshotConfigBundle() (BackupConfigBundle, error) {
 		})
 	}
 
+	// 通行密钥按用户名关联（导出时顺手带上，方便人工核对），恢复语义与 2FA 相同
+	usernameByID := make(map[uint]string, len(users))
+	for _, user := range users {
+		usernameByID[user.ID] = user.Username
+	}
+	var passkeys []model.Passkey
+	if err := database.DB.Order("id ASC").Find(&passkeys).Error; err != nil {
+		return BackupConfigBundle{}, fmt.Errorf("load passkeys: %w", err)
+	}
+	for _, item := range passkeys {
+		bundle.Passkeys = append(bundle.Passkeys, BackupPasskey{
+			UserID:       item.UserID,
+			Username:     usernameByID[item.UserID],
+			Name:         item.Name,
+			RPID:         item.RPID,
+			Origin:       item.Origin,
+			CredentialID: item.CredentialID,
+			UserHandle:   item.UserHandle,
+			Credential:   item.Credential,
+			CreatedAt:    item.CreatedAt,
+			LastUsedAt:   item.LastUsedAt,
+		})
+	}
+
 	var preferences []model.UserPreference
 	if err := database.DB.Order("id ASC").Find(&preferences).Error; err != nil {
 		return BackupConfigBundle{}, fmt.Errorf("load user preferences: %w", err)
@@ -1170,6 +1194,33 @@ func restoreTwoFactorAuths(tx *gorm.DB, items []BackupTwoFactorAuth, userIDMap m
 			Enabled:   item.Enabled,
 			CreatedAt: item.CreatedAt,
 			UpdatedAt: item.UpdatedAt,
+		}
+		if err := tx.Create(&record).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// restorePasskeys 与 restoreTwoFactorAuths 逐条同构：只恢复能经 userIDMap 映射到新用户 ID 的行。
+// ⚠️ 与 restoreTwoFactorAuths 一样目前没有调用点（用户、2FA、通行密钥只导出不恢复，恢复时保留当前面板的），
+// 成对放着是为了哪天接上用户恢复链路时不会漏掉通行密钥。
+func restorePasskeys(tx *gorm.DB, items []BackupPasskey, userIDMap map[uint]uint) error {
+	for _, item := range items {
+		userID := userIDMap[item.UserID]
+		if userID == 0 {
+			continue
+		}
+		record := model.Passkey{
+			UserID:       userID,
+			Name:         item.Name,
+			RPID:         item.RPID,
+			Origin:       item.Origin,
+			CredentialID: item.CredentialID,
+			UserHandle:   item.UserHandle,
+			Credential:   item.Credential,
+			CreatedAt:    item.CreatedAt,
+			LastUsedAt:   item.LastUsedAt,
 		}
 		if err := tx.Create(&record).Error; err != nil {
 			return err

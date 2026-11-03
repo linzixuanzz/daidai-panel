@@ -89,6 +89,7 @@ func SetupTestEnv(t *testing.T) string {
 		&model.IPWhitelist{},
 		&model.SecurityAudit{},
 		&model.TwoFactorAuth{},
+		&model.Passkey{},
 		&model.UserPreference{},
 		&model.OpenApp{},
 		&model.ApiCallLog{},

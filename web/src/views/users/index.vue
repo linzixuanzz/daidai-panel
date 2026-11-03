@@ -463,6 +463,8 @@ function getRoleName(role: string) {
           <el-input v-model="resetPwdForm.password" type="password" show-password placeholder="6-128 位密码" />
         </el-form-item>
       </el-form>
+      <!-- 重置密码会撤销该用户所有登录并清掉他的通行密钥（后端行为），提前告诉管理员 -->
+      <div class="reset-pwd-hint">重置后该用户需要重新登录，该用户的通行密钥会一并清除。</div>
       <template #footer>
         <el-button @click="showResetPwdDialog = false">取消</el-button>
         <el-button type="primary" @click="handleResetPassword">确定</el-button>
@@ -473,6 +475,13 @@ function getRoleName(role: string) {
 
 <style scoped lang="scss">
 .users-page { padding: 0; }
+
+.reset-pwd-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+}
 
 .page-header {
   display: flex;

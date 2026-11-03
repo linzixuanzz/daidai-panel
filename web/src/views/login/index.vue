@@ -22,6 +22,11 @@ import {
   type GeeTestValidateResult,
 } from "@/utils/geetest";
 import { shouldReduceMotion } from "@/utils/panelAppearance";
+import {
+  isPasskeyCancelError,
+  isPasskeySupported,
+  resolvePasskeyErrorMessage,
+} from "@/utils/passkey";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -58,6 +63,10 @@ const captchaStatusText = ref("");
 let captchaInstance: GeeTestInstance | null = null;
 let captchaInitPromise: Promise<GeeTestInstance> | null = null;
 let pendingSubmitAfterCaptcha = false;
+
+// 通行密钥（#175）：与后端同一口径，只有 HTTPS 域名或 http://localhost 访问时可用（IP 访问一律不行），页面打开后不会变，取一次即可
+const passkeySupported = isPasskeySupported();
+const passkeyLoading = ref(false);
 
 const lockCountdown = ref(0);
 let lockTimer: ReturnType<typeof setInterval> | null = null;
@@ -364,6 +373,53 @@ async function handleTOTPSubmit() {
   }
 }
 
+// 登录成功的收尾：密码登录与通行密钥登录（#175）共用，保证提示、mood、跳转完全一致。
+// 两步验证弹窗里「改用通行密钥验证」成功时，也靠这里把弹窗关掉、清掉没用上的验证码。
+function handleLoginSuccess() {
+  require2FA.value = false;
+  show2FADialog.value = false;
+  totpError.value = "";
+  form.value.totp_code = "";
+  captchaConfig.value.required = false;
+  pendingSubmitAfterCaptcha = false;
+  resetCaptchaProof();
+  mood.value = "success";
+  ElMessage.success("登录成功");
+  setTimeout(() => {
+    router.push("/");
+  }, 600);
+}
+
+// 通行密钥登录（#175）：登录页按钮与两步验证弹窗里的「改用通行密钥验证」都走这里。
+// 不走滑块验证、不看登录锁定（后端同样不看）：被别人试密码锁住时，本人仍能用通行密钥进来。
+async function handlePasskeyLogin() {
+  if (!passkeySupported || passkeyLoading.value) return;
+  passkeyLoading.value = true;
+  try {
+    await authStore.loginWithPasskey();
+    handleLoginSuccess();
+  } catch (err: any) {
+    // 用户在系统弹窗里取消 / 超时：只提示一句，不弹红、不切哭脸
+    if (isPasskeyCancelError(err)) {
+      ElMessage.info("已取消");
+      return;
+    }
+    mood.value = "error";
+    // 接口报错（白名单 403、禁用 403、校验失败 401、会话过期 400 …）按后端 error 文案提示，与密码登录同一套取法；
+    // 浏览器自己抛的异常没有 response，交给 passkey 工具翻成中文
+    ElMessage.error(
+      err?.response
+        ? resolveLoginErrorMessage(err)
+        : resolvePasskeyErrorMessage(err, "通行密钥登录失败，请重试或改用密码登录"),
+    );
+    setTimeout(() => {
+      mood.value = "idle";
+    }, 2000);
+  } finally {
+    passkeyLoading.value = false;
+  }
+}
+
 async function handleSubmit() {
   if (!form.value.username || !form.value.password) {
     ElMessage.warning("请输入用户名和密码");
@@ -412,18 +468,7 @@ async function handleSubmit() {
       form.value.totp_code,
       submittedCaptcha,
     );
-    require2FA.value = false;
-    show2FADialog.value = false;
-    totpError.value = "";
-    form.value.totp_code = "";
-    captchaConfig.value.required = false;
-    pendingSubmitAfterCaptcha = false;
-    resetCaptchaProof();
-    mood.value = "success";
-    ElMessage.success("登录成功");
-    setTimeout(() => {
-      router.push("/");
-    }, 600);
+    handleLoginSuccess();
   } catch (err: any) {
     mood.value = "error";
     const data = err?.response?.data;
@@ -606,6 +651,24 @@ const themeTitle = computed(() => {
                 }}
               </el-button>
             </el-form-item>
+            <!-- 通行密钥登录（#175）：初始化管理员时还没有账号，不显示。
+                 不支持（IP 访问、或 localhost 以外的 http 访问）时置灰并说明原因，而不是直接藏掉：让用户知道换成 HTTPS 域名就能用。
+                 不跟着登录锁定倒计时禁用：锁定是防密码爆破的，通行密钥不受影响。 -->
+            <el-form-item v-if="isInit" class="passkey-form-item">
+              <el-button
+                size="large"
+                class="passkey-btn"
+                :icon="Key"
+                :loading="passkeyLoading"
+                :disabled="!passkeySupported || loading"
+                @click="handlePasskeyLogin"
+              >
+                使用通行密钥登录
+              </el-button>
+              <div v-if="!passkeySupported" class="passkey-hint">
+                通行密钥需要通过 HTTPS 域名（或 http://localhost）访问面板
+              </div>
+            </el-form-item>
           </el-form>
 
           <!-- 演示站说明：先讲清数据只存在访客自己的浏览器里，避免误以为在操作真实实例 -->
@@ -660,6 +723,18 @@ const themeTitle = computed(() => {
           <template v-else
             >丢失认证器？请联系管理员在用户管理里重置 2FA。</template
           >
+        </div>
+        <!-- 已添加通行密钥的用户可以不输验证码，直接走通行密钥登录（#175）；不支持时整个入口不显示 -->
+        <div v-if="passkeySupported" class="totp-passkey-switch">
+          <el-button
+            link
+            type="primary"
+            :icon="Key"
+            :loading="passkeyLoading"
+            @click="handlePasskeyLogin"
+          >
+            改用通行密钥验证
+          </el-button>
         </div>
       </div>
 
@@ -1013,6 +1088,38 @@ const themeTitle = computed(() => {
   &:hover {
     background: #333 !important;
   }
+}
+
+/* 通行密钥登录（#175）：次要按钮，白底描边与主按钮的深色实底区分开；尺寸、圆角与主按钮一致 */
+.login-form :deep(.passkey-form-item) {
+  margin-top: -6px;
+
+  .el-form-item__content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.passkey-btn {
+  width: 100%;
+  height: 46px;
+  border-radius: var(--dd-radius-control);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.passkey-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+}
+
+.totp-passkey-switch {
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
 }
 
 /* 演示站说明文案：与版本号同一档次的辅助信息，直角纯文本，不加任何装饰 */

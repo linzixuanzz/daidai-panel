@@ -21,12 +21,19 @@ const (
 )
 
 func RecordLoginLog(userID uint, username, ip, clientName, userAgent string, status int, message string) {
+	RecordLoginLogWithMethod(userID, username, ip, clientName, userAgent, status, message, "")
+}
+
+// RecordLoginLogWithMethod 同 RecordLoginLog，额外写「登录方式」列（设置页登录日志的「登录方式」）。
+// method 为空时不赋值，落库走列默认值「密码登录」，与 RecordLoginLog 原来的行为一致；通行密钥登录传「通行密钥」。
+func RecordLoginLogWithMethod(userID uint, username, ip, clientName, userAgent string, status int, message, method string) {
 	log := model.LoginLog{
 		UserID:     userID,
 		Username:   username,
 		IP:         ip,
 		ClientName: clientName,
 		UserAgent:  userAgent,
+		Method:     method,
 		Status:     status,
 		Message:    message,
 	}

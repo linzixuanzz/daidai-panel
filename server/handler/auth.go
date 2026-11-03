@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -175,36 +176,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	user, accessToken, refreshToken, accessInfo, refreshInfo, err := h.authService.Login(req.Username, req.Password, req.TOTPCode)
 	if err == nil {
-		// 先落会话行，落成了才算登录成功。这枚 access 的会话号就是会话行的 jti，撤销全部会话、改密、禁用、删除
-		// 都靠遍历会话行找到它；会话行写不进去还照发 token，签出的就是一枚永远撤销不掉的登录令牌。
-		if sessionErr := service.CreateSessionWithRefresh(user.ID, user.Username, accessInfo.JTI, refreshInfo.JTI, clientType, clientName, ip, ua, accessInfo.ExpiresAt, refreshInfo.ExpiresAt); sessionErr != nil {
+		err = commitLoginSession(user, accessInfo, refreshInfo, clientType, clientName, ip, ua)
+		if err == errLoginSessionNotCreated {
 			response.InternalError(c, "登录失败")
 			return
-		}
-
-		// 会话行落库之后，按 id 重读一次用户，与这次校验时读到的那份比：启用状态、角色、密码哈希、用户名。
-		// 为什么要这一步：管理员的禁用 / 降权 / 重置密码 / 改名 / 删号会调 RevokeAllUserSessions，它只能撤掉
-		// 「当时已经在库里」的会话行。改动如果恰好落在「登录校验完、会话行还没落库」之间，这次的会话行就不在
-		// 那次撤销的范围里，之后也没有路径会再撤它；新令牌每请求只查黑名单、不查用户状态，
-		// 这枚令牌就能在账号已被禁用的情况下一直用到自然过期。
-		// 为什么这样就关住了窗口：管理员的更新早于这次重读，这里看得见，当场撤掉刚建的会话；
-		// 晚于这次重读，会话行已经在库里，管理员随后的 RevokeAllUserSessions 一定遍历得到它。
-		// 本推理依赖「先把用户状态落库、再调 RevokeAllUserSessions」的顺序（删号就是先删用户行、再撤销）：
-		// 反过来先撤销后落库，登录能落在撤销的 Find 之后、落库之前，重读看不到变化，会话行也躲过了那次撤销。
-		// 新增改用户状态的入口必须遵守这个顺序。
-		// 代价是每次登录多一条查询，不在每请求路径上。
-		// 有变化就走下面原有的失败分支：被禁用回 403；其余回 401——密码被重置、改名、删号时这份凭据本来就登不上了，
-		// 角色变了也按 401 处理：这次校验用的账号快照已经过时，重新登录一次就按新角色签发。
-		var latest model.User
-		if database.DB.First(&latest, user.ID).Error != nil || latest.Username != user.Username {
-			err = service.ErrUserNotFound
-		} else if !latest.Enabled {
-			err = service.ErrUserDisabled
-		} else if latest.Password != user.Password || latest.Role != user.Role {
-			err = service.ErrInvalidPassword
-		}
-		if err != nil {
-			service.RevokeSession(accessInfo.JTI, accessInfo.ExpiresAt)
 		}
 	}
 	if err != nil {
@@ -260,13 +235,70 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	service.ClearLoginAttempts(ip, req.Username)
-	service.RecordLoginLog(user.ID, user.Username, ip, clientName, ua, 0, "登录成功")
+	respondLoginSuccess(c, user, accessToken, refreshToken, req.Username, ip, clientName, ua, false)
+}
+
+// errLoginSessionNotCreated：会话行没落成，调用方回 500「登录失败」，不发令牌。
+var errLoginSessionNotCreated = errors.New("登录会话创建失败")
+
+// commitLoginSession 是密码登录与通行密钥登录共用的收尾前半段：落会话行，再按 id 重读用户比对。
+// 返回 errLoginSessionNotCreated 时调用方回 500；返回 service.ErrUserNotFound / ErrUserDisabled / ErrInvalidPassword
+// 时刚建的会话已被撤销，调用方按各自口径回失败；返回 nil 才算登录成功。
+func commitLoginSession(user *model.User, accessInfo, refreshInfo *middleware.TokenInfo, clientType, clientName, ip, ua string) error {
+	// 先落会话行，落成了才算登录成功。这枚 access 的会话号就是会话行的 jti，撤销全部会话、改密、禁用、删除
+	// 都靠遍历会话行找到它；会话行写不进去还照发 token，签出的就是一枚永远撤销不掉的登录令牌。
+	if sessionErr := service.CreateSessionWithRefresh(user.ID, user.Username, accessInfo.JTI, refreshInfo.JTI, clientType, clientName, ip, ua, accessInfo.ExpiresAt, refreshInfo.ExpiresAt); sessionErr != nil {
+		return errLoginSessionNotCreated
+	}
+
+	var err error
+	// 会话行落库之后，按 id 重读一次用户，与这次校验时读到的那份比：启用状态、角色、密码哈希、用户名。
+	// 为什么要这一步：管理员的禁用 / 降权 / 重置密码 / 改名 / 删号会调 RevokeAllUserSessions，它只能撤掉
+	// 「当时已经在库里」的会话行。改动如果恰好落在「登录校验完、会话行还没落库」之间，这次的会话行就不在
+	// 那次撤销的范围里，之后也没有路径会再撤它；新令牌每请求只查黑名单、不查用户状态，
+	// 这枚令牌就能在账号已被禁用的情况下一直用到自然过期。
+	// 为什么这样就关住了窗口：管理员的更新早于这次重读，这里看得见，当场撤掉刚建的会话；
+	// 晚于这次重读，会话行已经在库里，管理员随后的 RevokeAllUserSessions 一定遍历得到它。
+	// 本推理依赖「先把用户状态落库、再调 RevokeAllUserSessions」的顺序（删号就是先删用户行、再撤销）：
+	// 反过来先撤销后落库，登录能落在撤销的 Find 之后、落库之前，重读看不到变化，会话行也躲过了那次撤销。
+	// 新增改用户状态的入口必须遵守这个顺序。
+	// 代价是每次登录多一条查询，不在每请求路径上。
+	// 有变化就交给调用方原有的失败分支：被禁用回 403；其余回 401——密码被重置、改名、删号时这份凭据本来就登不上了，
+	// 角色变了也按 401 处理：这次校验用的账号快照已经过时，重新登录一次就按新角色签发。
+	var latest model.User
+	if database.DB.First(&latest, user.ID).Error != nil || latest.Username != user.Username {
+		err = service.ErrUserNotFound
+	} else if !latest.Enabled {
+		err = service.ErrUserDisabled
+	} else if latest.Password != user.Password || latest.Role != user.Role {
+		err = service.ErrInvalidPassword
+	}
+	if err != nil {
+		service.RevokeSession(accessInfo.JTI, accessInfo.ExpiresAt)
+	}
+	return err
+}
+
+// respondLoginSuccess 是密码登录与通行密钥登录共用的成功收尾：清失败计数、记登录日志、按需发登录通知、回令牌。
+// 响应体两边逐字段相同（message / access_token / refresh_token / user）。
+// attemptUsername 是清失败计数用的用户名：密码登录沿用请求里填的用户名（与改动前一致），通行密钥登录用账号本身的用户名。
+// viaPasskey 为假时日志、通知文案与改动前逐字不变。
+func respondLoginSuccess(c *gin.Context, user *model.User, accessToken, refreshToken, attemptUsername, ip, clientName, ua string, viaPasskey bool) {
+	service.ClearLoginAttempts(ip, attemptUsername)
+	if viaPasskey {
+		service.RecordLoginLogWithMethod(user.ID, user.Username, ip, clientName, ua, 0, "登录成功（通行密钥）", passkeyLoginMethod)
+	} else {
+		service.RecordLoginLog(user.ID, user.Username, ip, clientName, ua, 0, "登录成功")
+	}
 	if model.GetRegisteredConfigBool("notify_on_login") {
+		action := "登录成功。"
+		if viaPasskey {
+			action = "使用通行密钥登录成功。"
+		}
 		go service.SendNotification(
 			"登录成功通知",
-			fmt.Sprintf("用户 %s 于 %s 从 IP %s 登录成功。",
-				user.Username, time.Now().Format("2006-01-02 15:04:05"), ip),
+			fmt.Sprintf("用户 %s 于 %s 从 IP %s %s",
+				user.Username, time.Now().Format("2006-01-02 15:04:05"), ip, action),
 		)
 	}
 
@@ -318,7 +350,8 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	}
 
 	username, _ := c.Get("username")
-	if err := h.authService.ChangePassword(username.(string), req.OldPassword, req.NewPassword); err != nil {
+	removedPasskeys, err := h.authService.ChangePassword(username.(string), req.OldPassword, req.NewPassword)
+	if err != nil {
 		switch err {
 		case service.ErrInvalidPassword:
 			response.BadRequest(c, "当前密码不正确")
@@ -330,12 +363,18 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
+	// 新密码与清通行密钥已经在同一事务里落库，这里再撤销会话（先落库、再撤销）
 	user, _ := h.authService.GetUser(username.(string))
 	if user != nil {
 		service.RevokeAllUserSessions(user.ID)
 	}
 
-	response.Success(c, gin.H{"message": "密码修改成功，请重新登录"})
+	// 确实清掉了通行密钥才多说一句；没有通行密钥时文案与原来逐字相同
+	message := "密码修改成功，请重新登录"
+	if removedPasskeys > 0 {
+		message = fmt.Sprintf("密码修改成功，已添加的 %d 个通行密钥也已清除，请重新登录", removedPasskeys)
+	}
+	response.Success(c, gin.H{"message": message})
 }
 
 func (h *AuthHandler) ChangeUsername(c *gin.Context) {
@@ -526,12 +565,16 @@ func (h *AuthHandler) RegisterRoutes(r *gin.RouterGroup) {
 	// 同一个按 IP 计数的桶——2FA 每次登录要发 2 个请求，等效只剩约 2.5 次/分钟，
 	// 手机与浏览器同出口还会互相挤占。现在两条路由各自持有独立限流器。
 	loginLimiter := middleware.RateLimit(5, time.Minute)
+	// 通行密钥登录（issue #175）单独一个限流器：免登录的 begin / finish 共用，每个前缀各自现构造，理由同上
+	passkeyLimiter := middleware.RateLimit(20, time.Minute)
 
 	auth := r.Group("/auth")
 	{
 		auth.GET("/check-init", h.CheckInit)
 		auth.POST("/init", h.Init)
 		auth.POST("/login", loginLimiter, h.Login)
+		auth.POST("/passkey/login/begin", passkeyLimiter, h.PasskeyLoginBegin)
+		auth.POST("/passkey/login/finish", passkeyLimiter, h.PasskeyLoginFinish)
 		auth.POST("/logout", middleware.JWTAuth(), h.Logout)
 		auth.POST("/refresh", h.Refresh)
 		auth.GET("/user", middleware.JWTAuth(), h.GetUser)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import AlertConfigCard from './components/AlertConfigCard.vue'
 import BackupManagementCard from './components/BackupManagementCard.vue'
@@ -13,6 +13,7 @@ import OverviewStatsCard from './components/OverviewStatsCard.vue'
 import PanelLogCard from './components/PanelLogCard.vue'
 import ProxyConfigCard from './components/ProxyConfigCard.vue'
 import SecurityPassword2FACard from './components/SecurityPassword2FACard.vue'
+import SecurityPasskeyCard from './components/SecurityPasskeyCard.vue'
 import SessionManagementCard from './components/SessionManagementCard.vue'
 import SystemConfigCard from './components/SystemConfigCard.vue'
 import SystemHealthCard from './components/SystemHealthCard.vue'
@@ -23,9 +24,13 @@ import { useSettingsConfig } from './useSettingsConfig'
 import { useSettingsOverview } from './useSettingsOverview'
 import { usePanelLogViewer } from './usePanelLogViewer'
 import { useSettingsSecurity } from './useSettingsSecurity'
-import { Bell, Connection, Document, Lock, Monitor, Refresh } from '@element-plus/icons-vue'
+import { Bell, Connection, Document, Key, Lock, Monitor, Refresh } from '@element-plus/icons-vue'
+import { useRoute } from 'vue-router'
 
 const authStore = useAuthStore()
+const route = useRoute()
+// 通行密钥卡片（lazy 挂载，没点开过时是 null）：顶部「刷新」要能刷到它
+const passkeyCardRef = ref<InstanceType<typeof SecurityPasskeyCard> | null>(null)
 const roleLevel: Record<string, number> = { viewer: 1, operator: 2, admin: 3 }
 const isAdmin = computed(() => (roleLevel[authStore.user?.role || ''] || 0) >= (roleLevel.admin || 0))
 
@@ -236,6 +241,7 @@ function handleTabChange(tab: string) {
   } else if (tab === 'security') {
     void load2FAStatus()
     if (securityTab.value === 'sessions') void loadSystemConfigs()
+    if (securityTab.value === 'passkeys') void passkeyCardRef.value?.reload()
   }
 }
 
@@ -252,6 +258,25 @@ onMounted(() => {
   void loadSystemInfo()
   if (!isAdmin.value) {
     securityTab.value = 'password-2fa'
+  }
+})
+
+// 从别处带 query 直达某个子页签（#175：个人资料页「通行密钥 · 管理」跳过来是
+// ?tab=security&security_tab=passkeys）。本页在 MainLayout 的 keep-alive 里，第二次进来只触发 onActivated，
+// 所以放在 onActivated（首次挂载时它也会在 onMounted 之后跑一次）。
+// 程序改 v-model 不会触发 el-tabs 的 tab-change，加载要自己调
+onActivated(() => {
+  if (route.query.tab === 'security') {
+    activeTab.value = 'security'
+    const sub = route.query.security_tab
+    const allowedSubTabs = isAdmin.value
+      ? ['password-2fa', 'passkeys', 'login-logs', 'sessions', 'ip-whitelist']
+      : ['password-2fa', 'passkeys']
+    if (typeof sub === 'string' && allowedSubTabs.includes(sub)) {
+      securityTab.value = sub
+      handleSecuritySubTabChange(sub)
+    }
+    handleTabChange('security')
   }
 })
 
@@ -486,6 +511,15 @@ watch(
               :on-disable2-f-a="handleDisable2FA"
               :on-verify2-f-a="handleVerify2FA"
             />
+          </el-tab-pane>
+
+          <!-- 通行密钥（#175）：任何角色都能管自己的。lazy：第一次点开才挂载，卡片挂载时自己拉列表，
+               不在每次打开设置页时白发一个请求 -->
+          <el-tab-pane name="passkeys" lazy>
+            <template #label>
+              <span class="sub-tab-label"><el-icon :size="14"><Key /></el-icon>通行密钥</span>
+            </template>
+            <SecurityPasskeyCard ref="passkeyCardRef" />
           </el-tab-pane>
 
           <el-tab-pane v-if="isAdmin" name="login-logs">

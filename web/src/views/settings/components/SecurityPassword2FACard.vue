@@ -30,6 +30,8 @@ const { dialogFullscreen } = useResponsive()
             <span class="card-title"><el-icon><Lock /></el-icon> 修改密码</span>
           </div>
         </template>
+        <!-- 改密码会撤销所有登录并清掉通行密钥（后端行为），提前说清楚 -->
+        <p class="password-hint">修改密码后需要重新登录，已添加的通行密钥也会一并清除。</p>
         <el-form label-position="top" style="max-width: 420px">
           <form @submit.prevent="onChangePassword">
           <el-form-item label="* 当前密码">
@@ -108,6 +110,13 @@ const { dialogFullscreen } = useResponsive()
   font-size: 14px;
   line-height: 1.6;
   margin: 0 0 20px;
+}
+
+.password-hint {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0 0 12px;
 }
 
 form {

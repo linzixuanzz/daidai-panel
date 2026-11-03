@@ -473,8 +473,9 @@ export function useSettingsSecurity() {
       return
     }
     try {
-      await authApi.changePassword(oldPassword.value, newPassword.value)
-      ElMessage.success('密码修改成功，即将跳转到登录页')
+      const res = await authApi.changePassword(oldPassword.value, newPassword.value)
+      // 后端文案会说明通行密钥已一并清除，优先用它
+      ElMessage.success(res?.message || '密码修改成功，即将跳转到登录页')
       oldPassword.value = ''
       newPassword.value = ''
       confirmPassword.value = ''

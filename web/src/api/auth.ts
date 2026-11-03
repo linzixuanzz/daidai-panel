@@ -27,6 +27,28 @@ export const authApi = {
     }>
   },
 
+  // 通行密钥登录第一步（#175，免登录）：拿一次性的 session_id 与 publicKey 请求选项（二进制字段是 base64url）。
+  // 访问地址不是 HTTPS 域名 / localhost 时回 400 code=passkey_unsupported_origin。
+  passkeyLoginBegin() {
+    return request.post('/auth/passkey/login/begin', {}) as Promise<{
+      data: { session_id: string; options: any }
+    }>
+  },
+
+  // 通行密钥登录第二步：把 navigator.credentials.get 的结果交回去。
+  // 成功时响应体与 /auth/login 成功时逐字段相同；会话过期 400 passkey_session_expired，校验失败 401 invalid_passkey
+  passkeyLoginFinish(sessionId: string, credential: Record<string, unknown>) {
+    return request.post('/auth/passkey/login/finish', {
+      session_id: sessionId,
+      credential
+    }) as Promise<{
+      message: string
+      access_token: string
+      refresh_token: string
+      user: any
+    }>
+  },
+
   logout() {
     return request.post('/auth/logout') as Promise<{ message: string }>
   },

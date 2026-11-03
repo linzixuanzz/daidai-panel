@@ -76,6 +76,23 @@ type BackupTwoFactorAuth struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// BackupPasskey 是用户的通行密钥（issue #175）。语义照抄 BackupTwoFactorAuth：跟着用户走、随「配置」一起导出；
+// 恢复时与 2FA 一样保留当前面板的用户与通行密钥，不导入备份里的（restorePasskeys 与 restoreTwoFactorAuths 成对放着）。
+// UserID 用来在用户恢复链路接上时经 userIDMap 映射，Username 方便人工核对是谁的。
+// ⚠️ 凭据 JSON 里有公钥，备份文件不能外发（与 2FA 密钥、密码哈希同一口径）。
+type BackupPasskey struct {
+	UserID       uint       `json:"user_id"`
+	Username     string     `json:"username"`
+	Name         string     `json:"name"`
+	RPID         string     `json:"rp_id"`
+	Origin       string     `json:"origin"` // 添加时的完整来源（含端口），登录时必须一致
+	CredentialID string     `json:"credential_id"`
+	UserHandle   string     `json:"user_handle"`
+	Credential   string     `json:"credential"`
+	CreatedAt    time.Time  `json:"created_at"`
+	LastUsedAt   *time.Time `json:"last_used_at,omitempty"`
+}
+
 // BackupUserPreference 是 per-user 的界面偏好（Editor、List 两组 JSON，各对应 model.UserPreference 的一列）。
 // 和 BackupTwoFactorAuth 一样跟着用户走，所以刻意**不**给 BackupSelection 加新开关：
 // 用户在恢复界面看到的仍然是原来那几项，勾「配置」就一起带上。
@@ -162,6 +179,7 @@ type BackupConfigBundle struct {
 	Users             []BackupUser              `json:"users,omitempty"`
 	IPWhitelists      []model.IPWhitelist       `json:"ip_whitelists,omitempty"`
 	TwoFactorAuths    []BackupTwoFactorAuth     `json:"two_factor_auths,omitempty"`
+	Passkeys          []BackupPasskey           `json:"passkeys,omitempty"` // v3.4.2 起；老备份没有这个键 = 没有通行密钥
 	UserPreferences   []BackupUserPreference    `json:"user_preferences,omitempty"`
 	DependencyMirrors *DependencyMirrorSettings `json:"dependency_mirrors,omitempty"`
 }

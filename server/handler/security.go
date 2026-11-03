@@ -328,5 +328,12 @@ func (h *SecurityHandler) RegisterRoutes(r *gin.RouterGroup) {
 		security.POST("/2fa/verify", h.Verify2FA)
 		security.DELETE("/2fa", h.Disable2FA)
 		security.GET("/2fa/status", h.Get2FAStatus)
+
+		// 通行密钥（issue #175）：任何角色都能管自己的，只能看 / 改 / 删自己的行
+		security.GET("/passkeys", h.ListPasskeys)
+		security.POST("/passkeys/register/begin", h.PasskeyRegisterBegin)
+		security.POST("/passkeys/register/finish", h.PasskeyRegisterFinish)
+		security.PUT("/passkeys/:id", h.RenamePasskey)
+		security.DELETE("/passkeys/:id", h.DeletePasskey)
 	}
 }

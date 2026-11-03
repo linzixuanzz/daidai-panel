@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   CircleCheck,
@@ -41,8 +41,12 @@ import { createQrCodeDataUrl } from "@/utils/qrcode";
 import { formatDateTime } from "@/utils/datetime";
 import { useResponsive } from "@/composables/useResponsive";
 import SponsorWall from "./components/SponsorWall.vue";
+import SecurityPasskeyCard from "@/views/settings/components/SecurityPasskeyCard.vue";
+import { useRouter } from "vue-router";
+import { canAdminister } from "@/utils/roles";
 
 const authStore = useAuthStore();
+const router = useRouter();
 const { dialogFullscreen } = useResponsive();
 const activeTab = ref<"profile" | "security" | "sponsors">("profile");
 
@@ -61,6 +65,10 @@ const twoFACode = ref("");
 const showSetup2FA = ref(false);
 const twoFALoading = ref(false);
 const twoFADisabling = ref(false);
+
+// 通行密钥（#175）：个人资料页只显示个数；null = 还没拉到（或拉取失败，比如老版本后端没有这个接口）
+const passkeyCount = ref<number | null>(null);
+const showPasskeyDialog = ref(false);
 
 const sponsors = ref<SponsorRecord[]>([]);
 const sponsorSummary = ref<SponsorSummary | null>(null);
@@ -334,11 +342,12 @@ async function handleChangePassword() {
 
   passwordSaving.value = true;
   try {
-    await authApi.changePassword(
+    const res = await authApi.changePassword(
       passwordForm.value.oldPassword,
       passwordForm.value.newPassword,
     );
-    ElMessage.success("密码修改成功，即将重新登录");
+    // 后端文案会说明通行密钥已一并清除，优先用它
+    ElMessage.success(res?.message || "密码修改成功，即将重新登录");
     passwordForm.value = {
       oldPassword: "",
       newPassword: "",
@@ -353,6 +362,29 @@ async function handleChangePassword() {
   } finally {
     passwordSaving.value = false;
   }
+}
+
+async function loadPasskeyCount() {
+  try {
+    const res = await securityApi.listPasskeys();
+    passkeyCount.value = Array.isArray(res.data) ? res.data.length : 0;
+  } catch {
+    // 只是一行摘要，拉不到就显示「未知」，不打扰用户
+    passkeyCount.value = null;
+  }
+}
+
+// 「管理」：管理员跳到设置页「账号安全 → 通行密钥」；
+// 其他角色进不了设置页（路由 minRole=admin），就地弹出同一张管理卡片
+function openPasskeyManager() {
+  if (canAdminister(authStore.user?.role)) {
+    void router.push({
+      path: "/admin/settings",
+      query: { tab: "security", security_tab: "passkeys" },
+    });
+    return;
+  }
+  showPasskeyDialog.value = true;
 }
 
 async function handleSetup2FA() {
@@ -510,6 +542,12 @@ onMounted(async () => {
     }
   }
   load2FAStatus();
+});
+
+// 通行密钥个数放在 onActivated 里拉：本页在 keep-alive 里，管理员去设置页增删完回来只触发 onActivated；
+// 首次挂载时 onActivated 也会跑一次，不用在 onMounted 里重复
+onActivated(() => {
+  void loadPasskeyCount();
 });
 
 watch(activeTab, (tab) => {
@@ -861,7 +899,7 @@ onUnmounted(() => {
               </li>
               <li>
                 <span class="tip-bullet">4</span>
-                <span>修改密码后所有登录（包括当前这个）都会被撤销，需要重新登录。</span>
+                <span>修改密码后所有登录（包括当前这个）都会被撤销，需要重新登录；已添加的通行密钥也会一并清除。</span>
               </li>
             </ul>
           </section>
@@ -876,6 +914,10 @@ onUnmounted(() => {
                 <span>修改密码</span>
               </span>
             </header>
+            <!-- 改密码会撤销所有登录并清掉通行密钥（后端行为），提前说清楚 -->
+            <p class="security-form-hint">
+              修改密码后需要重新登录，已添加的通行密钥也会一并清除。
+            </p>
             <el-form label-position="top" class="security-form">
               <el-form-item label="当前密码">
                 <el-input
@@ -967,6 +1009,20 @@ onUnmounted(() => {
                 <span>禁用 2FA（需动态码）</span>
               </el-button>
             </div>
+
+            <!-- 通行密钥（#175）：只放一行摘要 + 管理入口，具体管理在设置页「账号安全 → 通行密钥」 -->
+            <div class="passkey-row">
+              <el-icon :size="14"><Key /></el-icon>
+              <span>
+                通行密钥：{{
+                  passkeyCount === null ? "未知" : `已添加 ${passkeyCount} 个`
+                }}
+              </span>
+              <span class="passkey-row__sep" aria-hidden="true">·</span>
+              <el-button link type="primary" @click="openPasskeyManager">
+                管理
+              </el-button>
+            </div>
           </section>
         </div>
 
@@ -1003,6 +1059,20 @@ onUnmounted(() => {
         </Transition>
       </div>
     </div>
+
+    <!-- ================= 通行密钥管理（非管理员用） =================
+         设置页整页只对管理员开放，operator / viewer 点「管理」进不去，
+         所以给他们在这里弹出同一张卡片；destroy-on-close 让每次打开都重新拉一次列表 -->
+    <el-dialog
+      v-model="showPasskeyDialog"
+      title="通行密钥"
+      width="820px"
+      :fullscreen="dialogFullscreen"
+      append-to-body
+      destroy-on-close
+    >
+      <SecurityPasskeyCard @changed="passkeyCount = $event" />
+    </el-dialog>
 
     <!-- ================= Setup 2FA dialog ================= -->
     <el-dialog
@@ -1632,6 +1702,13 @@ onUnmounted(() => {
 }
 
 /* Password */
+.security-form-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--el-text-color-secondary);
+}
+
 .security-form {
   :deep(.el-form-item) {
     margin-bottom: 16px;
@@ -1723,6 +1800,23 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* 通行密钥摘要行（#175）：2FA 操作按钮下方一行辅助信息，用细分隔线与上面隔开 */
+.passkey-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.passkey-row__sep {
+  color: var(--el-text-color-placeholder);
 }
 
 .danger-outline-btn {

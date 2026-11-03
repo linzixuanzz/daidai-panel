@@ -5,6 +5,7 @@ import { resetEditorPreferencesCache } from '@/utils/editorPreferences'
 import { resetListPreferencesCache } from '@/utils/listPreferences'
 import router from '@/router'
 import type { GeeTestValidateResult } from '@/utils/geetest'
+import { assertionCredentialToJSON, toRequestOptions } from '@/utils/passkey'
 
 interface User {
   id: number
@@ -50,10 +51,33 @@ export const useAuthStore = defineStore('auth', () => {
     resetListPreferencesCache()
   }
 
-  async function login(username: string, password: string, totpCode?: string, captcha?: GeeTestValidateResult | null) {
-    const res = await authApi.login(username, password, totpCode, captcha)
+  // 登录成功后保存令牌与用户：密码登录与通行密钥登录共用这一段（#175），别各写一份
+  function applyLoginResult(res: { access_token: string; refresh_token: string; user: any }) {
     setTokens(res.access_token, res.refresh_token)
     setUser(res.user)
+  }
+
+  async function login(username: string, password: string, totpCode?: string, captcha?: GeeTestValidateResult | null) {
+    const res = await authApi.login(username, password, totpCode, captcha)
+    applyLoginResult(res)
+    return res
+  }
+
+  // 通行密钥登录（#175）：begin 拿挑战 → 浏览器弹系统验证（指纹 / 面容 / PIN）→ finish 换令牌。
+  // 用户取消时 navigator.credentials.get 抛 NotAllowedError，原样抛给页面（页面只提示「已取消」）。
+  async function loginWithPasskey() {
+    const begin = await authApi.passkeyLoginBegin()
+    const credential = await navigator.credentials.get({
+      publicKey: toRequestOptions(begin.data?.options)
+    })
+    if (!credential) {
+      throw new Error('没有拿到通行密钥，请重试')
+    }
+    const res = await authApi.passkeyLoginFinish(
+      begin.data.session_id,
+      assertionCredentialToJSON(credential as PublicKeyCredential)
+    )
+    applyLoginResult(res)
     return res
   }
 
@@ -84,6 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isLoggedIn,
     login,
+    loginWithPasskey,
     logout,
     fetchUser,
     refreshAccessToken,

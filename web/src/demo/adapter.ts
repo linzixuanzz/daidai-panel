@@ -2889,6 +2889,16 @@ route('POST', '/security/2fa/setup', () => ({
 route('POST', '/security/2fa/verify', () => blocked('演示环境无法校验动态验证码'))
 route('DELETE', '/security/2fa', () => ({ message: '已关闭两步验证' }))
 
+// 通行密钥（#175）：演示站没有真实后端做签名校验，列表恒为空，其余一律拒掉；
+// 只保证登录页 / 设置页 / 个人资料页上的按钮点了有明确提示，不落进「未铺设的端点」兜底
+route('GET', '/security/passkeys', () => ({ data: [] }))
+route('POST', '/security/passkeys/register/begin', () => blocked('演示环境不支持通行密钥'))
+route('POST', '/security/passkeys/register/finish', () => blocked('演示环境不支持通行密钥'))
+route('PUT', '/security/passkeys/:id', () => blocked('演示环境不支持通行密钥'))
+route('DELETE', '/security/passkeys/:id', () => blocked('演示环境不支持通行密钥'))
+route('POST', '/auth/passkey/login/begin', () => blocked('演示环境不支持通行密钥'))
+route('POST', '/auth/passkey/login/finish', () => blocked('演示环境不支持通行密钥'))
+
 // ===========================================================================
 // 依赖管理 / Android 运行时
 // ===========================================================================

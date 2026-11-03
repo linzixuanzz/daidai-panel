@@ -137,6 +137,8 @@ func allModels() []interface{} {
 		&model.IPWhitelist{},
 		&model.SecurityAudit{},
 		&model.TwoFactorAuth{},
+		// 通行密钥（issue #175，v3.4.2）。新表，存量库 AutoMigrate 时建出来即可，一行都没有时与升级前一致。
+		&model.Passkey{},
 		&model.UserPreference{},
 		&model.OpenApp{},
 		&model.ApiCallLog{},

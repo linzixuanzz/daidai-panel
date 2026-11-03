@@ -91,13 +91,19 @@ func (s *AuthService) Login(username, password, totpCode string) (*model.User, s
 		}
 	}
 
+	return s.IssueLoginTokens(&user)
+}
+
+// IssueLoginTokens 是登录成功后的签发部分：写 last_login_at、签 access / refresh。
+// 密码登录（Login 校验通过后）与通行密钥登录（FinishPasskeyLogin 校验通过后）共用这一段，两边签出的令牌完全同形。
+func (s *AuthService) IssueLoginTokens(user *model.User) (*model.User, string, string, *middleware.TokenInfo, *middleware.TokenInfo, error) {
 	// 只写 last_login_at 这一列（GORM 会顺带刷新 updated_at，与原来一致）。
 	// 🔴 不能用 Save(&user)：它把开头读到的整行（用户名、密码哈希、角色、启用状态……）原样写回。
 	// 管理员的禁用、改角色、重置密码只要恰好提交在「读用户」与这次写回之间，就会被静默改回去；
 	// 删号落在这个窗口里更糟：Save 更新到 0 行时会退化成插入，把刚删掉的账号又建回来。
 	now := time.Now()
 	user.LastLoginAt = &now
-	database.DB.Model(&user).Update("last_login_at", now)
+	database.DB.Model(user).Update("last_login_at", now)
 
 	tokenInfo, err := middleware.GenerateAccessTokenInfo(user.Username, user.Role)
 	if err != nil {
@@ -109,7 +115,7 @@ func (s *AuthService) Login(username, password, totpCode string) (*model.User, s
 		return nil, "", "", nil, nil, err
 	}
 
-	return &user, tokenInfo.Token, refreshInfo.Token, tokenInfo, refreshInfo, nil
+	return user, tokenInfo.Token, refreshInfo.Token, tokenInfo, refreshInfo, nil
 }
 
 func (s *AuthService) RefreshToken(tokenStr string) (string, error) {
@@ -178,24 +184,26 @@ func (s *AuthService) GetUser(username string) (*model.User, error) {
 	return &user, nil
 }
 
-func (s *AuthService) ChangePassword(username, oldPassword, newPassword string) error {
+// ChangePassword 校验旧密码后改成新密码，并在同一事务里清掉这个用户的全部通行密钥。
+// 返回清掉的通行密钥个数，handler 用它决定提示文案；撤销会话由 handler 在这之后做。
+func (s *AuthService) ChangePassword(username, oldPassword, newPassword string) (int64, error) {
 	var user model.User
 	if err := database.DB.Where("username = ?", username).First(&user).Error; err != nil {
-		return ErrUserNotFound
+		return 0, ErrUserNotFound
 	}
 
 	if !crypto.CheckPassword(oldPassword, user.Password) {
-		return ErrInvalidPassword
+		return 0, ErrInvalidPassword
 	}
 
 	if !validator.ValidatePassword(newPassword) {
-		return ErrPasswordTooShort
+		return 0, ErrPasswordTooShort
 	}
 
 	hash, err := crypto.HashPassword(newPassword)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	return database.DB.Model(&user).Update("password", hash).Error
+	return SetPasswordAndClearPasskeys(user.ID, hash)
 }
