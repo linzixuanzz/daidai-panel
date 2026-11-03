@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"daidai-panel/database"
 	"daidai-panel/middleware"
@@ -103,6 +104,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 		response.InternalError(c, "创建用户失败")
 		return
 	}
+	recordAudit(c, service.AuditUserCreate, fmt.Sprintf("新建用户 %s（角色 %s）", user.Username, user.Role))
 
 	response.Created(c, gin.H{"message": "创建成功", "data": user.ToDict()})
 }
@@ -137,13 +139,29 @@ func (h *UserHandler) Update(c *gin.Context) {
 		updates["enabled"] = *req.Enabled
 	}
 
+	updated := false
 	if len(updates) > 0 {
-		database.DB.Model(&user).Updates(updates)
+		updated = database.DB.Model(&user).Updates(updates).Error == nil
 	}
 
 	database.DB.First(&user, userID)
 	if len(updates) > 0 {
 		service.RevokeAllUserSessions(user.ID)
+	}
+	// 审计只在真的写进库之后记：写库失败时响应保持原样，但不留「改过」的痕迹
+	if updated {
+		var changes []string
+		if role, ok := updates["role"]; ok {
+			changes = append(changes, fmt.Sprintf("角色改为 %v", role))
+		}
+		if enabled, ok := updates["enabled"].(bool); ok {
+			if enabled {
+				changes = append(changes, "启用")
+			} else {
+				changes = append(changes, "禁用")
+			}
+		}
+		recordAudit(c, service.AuditUserUpdate, fmt.Sprintf("修改用户 %s：%s", user.Username, strings.Join(changes, "，")))
 	}
 	response.Success(c, gin.H{"message": "更新成功", "data": user.ToDict()})
 }
@@ -184,6 +202,7 @@ func (h *UserHandler) Delete(c *gin.Context) {
 		return
 	}
 	service.RevokeAllUserSessions(user.ID)
+	recordAudit(c, service.AuditUserDelete, "删除用户 "+user.Username)
 	response.Success(c, gin.H{"message": "删除成功"})
 }
 
@@ -222,6 +241,7 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 	service.RevokeAllUserSessions(user.ID)
+	recordAudit(c, service.AuditUserPasswordReset, "重置用户 "+user.Username+" 的密码")
 	// 确实清掉了通行密钥才多说一句；没有通行密钥时文案与原来逐字相同
 	message := "密码重置成功"
 	if removedPasskeys > 0 {

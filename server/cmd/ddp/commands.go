@@ -926,6 +926,10 @@ func runResetPassword(rt *cliRuntime, args []string) error {
 	// 撤销写在库里，运行中的面板下一个请求就能看到，不用重启。
 	revoked := service.RevokeAllUserSessions(user.ID)
 
+	// 安全审计：命令行没有登录身份，操作者记成「ddp 命令行」、IP 记 cli，网页的审计日志里能看到这次重置
+	service.RecordSecurityAudit(nil, "ddp 命令行", service.AuditUserPasswordReset,
+		"通过命令行重置用户 "+user.Username+" 的密码", "cli")
+
 	fmt.Printf("已重置用户 %s 的密码，已撤销 %d 个登录会话\n", user.Username, revoked)
 	// 确实清掉了通行密钥才多打一行，没有时输出与原来一致
 	if removedPasskeys > 0 {

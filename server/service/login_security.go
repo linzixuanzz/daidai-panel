@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -132,13 +133,18 @@ func ClearLoginAttempts(ip, username string) {
 	database.DB.Where("ip = ? AND username = ?", ip, username).Delete(&model.LoginAttempt{})
 }
 
-// CleanExpiredAttempts 删掉已过期的失败计数行（由周期清理调用）。
-// 没过期的行不动：锁定判断、验证码阈值都还要读它。
+// LoginAttemptRetention：失败计数行过期后再保留这么久才删。
+const LoginAttemptRetention = 7 * 24 * time.Hour
+
+// CleanExpiredAttempts 删掉过期超过 LoginAttemptRetention 的失败计数行（由周期清理调用）。
+// 不能锁一过期就删：锁定时长按 Count 递增（第几次被锁就锁几倍时长），
+// 行一删 Count 就归零，解锁后接着猜的人又从 15 分钟起步，渐进式加长锁定就失效了。
 func CleanExpiredAttempts() int64 {
 	if database.DB == nil {
 		return 0
 	}
-	return database.DB.Where("expires_at < ?", time.Now()).Delete(&model.LoginAttempt{}).RowsAffected
+	cutoff := time.Now().Add(-LoginAttemptRetention)
+	return database.DB.Where("expires_at < ?", cutoff).Delete(&model.LoginAttempt{}).RowsAffected
 }
 
 // CleanOldLoginLogs 删掉 LoginLogRetentionDays 天之前的登录日志（由周期清理调用）。
@@ -397,15 +403,65 @@ func IsIPWhitelisted(ip string) bool {
 	return false
 }
 
+// 安全审计的 action 取值。英文标识落库、长期稳定（网页按它筛选并翻成中文，见 web 的 AuditLogsCard.vue），
+// 已经发出去的标识不要改名；新增操作就新增一个，并同步网页的中文映射与 apiData.ts 的取值说明。
+const (
+	AuditPasswordChange     = "password.change"
+	AuditUsernameChange     = "username.change"
+	AuditTwoFactorEnable    = "2fa.enable"
+	AuditTwoFactorDisable   = "2fa.disable"
+	AuditPasskeyAdd         = "passkey.add"
+	AuditPasskeyDelete      = "passkey.delete"
+	AuditUserCreate         = "user.create"
+	AuditUserUpdate         = "user.update"
+	AuditUserDelete         = "user.delete"
+	AuditUserPasswordReset  = "user.password_reset"
+	AuditBackupCreate       = "backup.create"
+	AuditBackupUpload       = "backup.upload"
+	AuditBackupDownload     = "backup.download"
+	AuditBackupRestore      = "backup.restore"
+	AuditBackupDelete       = "backup.delete"
+	AuditConsoleRun         = "console.run"
+	AuditConfigUpdate       = "config.update"
+	AuditConfigDelete       = "config.delete"
+	AuditConfigScriptUpdate = "config_script.update"
+	AuditOpenAppCreate      = "open_app.create"
+	AuditOpenAppDelete      = "open_app.delete"
+	AuditOpenAppResetSecret = "open_app.reset_secret"
+	AuditOpenAppScopeChange = "open_app.scope_change"
+	AuditIPWhitelistAdd     = "ip_whitelist.add"
+	AuditIPWhitelistRemove  = "ip_whitelist.remove"
+	AuditLoginLogsClear     = "login_logs.clear"
+	AuditSSHKeyCreate       = "ssh_key.create"
+	AuditSSHKeyDelete       = "ssh_key.delete"
+	AuditSystemUpdate       = "system.update"
+	AuditSystemRestart      = "system.restart"
+	AuditSystemStop         = "system.stop"
+)
+
+// 审计字段的长度上限（按字符数），与 security_audits 表的列宽一致。
+// 应用名、配置键列表、命令这类内容长度不可控，超长就截断，宁可少记几个字也不能让写入失败。
+const (
+	auditUsernameMaxRunes = 64
+	auditDetailMaxRunes   = 512
+)
+
+// RecordSecurityAudit 写一条安全审计。调用方在敏感操作「成功之后」调用；
+// 写入失败只打日志、不返回错误——审计是旁路留痕，不能因为它把已经完成的主操作变成失败。
 func RecordSecurityAudit(userID *uint, username, action, detail, ip string) {
+	if database.DB == nil {
+		return
+	}
 	audit := model.SecurityAudit{
 		UserID:   userID,
-		Username: username,
+		Username: truncateRunes(username, auditUsernameMaxRunes),
 		Action:   action,
-		Detail:   detail,
+		Detail:   truncateRunes(detail, auditDetailMaxRunes),
 		IP:       ip,
 	}
-	database.DB.Create(&audit)
+	if err := database.DB.Create(&audit).Error; err != nil {
+		log.Printf("warn: 写安全审计失败（action=%s）: %v", action, err)
+	}
 }
 
 func GetLoginStats(days int) map[string]interface{} {

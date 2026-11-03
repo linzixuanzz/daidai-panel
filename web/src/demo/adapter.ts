@@ -2874,7 +2874,24 @@ route('DELETE', '/security/ip-whitelist/:id', (ctx) => {
   return { message: '删除成功' }
 })
 
-route('GET', '/security/audit-logs', (ctx) => paginate([], ctx.params))
+// 审计日志的演示数据：几条典型的敏感操作，时间按「现在」往前推；按 action 筛选与真实接口同口径（精确匹配）。
+// 配置修改只写键名不写值，命令只留开头，与后端的记录方式一致。
+route('GET', '/security/audit-logs', (ctx) => {
+  const now = Date.now()
+  const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString()
+  const rows = [
+    { id: 8, user_id: 1, username: 'demo', action: 'config.update', detail: '修改配置项：panel_title, proxy_url', ip: '192.168.1.20', created_at: ago(6) },
+    { id: 7, user_id: 1, username: 'demo', action: 'console.run', detail: 'pip3 list --outdated', ip: '192.168.1.20', created_at: ago(25) },
+    { id: 6, user_id: null, username: '应用:备份脚本（3f9a1c7e5b2d4a60）', action: 'backup.create', detail: '创建备份 backup_20260601.tgz', ip: '127.0.0.1', created_at: ago(180) },
+    { id: 5, user_id: 1, username: 'demo', action: 'backup.download', detail: '下载备份 backup_20260601.tgz', ip: '192.168.1.20', created_at: ago(175) },
+    { id: 4, user_id: 1, username: 'demo', action: 'open_app.create', detail: '新建应用 备份脚本（scope：backup）', ip: '192.168.1.20', created_at: ago(60 * 26) },
+    { id: 3, user_id: 1, username: 'demo', action: 'user.update', detail: '修改用户 viewer：禁用', ip: '192.168.1.20', created_at: ago(60 * 30) },
+    { id: 2, user_id: 1, username: 'demo', action: '2fa.enable', detail: '开启了两步验证', ip: '192.168.1.20', created_at: ago(60 * 50) },
+    { id: 1, user_id: 1, username: 'demo', action: 'password.change', detail: '修改了自己的登录密码', ip: '192.168.1.20', created_at: ago(60 * 52) },
+  ]
+  const action = String(ctx.params['action'] ?? '')
+  return paginate(action ? rows.filter((row) => row.action === action) : rows, ctx.params)
+})
 route('GET', '/security/login-stats', () => ({ data: { total: db().loginLogs.length, success: db().loginLogs.filter((row) => row.status === 0).length } }))
 
 // 2FA 的完整链路（开启 → 退出 → 重新登录看到 TOTP 弹窗）属于 R2 里「不额外设计就被演示到」

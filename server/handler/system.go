@@ -289,6 +289,7 @@ func (h *SystemHandler) Backup(c *gin.Context) {
 		response.InternalError(c, "备份失败: "+err.Error())
 		return
 	}
+	recordAudit(c, service.AuditBackupCreate, "创建备份 "+filepath.Base(filePath))
 	response.Success(c, gin.H{"message": "备份成功", "data": gin.H{"path": filePath}})
 }
 
@@ -311,10 +312,15 @@ func (h *SystemHandler) Restore(c *gin.Context) {
 		return
 	}
 
+	// 操作者要在恢复之前认好：恢复会整库替换，之后按用户名查到的可能是备份里的另一个同名账号（ID 也不一定一样）
+	auditUserID, auditUsername := auditActor(c)
 	if err := service.RestoreBackup(req.Filename, req.Password); err != nil {
 		response.InternalError(c, "恢复失败: "+err.Error())
 		return
 	}
+	// 恢复完才写，这条审计落在恢复后的库里，不会被恢复覆盖掉
+	service.RecordSecurityAudit(auditUserID, auditUsername, service.AuditBackupRestore,
+		"从备份 "+filepath.Base(req.Filename)+" 恢复", middleware.ResolveClientIP(c))
 	response.Success(c, gin.H{"message": "恢复成功"})
 }
 
@@ -328,7 +334,10 @@ func (h *SystemHandler) DeleteBackup(c *gin.Context) {
 		response.BadRequest(c, "文件名不能为空")
 		return
 	}
-	service.DeleteBackup(filename)
+	// 删除失败时响应保持原样，只是不记审计
+	if err := service.DeleteBackup(filename); err == nil {
+		recordAudit(c, service.AuditBackupDelete, "删除备份 "+filepath.Base(filename))
+	}
 	response.Success(c, gin.H{"message": "删除成功"})
 }
 
@@ -371,6 +380,7 @@ func (h *SystemHandler) UploadBackup(c *gin.Context) {
 		response.InternalError(c, "保存文件失败")
 		return
 	}
+	recordAudit(c, service.AuditBackupUpload, "上传备份 "+savedName)
 
 	response.Success(c, gin.H{"message": "上传成功", "data": gin.H{"filename": savedName}})
 }
@@ -415,6 +425,8 @@ func (h *SystemHandler) DownloadBackup(c *gin.Context) {
 		response.BadRequest(c, "备份文件名无效")
 		return
 	}
+	// 文件确认存在、马上开始发送时记审计（备份里有全部变量与密钥，谁下载过要查得到）
+	recordAudit(c, service.AuditBackupDownload, "下载备份 "+baseName)
 
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate")
 	c.Header("Pragma", "no-cache")
@@ -548,6 +560,7 @@ func (h *SystemHandler) UpdatePanel(c *gin.Context) {
 			response.BadRequest(c, snapshot.Error)
 			return
 		}
+		recordAudit(c, service.AuditSystemUpdate, "触发面板更新（Watchtower）")
 		response.Success(c, gin.H{
 			"message": "已触发 Watchtower 检查更新",
 			"data":    snapshot,
@@ -555,6 +568,8 @@ func (h *SystemHandler) UpdatePanel(c *gin.Context) {
 		return
 	}
 
+	// 先记审计再起更新协程：二进制 / Magisk 更新完会退出进程，放到后面可能来不及写
+	recordAudit(c, service.AuditSystemUpdate, "触发面板更新")
 	go executePanelUpdate(plan)
 
 	response.Success(c, gin.H{
@@ -586,6 +601,7 @@ func SetPanelExitRequester(fn func(code int)) {
 // 一次正常重启就变成了永久停机，而此时 Web 已经没了，用户在面板上没有任何自救手段。
 // 「停止」是另一个接口（StopPanel），两者共用退出逻辑但绝不共用停止开关。
 func (h *SystemHandler) Restart(c *gin.Context) {
+	recordAudit(c, service.AuditSystemRestart, "重启面板")
 	response.Success(c, gin.H{"message": "面板将在 2 秒后重启"})
 
 	go func() {
@@ -617,6 +633,7 @@ func (h *SystemHandler) StopPanel(c *gin.Context) {
 		response.InternalError(c, "写入停止开关失败："+err.Error())
 		return
 	}
+	recordAudit(c, service.AuditSystemStop, "停止面板服务")
 
 	response.Success(c, gin.H{"message": "面板将在 2 秒后停止；重启手机也不会自动启动，恢复请到模块管理器点动作按钮"})
 
@@ -812,6 +829,8 @@ func (h *SystemHandler) SaveConfigScript(c *gin.Context) {
 		response.InternalError(c, "保存配置文件失败")
 		return
 	}
+	// 只记「改过」，不记内容：config.sh 里常放口令、令牌
+	recordAudit(c, service.AuditConfigScriptUpdate, "保存 config.sh")
 	response.Success(c, gin.H{"message": "配置文件已保存"})
 }
 

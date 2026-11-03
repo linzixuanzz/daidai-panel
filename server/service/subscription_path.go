@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -167,6 +168,11 @@ func resolveSingleFileSubscriptionDestPath(scriptsDir string, sub *model.Subscri
 	}
 	// 文件名里带了 `x/..` 这类写法时，下载目标会解析成脚本目录本身。
 	if pathutil.IsWithinBase(absDestPath, scriptsDir) {
+		return "", fmt.Errorf("%s（当前保存目录：%s，文件名：%s）", subscriptionPathEscapeHint, saveDir, filename)
+	}
+	// 下载目标本身是符号链接就拒绝：上面的兜底按 os.Stat 判断存在与否，
+	// 悬空链接（指向的文件还不存在）会被当成「不存在」放过，写入时却会顺着链接落到脚本目录外。
+	if info, err := os.Lstat(absDestPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
 		return "", fmt.Errorf("%s（当前保存目录：%s，文件名：%s）", subscriptionPathEscapeHint, saveDir, filename)
 	}
 	return destPath, nil

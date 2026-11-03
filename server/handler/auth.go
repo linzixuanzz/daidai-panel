@@ -368,6 +368,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	if user != nil {
 		service.RevokeAllUserSessions(user.ID)
 	}
+	recordAudit(c, service.AuditPasswordChange, "修改了自己的登录密码")
 
 	// 确实清掉了通行密钥才多说一句；没有通行密钥时文案与原来逐字相同
 	message := "密码修改成功，请重新登录"
@@ -416,6 +417,10 @@ func (h *AuthHandler) ChangeUsername(c *gin.Context) {
 	}
 
 	service.RevokeAllUserSessions(user.ID)
+	// 改名之后上下文里还是旧用户名、按它已经查不到用户，所以这里不走 recordAudit，直接用手上的 user.ID
+	userID := user.ID
+	service.RecordSecurityAudit(&userID, currentUsername.(string), service.AuditUsernameChange,
+		fmt.Sprintf("用户名 %s 改为 %s", currentUsername, newUsername), middleware.ResolveClientIP(c))
 	response.Success(c, gin.H{"message": "用户名修改成功，请重新登录", "user": user.ToDict()})
 }
 

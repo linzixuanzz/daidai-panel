@@ -118,38 +118,81 @@ func TestConcurrentInitCreatesSingleAdmin(t *testing.T) {
 	}
 }
 
-// /open-api/token 只数失败：同一 IP 失败满 10 次后被封（连正确凭据也拒），别的 IP 不受影响；成功不计数。
+// /open-api/token 只数失败，且按桶分开计数：
+//   - secret 错按「IP + app_key」计数，满 10 次只封这个 key（封住期间正确 secret 也拒），同 IP 的其他 key、别的 IP 不受影响；
+//   - app_key 不存在按 IP 计数，满 10 次只封「不存在的 key」这条路径，同 IP 的已知 key 照常签发；
+//   - 成功不计数，两类失败也不会互相累加。
 func TestOpenAPITokenLimitsOnlyFailures(t *testing.T) {
 	testutil.SetupTestEnv(t)
 	engine := newHardeningRouter()
-	app := testutil.MustCreateOpenApp(t, "limit-app", "tasks")
-	good := fmt.Sprintf(`{"app_key":%q,"app_secret":%q}`, app.AppKey, app.AppSecret)
+	appA := testutil.MustCreateOpenApp(t, "limit-app-a", "tasks")
+	appB := testutil.MustCreateOpenApp(t, "limit-app-b", "tasks")
+	goodA := fmt.Sprintf(`{"app_key":%q,"app_secret":%q}`, appA.AppKey, appA.AppSecret)
+	goodB := fmt.Sprintf(`{"app_key":%q,"app_secret":%q}`, appB.AppKey, appB.AppSecret)
+	wrongA := fmt.Sprintf(`{"app_key":%q,"app_secret":"wrong"}`, appA.AppKey)
+	unknown := `{"app_key":"no-such-app","app_secret":"wrong"}`
+	post := func(body, ip string) int {
+		return performJSONRequest(engine, http.MethodPost, "/api/v1/open-api/token", body, nil, ip).Code
+	}
 
 	// 成功请求再多也不会被挡
 	for i := 0; i < 30; i++ {
-		if rec := performJSONRequest(engine, http.MethodPost, "/api/v1/open-api/token", good, nil, "127.0.0.1"); rec.Code != http.StatusOK {
-			t.Fatalf("success #%d: got %d %s", i+1, rec.Code, rec.Body.String())
+		if code := post(goodA, "127.0.0.1"); code != http.StatusOK {
+			t.Fatalf("success #%d: got %d", i+1, code)
 		}
 	}
 
-	// 10 次失败（secret 错、app_key 不存在各半）都回 401
+	// 两类失败分开计数：各 9 次加起来超过 10，但哪个桶都没满，正确凭据照常签发
+	for i := 0; i < 9; i++ {
+		if code := post(wrongA, "203.0.113.49"); code != http.StatusUnauthorized {
+			t.Fatalf("mixed wrong secret #%d: got %d", i+1, code)
+		}
+		if code := post(unknown, "203.0.113.49"); code != http.StatusUnauthorized {
+			t.Fatalf("mixed unknown key #%d: got %d", i+1, code)
+		}
+	}
+	if code := post(goodA, "203.0.113.49"); code != http.StatusOK {
+		t.Fatalf("buckets should not add up, got %d", code)
+	}
+
+	// key A 的 secret 连错 10 次都回 401
 	for i := 0; i < 10; i++ {
-		body := fmt.Sprintf(`{"app_key":%q,"app_secret":"wrong"}`, app.AppKey)
-		if i%2 == 1 {
-			body = `{"app_key":"no-such-app","app_secret":"wrong"}`
+		if code := post(wrongA, "203.0.113.50"); code != http.StatusUnauthorized {
+			t.Fatalf("wrong secret #%d: got %d", i+1, code)
 		}
-		if rec := performJSONRequest(engine, http.MethodPost, "/api/v1/open-api/token", body, nil, "203.0.113.50"); rec.Code != http.StatusUnauthorized {
-			t.Fatalf("failure #%d: got %d %s", i+1, rec.Code, rec.Body.String())
-		}
+	}
+	// 第 11 次起 key A 在这个 IP 上被封，正确 secret 也不受理
+	if code := post(goodA, "203.0.113.50"); code != http.StatusTooManyRequests {
+		t.Fatalf("expected key A blocked after 10 failures, got %d", code)
+	}
+	// 同 IP 的 key B 照常签发
+	if code := post(goodB, "203.0.113.50"); code != http.StatusOK {
+		t.Fatalf("key B on same ip should not be blocked, got %d", code)
+	}
+	// 同 IP 的不存在 key 仍按自己的桶走：还没失败过，回 401 而不是 429
+	if code := post(unknown, "203.0.113.50"); code != http.StatusUnauthorized {
+		t.Fatalf("unknown key bucket should be independent, got %d", code)
+	}
+	// 别的 IP 用 key A 不受影响
+	if code := post(goodA, "203.0.113.51"); code != http.StatusOK {
+		t.Fatalf("key A on other ip should not be blocked, got %d", code)
 	}
 
-	// 第 11 次起被封，正确凭据也不受理
-	if rec := performJSONRequest(engine, http.MethodPost, "/api/v1/open-api/token", good, nil, "203.0.113.50"); rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429 after 10 failures, got %d %s", rec.Code, rec.Body.String())
+	// 不存在的 app_key 连错 10 次后，这条路径被封
+	for i := 0; i < 10; i++ {
+		if code := post(unknown, "203.0.113.52"); code != http.StatusUnauthorized {
+			t.Fatalf("unknown key #%d: got %d", i+1, code)
+		}
 	}
-	// 别的 IP 不受影响
-	if rec := performJSONRequest(engine, http.MethodPost, "/api/v1/open-api/token", good, nil, "203.0.113.51"); rec.Code != http.StatusOK {
-		t.Fatalf("other ip should not be blocked, got %d %s", rec.Code, rec.Body.String())
+	if code := post(unknown, "203.0.113.52"); code != http.StatusTooManyRequests {
+		t.Fatalf("expected unknown key path blocked after 10 failures, got %d", code)
+	}
+	// 同 IP 的已知 key 照常签发
+	if code := post(goodA, "203.0.113.52"); code != http.StatusOK {
+		t.Fatalf("known key A should not be blocked by unknown-key bucket, got %d", code)
+	}
+	if code := post(goodB, "203.0.113.52"); code != http.StatusOK {
+		t.Fatalf("known key B should not be blocked by unknown-key bucket, got %d", code)
 	}
 }
 

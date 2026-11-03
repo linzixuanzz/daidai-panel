@@ -369,6 +369,8 @@ func (h *ConsoleHandler) Run(c *gin.Context) {
 	operator := consoleOperator(c)
 	log.Printf("[系统命令行] 用户 %s 执行命令（run_id=%s, 超时=%d 分钟）: %s",
 		operator, runID, int(timeout/time.Minute), truncateConsoleCommandForLog(command))
+	// 安全审计（设置页可查）：命令已经起来了才记，只留前 200 字符
+	recordAudit(c, service.AuditConsoleRun, truncateAuditCommand(command))
 
 	startTime := time.Now()
 

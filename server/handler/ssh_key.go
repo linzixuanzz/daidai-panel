@@ -7,6 +7,7 @@ import (
 	"daidai-panel/middleware"
 	"daidai-panel/model"
 	"daidai-panel/pkg/response"
+	"daidai-panel/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -49,6 +50,7 @@ func (h *SSHKeyHandler) Create(c *gin.Context) {
 		response.BadRequest(c, "同名 SSH 密钥已存在")
 		return
 	}
+	recordAudit(c, service.AuditSSHKeyCreate, "添加 SSH 密钥 "+key.Name)
 
 	response.Created(c, gin.H{"message": "创建成功", "data": key.ToDict()})
 }
@@ -93,7 +95,13 @@ func (h *SSHKeyHandler) Update(c *gin.Context) {
 
 func (h *SSHKeyHandler) Delete(c *gin.Context) {
 	keyID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
-	database.DB.Where("id = ?", keyID).Delete(&model.SSHKey{})
+	// 先读出名字给审计用；读不到时删除照旧执行（响应保持原样），只是不记审计
+	var key model.SSHKey
+	found := database.DB.Select("id", "name").First(&key, keyID).Error == nil
+	result := database.DB.Where("id = ?", keyID).Delete(&model.SSHKey{})
+	if found && result.Error == nil && result.RowsAffected > 0 {
+		recordAudit(c, service.AuditSSHKeyDelete, "删除 SSH 密钥 "+key.Name)
+	}
 	response.Success(c, gin.H{"message": "删除成功"})
 }
 

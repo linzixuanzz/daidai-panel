@@ -241,6 +241,7 @@ func (h *SecurityHandler) PasskeyRegisterFinish(c *gin.Context) {
 		response.InternalError(c, "添加通行密钥失败")
 		return
 	}
+	recordAudit(c, service.AuditPasskeyAdd, "添加通行密钥「"+row.Name+"」")
 	response.Success(c, gin.H{"message": "通行密钥已添加", "data": row.ToDict()})
 }
 
@@ -274,8 +275,12 @@ func (h *SecurityHandler) DeletePasskey(c *gin.Context) {
 		return
 	}
 	passkeyID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	// 删之前读出名字给审计用；读不到（不存在 / 不是自己的）时下面的删除会回 404，也不会记审计
+	var target model.Passkey
+	database.DB.Select("name").Where("id = ? AND user_id = ?", passkeyID, user.ID).First(&target)
 	switch err := service.DeletePasskey(user.ID, uint(passkeyID)); err {
 	case nil:
+		recordAudit(c, service.AuditPasskeyDelete, "删除通行密钥「"+target.Name+"」")
 		response.Success(c, gin.H{"message": "已删除"})
 	case service.ErrPasskeyNotFound:
 		response.NotFound(c, err.Error())

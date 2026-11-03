@@ -18,6 +18,7 @@ import (
 	"daidai-panel/pkg/crypto"
 	"daidai-panel/pkg/response"
 	"daidai-panel/pkg/trigticket"
+	"daidai-panel/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -25,7 +26,8 @@ import (
 	"daidai-panel/config"
 )
 
-// openAPITokenFailureLimit / openAPITokenFailureWindow：同一 IP 换令牌失败 10 次后，10 分钟内不再受理。
+// openAPITokenFailureLimit / openAPITokenFailureWindow：同一个计数桶（同 IP 的某个 app_key，或同 IP 的不存在 app_key）
+// 换令牌失败 10 次后，10 分钟内不再受理。
 const (
 	openAPITokenFailureLimit  = 10
 	openAPITokenFailureWindow = 10 * time.Minute
@@ -143,6 +145,7 @@ func (h *OpenAPIHandler) Create(c *gin.Context) {
 		response.BadRequest(c, "同名应用已存在")
 		return
 	}
+	recordAudit(c, service.AuditOpenAppCreate, fmt.Sprintf("新建应用 %s（scope：%s）", app.Name, app.Scopes))
 
 	response.Created(c, gin.H{"message": "创建成功", "data": buildOpenAppResponse(&app, 0, true)})
 }
@@ -184,6 +187,7 @@ func (h *OpenAPIHandler) Update(c *gin.Context) {
 		}
 	}
 
+	oldScopes := app.Scopes
 	if len(updates) > 0 {
 		// 改名撞上别的应用会在这里报错；不接 .Error 就会出现「提示更新成功、刷新又变回去」。
 		if err := database.DB.Model(&app).Updates(updates).Error; err != nil {
@@ -193,12 +197,22 @@ func (h *OpenAPIHandler) Update(c *gin.Context) {
 	}
 
 	database.DB.First(&app, appID)
+	// 只有权限范围真的变了才记：改名、改限流不算敏感操作
+	if app.Scopes != oldScopes {
+		recordAudit(c, service.AuditOpenAppScopeChange, fmt.Sprintf("应用 %s 的 scope：%s → %s", app.Name, oldScopes, app.Scopes))
+	}
 	response.Success(c, gin.H{"message": "更新成功", "data": buildOpenAppResponse(&app, loadOpenAppDailyCount(app.ID), false)})
 }
 
 func (h *OpenAPIHandler) Delete(c *gin.Context) {
 	appID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
-	database.DB.Where("id = ?", appID).Delete(&model.OpenApp{})
+	// 先读出名字给审计用；读不到时删除照旧执行（响应保持原样），只是不记审计
+	var app model.OpenApp
+	found := database.DB.First(&app, appID).Error == nil
+	result := database.DB.Where("id = ?", appID).Delete(&model.OpenApp{})
+	if found && result.Error == nil && result.RowsAffected > 0 {
+		recordAudit(c, service.AuditOpenAppDelete, "删除应用 "+app.Name)
+	}
 	response.Success(c, gin.H{"message": "删除成功"})
 }
 
@@ -224,7 +238,9 @@ func (h *OpenAPIHandler) ResetSecret(c *gin.Context) {
 	}
 
 	newSecret := generateRandomKey(32)
-	database.DB.Model(&app).Update("app_secret", newSecret)
+	if database.DB.Model(&app).Update("app_secret", newSecret).Error == nil {
+		recordAudit(c, service.AuditOpenAppResetSecret, "重置应用 "+app.Name+" 的密钥")
+	}
 	app.AppSecret = newSecret
 
 	response.Success(c, gin.H{"message": "密钥已重置", "data": buildOpenAppResponse(&app, loadOpenAppDailyCount(app.ID), true)})
@@ -272,20 +288,31 @@ func (h *OpenAPIHandler) Token(c *gin.Context) {
 		return
 	}
 
-	// 先看这个 IP 是不是已经失败太多次：封住期间连正确的凭据也不受理，否则猜密钥的人能一直试下去。
 	// 只有失败才计数，凭据正确的脚本再频繁取令牌也不会被挡。
+	// 计数分两个桶：本机脚本都从同一个回环 IP 来，只按 IP 计数的话，一个拿着旧 secret 的脚本会把同机所有正常脚本一起封住。
+	//   - app_key 存在但 secret 错：按「IP + app_key」计数，只封这一个 key；
+	//   - app_key 不存在：按 IP 计数，也只在「app_key 不存在」这条路径上检查，不影响同 IP 的其他已知 key。
 	ip := middleware.ResolveClientIP(c)
-	if h.tokenFailures != nil && h.tokenFailures.Blocked(ip) {
-		response.TooManyRequests(c, "凭证错误次数过多，请 10 分钟后再试")
-		return
-	}
 
 	var app model.OpenApp
 	if err := database.DB.Where("app_key = ?", req.AppKey).First(&app).Error; err != nil {
+		unknownKeyBucket := "unknown-key|" + ip
+		if h.tokenFailures != nil && h.tokenFailures.Blocked(unknownKeyBucket) {
+			response.TooManyRequests(c, "凭证错误次数过多，请 10 分钟后再试")
+			return
+		}
 		if h.tokenFailures != nil {
-			h.tokenFailures.RecordFailure(ip)
+			h.tokenFailures.RecordFailure(unknownKeyBucket)
 		}
 		response.Unauthorized(c, "凭证无效")
+		return
+	}
+
+	// 这个 key 在这个 IP 上已经失败太多次：封禁期间不再比对 secret，直接拒绝。
+	// 不能改成「对了就放行」，否则封禁形同虚设，猜密钥的人照样能一直试下去。
+	keyBucket := "app-key|" + ip + "|" + app.AppKey
+	if h.tokenFailures != nil && h.tokenFailures.Blocked(keyBucket) {
+		response.TooManyRequests(c, "凭证错误次数过多，请 10 分钟后再试")
 		return
 	}
 
@@ -297,7 +324,7 @@ func (h *OpenAPIHandler) Token(c *gin.Context) {
 	// 定长比较：逐字节比较会因为「前几位对上了就多比一会儿」泄漏耗时差，可被用来逐位猜密钥。
 	if subtle.ConstantTimeCompare([]byte(app.AppSecret), []byte(req.AppSecret)) != 1 {
 		if h.tokenFailures != nil {
-			h.tokenFailures.RecordFailure(ip)
+			h.tokenFailures.RecordFailure(keyBucket)
 		}
 		response.Unauthorized(c, "凭证无效")
 		return

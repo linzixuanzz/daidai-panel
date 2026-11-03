@@ -2,6 +2,7 @@
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import AlertConfigCard from './components/AlertConfigCard.vue'
+import AuditLogsCard from './components/AuditLogsCard.vue'
 import BackupManagementCard from './components/BackupManagementCard.vue'
 import CaptchaConfigCard from './components/CaptchaConfigCard.vue'
 import ExtraConfigCard from './components/ExtraConfigCard.vue'
@@ -24,13 +25,15 @@ import { useSettingsConfig } from './useSettingsConfig'
 import { useSettingsOverview } from './useSettingsOverview'
 import { usePanelLogViewer } from './usePanelLogViewer'
 import { useSettingsSecurity } from './useSettingsSecurity'
-import { Bell, Connection, Document, Key, Lock, Monitor, Refresh } from '@element-plus/icons-vue'
+import { Bell, Connection, Document, Key, Lock, Monitor, Refresh, Tickets } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 
 const authStore = useAuthStore()
 const route = useRoute()
 // 通行密钥卡片（lazy 挂载，没点开过时是 null）：顶部「刷新」要能刷到它
 const passkeyCardRef = ref<InstanceType<typeof SecurityPasskeyCard> | null>(null)
+// 审计日志卡片同样 lazy 挂载、自己拉数据；再次切回这个子标签时靠它刷新
+const auditLogsCardRef = ref<InstanceType<typeof AuditLogsCard> | null>(null)
 const roleLevel: Record<string, number> = { viewer: 1, operator: 2, admin: 3 }
 const isAdmin = computed(() => (roleLevel[authStore.user?.role || ''] || 0) >= (roleLevel.admin || 0))
 
@@ -242,6 +245,7 @@ function handleTabChange(tab: string) {
     void load2FAStatus()
     if (securityTab.value === 'sessions') void loadSystemConfigs()
     if (securityTab.value === 'passkeys') void passkeyCardRef.value?.reload()
+    if (securityTab.value === 'audit-logs') void auditLogsCardRef.value?.reload()
   }
 }
 
@@ -250,6 +254,8 @@ function handleTabChange(tab: string) {
 function handleSecuritySubTabChange(tab: string) {
   handleSecurityTabChange(tab)
   if (tab === 'sessions') void loadSystemConfigs()
+  // 第一次点开时卡片还没挂载（ref 为 null），由它自己的 onMounted 加载
+  if (tab === 'audit-logs') void auditLogsCardRef.value?.reload()
 }
 
 onMounted(() => {
@@ -270,7 +276,7 @@ onActivated(() => {
     activeTab.value = 'security'
     const sub = route.query.security_tab
     const allowedSubTabs = isAdmin.value
-      ? ['password-2fa', 'passkeys', 'login-logs', 'sessions', 'ip-whitelist']
+      ? ['password-2fa', 'passkeys', 'login-logs', 'audit-logs', 'sessions', 'ip-whitelist']
       : ['password-2fa', 'passkeys']
     if (typeof sub === 'string' && allowedSubTabs.includes(sub)) {
       securityTab.value = sub
@@ -534,6 +540,14 @@ watch(
               :on-load-login-logs="loadLoginLogs"
               :on-clear-login-logs="handleClearLoginLogs"
             />
+          </el-tab-pane>
+
+          <!-- 审计日志：改密、备份恢复、命令行、配置修改这类敏感操作的留痕。lazy：点开才挂载并拉数据 -->
+          <el-tab-pane v-if="isAdmin" name="audit-logs" lazy>
+            <template #label>
+              <span class="sub-tab-label"><el-icon :size="14"><Tickets /></el-icon>审计日志</span>
+            </template>
+            <AuditLogsCard ref="auditLogsCardRef" />
           </el-tab-pane>
 
           <el-tab-pane v-if="isAdmin" name="sessions">

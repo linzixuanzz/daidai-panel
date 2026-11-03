@@ -157,13 +157,20 @@ func (h *SecurityHandler) AddIPWhitelist(c *gin.Context) {
 		response.BadRequest(c, "该 IP 或网段已在白名单中")
 		return
 	}
+	recordAudit(c, service.AuditIPWhitelistAdd, "添加白名单 "+entry.IP)
 
 	response.Created(c, gin.H{"message": "添加成功", "data": entry.ToDict()})
 }
 
 func (h *SecurityHandler) RemoveIPWhitelist(c *gin.Context) {
 	entryID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
-	database.DB.Where("id = ?", entryID).Delete(&model.IPWhitelist{})
+	// 先读出这一条，审计里要写删的是哪个 IP；读不到时删除照旧执行（响应保持原样），只是不记审计
+	var entry model.IPWhitelist
+	found := database.DB.First(&entry, entryID).Error == nil
+	result := database.DB.Where("id = ?", entryID).Delete(&model.IPWhitelist{})
+	if found && result.Error == nil && result.RowsAffected > 0 {
+		recordAudit(c, service.AuditIPWhitelistRemove, "删除白名单 "+entry.IP)
+	}
 	response.Success(c, gin.H{"message": "删除成功"})
 }
 
@@ -211,6 +218,9 @@ func (h *SecurityHandler) LoginStats(c *gin.Context) {
 
 func (h *SecurityHandler) ClearLoginLogs(c *gin.Context) {
 	result := database.DB.Where("1 = 1").Delete(&model.LoginLog{})
+	if result.Error == nil {
+		recordAudit(c, service.AuditLoginLogsClear, fmt.Sprintf("清空登录日志 %d 条", result.RowsAffected))
+	}
 	response.Success(c, gin.H{
 		"message": fmt.Sprintf("已清除 %d 条登录日志", result.RowsAffected),
 	})
@@ -258,6 +268,7 @@ func (h *SecurityHandler) Verify2FA(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	recordAudit(c, service.AuditTwoFactorEnable, "开启了两步验证")
 
 	response.Success(c, gin.H{"message": "2FA 已启用"})
 }
@@ -294,6 +305,7 @@ func (h *SecurityHandler) Disable2FA(c *gin.Context) {
 	}
 
 	service.DisableTwoFactor(user.ID)
+	recordAudit(c, service.AuditTwoFactorDisable, "关闭了两步验证")
 	response.Success(c, gin.H{"message": "2FA 已禁用"})
 }
 

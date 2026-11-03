@@ -2,6 +2,8 @@ package handler
 
 import (
 	"log"
+	"sort"
+	"strings"
 
 	"daidai-panel/database"
 	"daidai-panel/middleware"
@@ -169,11 +171,13 @@ func (h *ConfigHandler) Set(c *gin.Context) {
 		return
 	}
 
+	before := snapshotConfigValues([]string{req.Key})
 	if err := model.SetConfig(req.Key, req.Value); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 	reloadRuntimeConfigKeys(req.Key)
+	auditChangedConfigKeys(c, before)
 
 	var cfg model.SystemConfig
 	if err := database.DB.Where("`key` = ?", req.Key).First(&cfg).Error; err == nil && req.Description != "" {
@@ -192,8 +196,15 @@ func (h *ConfigHandler) BatchSet(c *gin.Context) {
 		return
 	}
 
+	keys := make([]string, 0, len(req.Configs))
+	for key := range req.Configs {
+		keys = append(keys, key)
+	}
+	before := snapshotConfigValues(keys)
 	for key, value := range req.Configs {
 		if err := model.SetConfig(key, value); err != nil {
+			// 中途失败时前面的键已经写进去了，照实把它们记进审计（只记键名）
+			auditChangedConfigKeys(c, before)
 			response.BadRequest(c, err.Error())
 			return
 		}
@@ -201,14 +212,64 @@ func (h *ConfigHandler) BatchSet(c *gin.Context) {
 	for key := range req.Configs {
 		reloadRuntimeConfigKeys(key)
 	}
+	auditChangedConfigKeys(c, before)
 
 	response.Success(c, gin.H{"message": "配置已更新"})
 }
 
 func (h *ConfigHandler) Delete(c *gin.Context) {
 	key := c.Param("key")
-	database.DB.Where("`key` = ?", key).Delete(&model.SystemConfig{})
+	result := database.DB.Where("`key` = ?", key).Delete(&model.SystemConfig{})
+	if result.Error == nil && result.RowsAffected > 0 {
+		recordAudit(c, service.AuditConfigDelete, "删除配置项 "+key)
+	}
 	response.Success(c, gin.H{"message": "配置已删除"})
+}
+
+// snapshotConfigValues 记下这几个键改之前的「生效值」（库里没有或为空时取注册的默认值），
+// 给 auditChangedConfigKeys 比对用。网页保存设置是整组提交，不比对的话每次都会把没动过的键也记成「改了」。
+// 一次查完，不按键逐条查：数据库是单连接，整组保存时逐条查会多出几十条查询。
+func snapshotConfigValues(keys []string) map[string]string {
+	stored := make(map[string]string, len(keys))
+	if len(keys) > 0 {
+		var cfgs []model.SystemConfig
+		database.DB.Where("`key` IN ?", keys).Find(&cfgs)
+		for _, cfg := range cfgs {
+			stored[cfg.Key] = cfg.Value
+		}
+	}
+	values := make(map[string]string, len(keys))
+	for _, key := range keys {
+		value := stored[key]
+		if value == "" {
+			if def, ok := model.GetSystemConfigDefinition(key); ok {
+				value = def.DefaultValue
+			}
+		}
+		values[key] = value
+	}
+	return values
+}
+
+// auditChangedConfigKeys 把生效值确实变了的键写进审计。
+// 🔴 只记键名、绝不记值：配置里有验证码密钥、备份密码、代理账号这类机密，审计日志是给人翻看的，不能变成泄露渠道。
+func auditChangedConfigKeys(c *gin.Context, before map[string]string) {
+	keys := make([]string, 0, len(before))
+	for key := range before {
+		keys = append(keys, key)
+	}
+	after := snapshotConfigValues(keys)
+	changed := make([]string, 0, len(before))
+	for key, old := range before {
+		if after[key] != old {
+			changed = append(changed, key)
+		}
+	}
+	if len(changed) == 0 {
+		return
+	}
+	sort.Strings(changed)
+	recordAudit(c, service.AuditConfigUpdate, "修改配置项："+strings.Join(changed, ", "))
 }
 
 func (h *ConfigHandler) RegisterRoutes(r *gin.RouterGroup) {

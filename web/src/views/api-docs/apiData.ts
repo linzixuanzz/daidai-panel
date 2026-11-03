@@ -69,7 +69,7 @@ export const apiCategories: ApiCategory[] = [
         method: 'POST',
         path: '/api/open-api/token',
         title: '获取 Open API Token',
-        description: '插件对接的第一步：使用在面板「Open API」页面创建的应用 App Key 和 App Secret 获取 access_token。Token 有效期 24 小时，过期后需重新调用此接口获取新 Token（无 refresh_token 机制）。同一 IP 10 分钟内凭证错误超过 10 次会被暂时拒绝（429），凭证正确的请求不计次数。',
+        description: '插件对接的第一步：使用在面板「Open API」页面创建的应用 App Key 和 App Secret 获取 access_token。Token 有效期 24 小时，过期后需重新调用此接口获取新 Token（无 refresh_token 机制）。同一 IP 上某个 App Key 的 Secret 10 分钟内错误超过 10 次，这个 App Key 会被暂时拒绝（429），不影响其他 App Key；App Key 不存在的错误按 IP 单独计数。凭证正确的请求不计次数。',
         auth: 'none',
         bodyParams: [
           { name: 'app_key', type: 'string', required: true, description: '应用 App Key', example: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4' },
@@ -478,7 +478,7 @@ panel.add_or_update_env(
         auth: 'jwt',
         bodyParams: [
           { name: 'old_password', type: 'string', required: true, description: '当前密码' },
-          { name: 'new_password', type: 'string', required: true, description: '新密码：8-128 位，且字母、数字、符号至少包含两种' },
+          { name: 'new_password', type: 'string', required: true, description: '新密码：8-72 位，且字母、数字、符号至少包含两种' },
         ],
         responseExample: JSON.stringify({ message: '密码修改成功' }, null, 2),
       },
@@ -2028,7 +2028,7 @@ if __name__ == '__main__':
         auth: 'jwt',
         bodyParams: [
           { name: 'username', type: 'string', required: true, description: '用户名' },
-          { name: 'password', type: 'string', required: true, description: '密码：8-128 位，且字母、数字、符号至少包含两种' },
+          { name: 'password', type: 'string', required: true, description: '密码：8-72 位，且字母、数字、符号至少包含两种' },
           { name: 'role', type: 'string', required: true, description: '角色：admin / operator / viewer' },
         ],
         responseExample: JSON.stringify({ message: '创建成功', data: { id: 2 } }, null, 2),
@@ -2057,7 +2057,7 @@ if __name__ == '__main__':
         auth: 'jwt',
         pathParams: [{ name: 'id', type: 'integer', required: true, description: '用户 ID' }],
         bodyParams: [
-          { name: 'password', type: 'string', required: true, description: '新密码：8-128 位，且字母、数字、符号至少包含两种' },
+          { name: 'password', type: 'string', required: true, description: '新密码：8-72 位，且字母、数字、符号至少包含两种' },
         ],
         responseExample: JSON.stringify({ message: '密码已重置' }, null, 2),
       },
@@ -2091,7 +2091,7 @@ if __name__ == '__main__':
         method: 'POST',
         path: '/api/open-api/token',
         title: '获取开放 API Token',
-        description: '使用 App Key 和 App Secret 获取访问令牌，有效期 24 小时。⚠️ 开放 API（REST）的鉴权与 MCP 不同：REST 接口只认 Bearer 令牌，必须先调本接口换取 access_token（expires_in 为 86400 秒），再在请求头带 Authorization: Bearer <access_token>。把 app_secret 直接当 Bearer 令牌会返回 401 {"error":"令牌无效或已过期"}；REST 接口也不接受 Basic，带 Basic 或不带 Authorization 都返回 401 {"error":"缺少授权令牌"}。只有 MCP 接口（/api/v1/mcp）可以直接用 Authorization: Basic base64(app_key:app_secret)。令牌里带着应用勾选的权限范围，调用没勾选的模块返回 403 {"error":"应用无权访问此资源"}。同一 IP 10 分钟内凭证错误超过 10 次会被暂时拒绝，返回 429，凭证正确的请求不计次数。',
+        description: '使用 App Key 和 App Secret 获取访问令牌，有效期 24 小时。⚠️ 开放 API（REST）的鉴权与 MCP 不同：REST 接口只认 Bearer 令牌，必须先调本接口换取 access_token（expires_in 为 86400 秒），再在请求头带 Authorization: Bearer <access_token>。把 app_secret 直接当 Bearer 令牌会返回 401 {"error":"令牌无效或已过期"}；REST 接口也不接受 Basic，带 Basic 或不带 Authorization 都返回 401 {"error":"缺少授权令牌"}。只有 MCP 接口（/api/v1/mcp）可以直接用 Authorization: Basic base64(app_key:app_secret)。令牌里带着应用勾选的权限范围，调用没勾选的模块返回 403 {"error":"应用无权访问此资源"}。同一 IP 上某个 App Key 的 Secret 10 分钟内错误超过 10 次，这个 App Key 会被暂时拒绝，返回 429，不影响其他 App Key；App Key 不存在的错误按 IP 单独计数。凭证正确的请求不计次数。',
         auth: 'none',
         bodyParams: [
           { name: 'app_key', type: 'string', required: true, description: 'App Key' },

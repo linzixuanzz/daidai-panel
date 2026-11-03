@@ -54,12 +54,13 @@ func TestLoginRecordsTruncateOversizedFields(t *testing.T) {
 	}
 }
 
-// 周期清理删掉过期的失败计数与 90 天前的登录日志，其余不动。
+// 周期清理只删过期超过 7 天的失败计数（过期不足 7 天的留着，渐进式锁定还要读 Count）与 90 天前的登录日志，其余不动。
 func TestPeriodicCleanupRemovesExpiredAttemptsAndOldLoginLogs(t *testing.T) {
 	testutil.SetupTestEnv(t)
 
 	now := time.Now()
-	database.DB.Create(&model.LoginAttempt{IP: "203.0.113.2", Username: "expired", Count: 1, ExpiresAt: now.Add(-time.Hour)})
+	database.DB.Create(&model.LoginAttempt{IP: "203.0.113.2", Username: "long-expired", Count: 1, ExpiresAt: now.Add(-LoginAttemptRetention - time.Hour)})
+	database.DB.Create(&model.LoginAttempt{IP: "203.0.113.2", Username: "recently-expired", Count: 6, ExpiresAt: now.Add(-time.Hour)})
 	database.DB.Create(&model.LoginAttempt{IP: "203.0.113.2", Username: "active", Count: 1, ExpiresAt: now.Add(time.Hour)})
 	database.DB.Create(&model.LoginLog{Username: "old", Message: "登录成功", CreatedAt: now.AddDate(0, 0, -(LoginLogRetentionDays + 1))})
 	database.DB.Create(&model.LoginLog{Username: "recent", Message: "登录成功", CreatedAt: now.AddDate(0, 0, -(LoginLogRetentionDays - 1))})
@@ -67,9 +68,12 @@ func TestPeriodicCleanupRemovesExpiredAttemptsAndOldLoginLogs(t *testing.T) {
 	runPeriodicCleanup()
 
 	var attempts []model.LoginAttempt
-	database.DB.Find(&attempts)
-	if len(attempts) != 1 || attempts[0].Username != "active" {
-		t.Fatalf("expected only the unexpired attempt to remain, got %#v", attempts)
+	database.DB.Order("username ASC").Find(&attempts)
+	if len(attempts) != 2 || attempts[0].Username != "active" || attempts[1].Username != "recently-expired" {
+		t.Fatalf("expected only the attempt expired over 7 days to be removed, got %#v", attempts)
+	}
+	if attempts[1].Count != 6 {
+		t.Fatalf("expected recently expired attempt to keep its count, got %d", attempts[1].Count)
 	}
 	var logs []model.LoginLog
 	database.DB.Find(&logs)

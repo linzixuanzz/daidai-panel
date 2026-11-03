@@ -203,6 +203,30 @@ func TestPullGitRepoRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
+// 单文件订阅的下载目标是悬空符号链接（指向脚本目录外、尚不存在的文件）时同样算越界：
+// os.Stat 会把悬空链接当成不存在放过，写入时却会顺着链接落到脚本目录外。
+func TestResolveSingleFileRejectsDanglingSymlinkTarget(t *testing.T) {
+	root := testutil.SetupTestEnv(t)
+	scriptsDir := config.C.Data.ScriptsDir
+
+	sub := &model.Subscription{Type: model.SubTypeSingleFile, URL: "https://example.invalid/raw/x.js", SaveDir: "downloads", Alias: "dangling.js"}
+	destPath := singleFileSubscriptionDestPath(scriptsDir, sub)
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		t.Fatalf("create download dir: %v", err)
+	}
+	outsideTarget := filepath.Join(root, "outside", "not-yet.js")
+	if err := os.Symlink(outsideTarget, destPath); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlink not available on this Windows host: %v", err)
+		}
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	if _, err := resolveSingleFileSubscriptionDestPath(scriptsDir, sub); err == nil || !strings.Contains(err.Error(), subscriptionPathEscapeHint) {
+		t.Fatalf("expected dangling symlink target to be rejected, got %v", err)
+	}
+}
+
 // 正常子目录、中文目录在拉取时照常解析，路径公式与原来一致。
 func TestResolveSubscriptionDestAcceptsNormalDirs(t *testing.T) {
 	testutil.SetupTestEnv(t)
