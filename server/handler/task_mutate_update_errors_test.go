@@ -140,8 +140,10 @@ func TestUpdateTaskReturns500WhenReloadFails(t *testing.T) {
 	}
 }
 
-// 真实会碰到的回读失败：开放 API 往整数列 timeout 里传了 "abc"，SQLite 照收，读回来时才报错。
+// 真实会碰到的回读失败：开放 API 往整数列里传了 "abc"，SQLite 照收，读回来时才报错。
 // 这一行要是单独提交了，任务列表就整页 500、这条任务也改不回来；必须回 500 且整体回滚，列表照常能读。
+// 原来用的是 timeout，v3.4.2 起 timeout / max_retries / retry_interval 在写库前就校验（非整数回 400），
+// 走不到回读这一步了，所以换成同样是整数列、仍原样写库的 sort_order 来守住回滚机制本身。
 func TestUpdateTaskRollsBackValueThatCannotBeReadBack(t *testing.T) {
 	testutil.SetupTestEnv(t)
 
@@ -152,7 +154,7 @@ func TestUpdateTaskRollsBackValueThatCannotBeReadBack(t *testing.T) {
 	task := mustCreateLabeledTask(t, "读不回来", "旧")
 	before := mustLoadTask(t, task.ID)
 
-	rec := performJSONRequest(engine, http.MethodPut, fmt.Sprintf("/api/v1/tasks/%d", task.ID), `{"timeout":"abc","labels":["新"]}`, headers, "")
+	rec := performJSONRequest(engine, http.MethodPut, fmt.Sprintf("/api/v1/tasks/%d", task.ID), `{"sort_order":"abc","labels":["新"]}`, headers, "")
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 when the written value cannot be read back, got %d: %s", rec.Code, rec.Body.String())
 	}

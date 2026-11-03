@@ -99,6 +99,10 @@ func LockNodePackageOperation() func() {
 }
 
 func NewNpmInstallCommand(packageName string) (*exec.Cmd, error) {
+	// 以 - 开头的包名会被 npm 当成选项（如 --registry），见 rejectOptionLikePackageName。
+	if err := rejectOptionLikePackageName(packageName); err != nil {
+		return nil, err
+	}
 	nodeDir := filepath.Join(config.C.Data.Dir, "deps", "nodejs")
 	if err := ensureNodePackageManifest(nodeDir); err != nil {
 		return nil, err

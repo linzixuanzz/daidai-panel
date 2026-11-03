@@ -36,11 +36,11 @@ func (t *toolset) registerTaskWriteTools(s *mcp.Server) {
 type taskFields struct {
 	TaskType               *string  `json:"task_type,omitempty" jsonschema:"任务类型：cron（按定时规则运行，默认）、manual（只手动运行）、startup（面板启动时运行）"`
 	CronExpression         *string  `json:"cron_expression,omitempty" jsonschema:"定时规则（5 段 cron，或带秒的 6 段；多条规则用换行分隔）。task_type 为 cron 时必填"`
-	Timeout                *int     `json:"timeout,omitempty" jsonschema:"超时秒数，0 表示不限制"`
+	Timeout                *int     `json:"timeout,omitempty" jsonschema:"超时秒数（0 到 604800），0 表示不限制"`
 	Labels                 []string `json:"labels,omitempty" jsonschema:"标签列表，修改时整体替换，传空数组清空。分组就是「分组:名称」形式的标签"`
 	PythonVersion          *string  `json:"python_version,omitempty" jsonschema:"运行 Python 脚本用的版本，例如 3.12；留空用面板默认版本"`
-	MaxRetries             *int     `json:"max_retries,omitempty" jsonschema:"失败后自动重试的次数，0 表示不重试"`
-	RetryInterval          *int     `json:"retry_interval,omitempty" jsonschema:"重试间隔秒数"`
+	MaxRetries             *int     `json:"max_retries,omitempty" jsonschema:"失败后自动重试的次数（0 到 10），0 表示不重试"`
+	RetryInterval          *int     `json:"retry_interval,omitempty" jsonschema:"重试间隔秒数（0 到 3600）"`
 	RandomDelaySeconds     *int     `json:"random_delay_seconds,omitempty" jsonschema:"定时触发后随机延迟的最大秒数（0 到 86400）"`
 	SuccessExitCodes       *string  `json:"success_exit_codes,omitempty" jsonschema:"视为成功的退出码，逗号分隔，默认 0"`
 	NotifyOnFailure        *bool    `json:"notify_on_failure,omitempty" jsonschema:"失败时发通知"`

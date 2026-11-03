@@ -21,7 +21,8 @@ func GitClone(url, branch, destDir string, sshKeyPath string) (string, error) {
 	if branch != "" {
 		args = append(args, "-b", branch)
 	}
-	args = append(args, url, destDir)
+	// `--` 之后按位置参数处理：地址以 - 开头时不会被 git 当成选项（如 --upload-pack=...）。
+	args = append(args, "--", url, destDir)
 
 	cmd := exec.Command("git", args...)
 	cmd.Dir = config.C.Data.ScriptsDir
@@ -86,12 +87,13 @@ func DownloadFileWithContext(ctx context.Context, url, destPath string) (string,
 		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
 
-	args := []string{"-fsSL", "-o", destPath, url}
+	// 订阅地址是用户填的，放在 `--` 之后：以 - 开头的地址不会被 curl / wget 当成选项（如 -o 改写输出位置）。
+	args := []string{"-fsSL", "-o", destPath, "--", url}
 	cmd := exec.CommandContext(ctx, "curl", args...)
 	cmd.Env = AppendProxyEnv(os.Environ())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		args = []string{"-q", "-O", destPath, url}
+		args = []string{"-q", "-O", destPath, "--", url}
 		cmd = exec.CommandContext(ctx, "wget", args...)
 		cmd.Env = AppendProxyEnv(os.Environ())
 		output, err = cmd.CombinedOutput()

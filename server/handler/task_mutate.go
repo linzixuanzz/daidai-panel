@@ -43,6 +43,47 @@ func normalizeTaskRandomDelaySecondsValue(value interface{}) (*int, error) {
 	}
 }
 
+// 超时 / 最大重试次数 / 重试间隔的上限，与网页任务表单（web/src/views/tasks/components/TaskForm.vue）
+// 里 el-input-number 的 max 对齐：超时最多 7 天（604800 秒，0 = 不超时）、重试最多 10 次、重试间隔最多 1 小时。
+// 以前服务端完全不管，开放 API 能写进负数或天文数字（例如重试一百万次、每次间隔几年）。
+const (
+	taskTimeoutSecondsMax       = 604800
+	taskMaxRetriesMax           = 10
+	taskRetryIntervalSecondsMax = 3600
+)
+
+// normalizeTaskIntRangeValue 校验超时 / 重试这类整数字段，口径照抄 normalizeTaskRandomDelaySecondsValue：
+// 非整数、超出范围直接报错（拒绝而不是夹紧）。Create 传 int，Update 与导入走 JSON、数字一律是 float64。
+// null 也拒绝：这几列是 NOT NULL 语义的整数，写进 NULL 之后整条任务读不出来。
+func normalizeTaskIntRangeValue(value interface{}, label string, max int) (int, error) {
+	var number int
+	switch typed := value.(type) {
+	case float64:
+		number = int(typed)
+		if float64(number) != typed {
+			return 0, fmt.Errorf("%s必须为整数", label)
+		}
+	case int:
+		number = typed
+	default:
+		return 0, fmt.Errorf("%s无效", label)
+	}
+	if number < 0 || number > max {
+		return 0, fmt.Errorf("%s需在 0-%d 之间", label, max)
+	}
+	return number, nil
+}
+
+// taskIntRangeFields 是 Update / 导入共用的字段表：JSON 键 → 提示里的中文名与上限。
+var taskIntRangeFields = map[string]struct {
+	label string
+	max   int
+}{
+	"timeout":        {label: "超时秒数", max: taskTimeoutSecondsMax},
+	"max_retries":    {label: "最大重试次数", max: taskMaxRetriesMax},
+	"retry_interval": {label: "重试间隔秒数", max: taskRetryIntervalSecondsMax},
+}
+
 // normalizeTaskLogRetentionDaysValue 把任务级日志保留天数统一成两态：nil = 跟随全局、>0 = 自定义天数。
 // 结构照抄上面的 normalizeTaskRandomDelaySecondsValue：Create 解引用后传的是 int，
 // Update 与导入走 JSON、数字一律是 float64，两条路共用这一个函数（issue #144 / v3.3.2）。
@@ -219,7 +260,12 @@ func (h *TaskHandler) Create(c *gin.Context) {
 	}
 
 	if req.Timeout != nil {
-		task.Timeout = *req.Timeout
+		timeout, err := normalizeTaskIntRangeValue(*req.Timeout, "超时秒数", taskTimeoutSecondsMax)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		task.Timeout = timeout
 	}
 	if req.SuccessExitCodes != nil {
 		normalized, err := model.NormalizeSuccessExitCodes(*req.SuccessExitCodes)
@@ -246,10 +292,20 @@ func (h *TaskHandler) Create(c *gin.Context) {
 		task.LogRetentionDays = logRetentionValue
 	}
 	if req.MaxRetries != nil {
-		task.MaxRetries = *req.MaxRetries
+		maxRetries, err := normalizeTaskIntRangeValue(*req.MaxRetries, "最大重试次数", taskMaxRetriesMax)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		task.MaxRetries = maxRetries
 	}
 	if req.RetryInterval != nil {
-		task.RetryInterval = *req.RetryInterval
+		retryInterval, err := normalizeTaskIntRangeValue(*req.RetryInterval, "重试间隔秒数", taskRetryIntervalSecondsMax)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		task.RetryInterval = retryInterval
 	}
 	if req.NotifyOnFailure != nil {
 		task.NotifyOnFailure = *req.NotifyOnFailure
@@ -453,6 +509,22 @@ func (h *TaskHandler) Update(c *gin.Context) {
 			updates[key] = logRetentionValue
 			continue
 		}
+		if field, ok := taskIntRangeFields[key]; ok {
+			// 与库里现值相同就原样放过：网页和 APP 保存时会把整张表单回传，
+			// 升级前经开放 API / 导入写进去的越界旧值不该让用户连改个名字都被 400 挡住。
+			current := map[string]int{"timeout": task.Timeout, "max_retries": task.MaxRetries, "retry_interval": task.RetryInterval}[key]
+			if number, isNumber := value.(float64); isNumber && number == float64(current) {
+				updates[key] = current
+				continue
+			}
+			normalized, err := normalizeTaskIntRangeValue(value, field.label, field.max)
+			if err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			updates[key] = normalized
+			continue
+		}
 		if key == "notification_channel_id" {
 			channelID, err := normalizeTaskNotificationChannelIDValue(value)
 			if err != nil {
@@ -518,7 +590,8 @@ func (h *TaskHandler) Update(c *gin.Context) {
 	// 写库与回读放在同一个事务里，任何一步失败都回 500「更新任务失败」、库里保持原样，调度也不去动（#157）：
 	//   - 写库失败：以前这里不接 .Error，没写进去也照样回 200「task updated」，前端弹「任务更新成功」、
 	//     刷新后什么都没变，和「填了标签却没保存」的症状一模一样，很难排查；
-	//   - 回读失败：写进去的值读不回来时（例如开放 API 往整数列 timeout 里传了 "abc"，SQLite 照收、读的时候才报错），
+	//   - 回读失败：写进去的值读不回来时（例如开放 API 往整数列 sort_order 里传了 "abc"，SQLite 照收、读的时候才报错；
+	//     timeout / max_retries / retry_interval 已在上面校验，到不了这里），
 	//     单独提交就会留下一行读不出来的坏数据，任务列表整页 500、这条任务连改都改不回来，所以要整体回滚。
 	// 底层报错不透给前端；GORM 的日志器（database.Init）会把失败的 SQL 与原因打到进程标准输出。
 	// 事务里只能用 tx：连接池只有一条连接（SetMaxOpenConns(1)），在这里再用 database.DB 会把自己卡死。

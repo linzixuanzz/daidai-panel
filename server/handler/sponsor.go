@@ -46,6 +46,66 @@ type sponsorFeedSummary struct {
 	Unavailable bool              `json:"unavailable,omitempty"`
 }
 
+// 赞助列表的进程内缓存：这个接口不用登录，以前每来一个请求就回源一次，
+// 外人刷这个接口就等于借面板去刷赞助站。现在成功结果缓存 10 分钟；回源失败时有旧缓存就继续用旧的；
+// 同一时刻的并发请求只回源一次，其余的等这一次的结果。
+const sponsorFeedCacheTTL = 10 * time.Minute
+
+// sponsorFeedCall 是一次进行中的回源，等它的请求在 done 关闭后直接取 summary / err。
+type sponsorFeedCall struct {
+	feedURL string
+	done    chan struct{}
+	summary sponsorFeedSummary
+	err     error
+}
+
+var sponsorFeedCache struct {
+	mu sync.Mutex
+	// feedURL：缓存属于哪个地址，地址不同（测试里会换成本地服务）就当没有缓存。
+	feedURL   string
+	summary   sponsorFeedSummary
+	fetchedAt time.Time
+	inflight  *sponsorFeedCall
+}
+
+// loadSponsorFeed 按上面的缓存规则取赞助列表，返回 err 表示既没拉到、也没有可用的旧缓存。
+func loadSponsorFeed(feedURL string) (sponsorFeedSummary, error) {
+	cache := &sponsorFeedCache
+	cache.mu.Lock()
+	hasCache := cache.feedURL == feedURL && !cache.fetchedAt.IsZero()
+	if hasCache && time.Since(cache.fetchedAt) < sponsorFeedCacheTTL {
+		summary := cache.summary
+		cache.mu.Unlock()
+		return summary, nil
+	}
+	if call := cache.inflight; call != nil && call.feedURL == feedURL {
+		// 已经有人在回源：等它结束，用它的结果（含失败时的旧缓存兜底），不再重复回源。
+		cache.mu.Unlock()
+		<-call.done
+		return call.summary, call.err
+	}
+	call := &sponsorFeedCall{feedURL: feedURL, done: make(chan struct{})}
+	cache.inflight = call
+	cache.mu.Unlock()
+
+	summary, err := fetchSponsorFeed(feedURL)
+
+	cache.mu.Lock()
+	if err == nil {
+		cache.feedURL, cache.summary, cache.fetchedAt = feedURL, summary, time.Now()
+	} else if cache.feedURL == feedURL && !cache.fetchedAt.IsZero() {
+		// 回源失败但有旧缓存：返回旧的。fetchedAt 不动，下一个请求还会再试着回源。
+		summary, err = cache.summary, nil
+	}
+	call.summary, call.err = summary, err
+	if cache.inflight == call {
+		cache.inflight = nil
+	}
+	cache.mu.Unlock()
+	close(call.done)
+	return summary, err
+}
+
 func NewSponsorHandler() *SponsorHandler {
 	return &SponsorHandler{}
 }
@@ -55,7 +115,7 @@ func (h *SponsorHandler) List(c *gin.Context) {
 
 	feedURL := defaultSponsorFeedURL
 
-	summary, err := fetchSponsorFeed(feedURL)
+	summary, err := loadSponsorFeed(feedURL)
 	if err != nil {
 		logSponsorFeedUnavailable()
 		fallback := emptySponsorFeed()

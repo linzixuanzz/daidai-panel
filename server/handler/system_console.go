@@ -67,8 +67,6 @@ type ConsoleHandler struct {
 	// order 记录 runs 的插入顺序，淘汰时从最老的一头开始找。
 	// 不复用 ScriptHandler 的注册表：那边没有条数上限，语义也不同（脚本调试 vs 系统命令）。
 	order []string
-	// seq 用来给 run_id 兜底去重：毫秒时间戳在连点两下时可能撞车。
-	seq uint64
 }
 
 func NewConsoleHandler() *ConsoleHandler {
@@ -233,8 +231,8 @@ func (h *ConsoleHandler) storeConsoleRun(run *debugRun) string {
 
 	h.pruneConsoleRunsLocked()
 
-	h.seq++
-	runID := fmt.Sprintf("console_%d_%d", time.Now().UnixMilli(), h.seq)
+	// 随机 run_id（见 newDebugRunID）：以前是「毫秒时间戳 + 自增序号」，可以按时间猜出来。
+	runID := newDebugRunID("console")
 	h.runs[runID] = run
 	h.order = append(h.order, runID)
 	return runID

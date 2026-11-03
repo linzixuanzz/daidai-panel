@@ -198,8 +198,32 @@ func (h *TaskHandler) Import(c *gin.Context) {
 			}
 			task.Status = status
 		}
-		if value, ok := taskData["timeout"].(float64); ok {
-			task.Timeout = int(value)
+		// 超时 / 重试三项与创建接口同一套上下限（normalizeTaskIntRangeValue）：越界的这一条记进 errors 并跳过，
+		// 其余任务照常导入。非数字的值维持原样忽略（取默认值），与改动前一致。
+		intRangeInvalid := false
+		for _, key := range []string{"timeout", "max_retries", "retry_interval"} {
+			value, ok := taskData[key].(float64)
+			if !ok {
+				continue
+			}
+			field := taskIntRangeFields[key]
+			normalized, err := normalizeTaskIntRangeValue(value, field.label, field.max)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("任务 %d: %s", i+1, err.Error()))
+				intRangeInvalid = true
+				break
+			}
+			switch key {
+			case "timeout":
+				task.Timeout = normalized
+			case "max_retries":
+				task.MaxRetries = normalized
+			case "retry_interval":
+				task.RetryInterval = normalized
+			}
+		}
+		if intRangeInvalid {
+			continue
 		}
 		if value, exists := taskData["success_exit_codes"]; exists {
 			raw := ""
@@ -235,12 +259,6 @@ func (h *TaskHandler) Import(c *gin.Context) {
 				continue
 			}
 			task.LogRetentionDays = logRetentionValue
-		}
-		if value, ok := taskData["max_retries"].(float64); ok {
-			task.MaxRetries = int(value)
-		}
-		if value, ok := taskData["retry_interval"].(float64); ok {
-			task.RetryInterval = int(value)
 		}
 		if value, ok := taskData["notify_on_failure"].(bool); ok {
 			task.NotifyOnFailure = value

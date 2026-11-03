@@ -241,6 +241,10 @@ func BuildLinuxPackageCommand(manager LinuxPackageManager, action, packageName s
 
 	switch action {
 	case "install":
+		// 以 - 开头的包名会被 apt-get / apk 当成选项（恢复备份后的重装也走这里），见 rejectOptionLikePackageName。
+		if err := rejectOptionLikePackageName(packageName); err != nil {
+			return nil, err
+		}
 		// 顺序契约：refreshApt 必须在 ensureMirror 之后求值（issue #146）。
 		// v3.3.2 之前是先算 refreshApt 再换源，于是「换源」这个动作永远影响不到本次要不要 update ——
 		// 索引还在 6 小时 TTL 内时，换完源直接拿旧源的索引装包，报 E: Unable to locate package。

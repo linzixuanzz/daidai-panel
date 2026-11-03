@@ -148,6 +148,10 @@ func InstallAutoDependency(candidate *AutoInstallCandidate, envVars map[string]s
 	if candidate == nil {
 		return AutoInstallResult{Error: "未找到可自动安装的依赖"}
 	}
+	// 包名取自脚本的报错输出，脚本可以伪造；以 - 开头的一律不装（go get 不经过下面的命令构造函数，这里统一先挡）。
+	if err := rejectOptionLikePackageName(candidate.PackageName); err != nil {
+		return AutoInstallResult{Error: err.Error()}
+	}
 
 	baseEnv := buildEnvSlice(envVars)
 	switch candidate.Manager {
@@ -296,7 +300,20 @@ func NewPipCommandForPythonVersion(pythonVersion string, args []string) (*exec.C
 	return spec.command(args), nil
 }
 
+// rejectOptionLikePackageName：包名以 - 开头时会被 pip / npm / go / apk / apt 当成选项
+// （如 --index-url、--registry 把安装源换成别人的）。自动安装的包名来自脚本运行时的报错输出，
+// 脚本自己就能打印出这种「包名」，所以在构造安装命令的地方统一挡住，手动安装、重装、恢复后重装也都经过这里。
+func rejectOptionLikePackageName(packageName string) error {
+	if strings.HasPrefix(strings.TrimSpace(packageName), "-") {
+		return fmt.Errorf("依赖名不能以 - 开头：%s", packageName)
+	}
+	return nil
+}
+
 func NewPipInstallCommandForPythonVersion(pythonVersion, packageName string) (*exec.Cmd, error) {
+	if err := rejectOptionLikePackageName(packageName); err != nil {
+		return nil, err
+	}
 	spec, err := resolvePipCommandSpecForPythonVersion(pythonVersion, true)
 	if err != nil {
 		return nil, err
@@ -305,6 +322,9 @@ func NewPipInstallCommandForPythonVersion(pythonVersion, packageName string) (*e
 }
 
 func NewPipInstallCommandForPythonVersionWithFlags(pythonVersion, packageName string, extraFlags []string) (*exec.Cmd, error) {
+	if err := rejectOptionLikePackageName(packageName); err != nil {
+		return nil, err
+	}
 	spec, err := resolvePipCommandSpecForPythonVersion(pythonVersion, true)
 	if err != nil {
 		return nil, err

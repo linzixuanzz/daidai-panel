@@ -9,6 +9,7 @@ import (
 
 	"daidai-panel/config"
 	"daidai-panel/model"
+	"daidai-panel/pkg/pathutil"
 )
 
 const subscriptionHookTimeoutSeconds = 900
@@ -159,5 +160,11 @@ func subscriptionWorkingDir(sub *model.Subscription) string {
 	if saveDir == "" {
 		return config.C.Data.ScriptsDir
 	}
-	return filepath.Join(config.C.Data.ScriptsDir, saveDir)
+	workDir := filepath.Join(config.C.Data.ScriptsDir, saveDir)
+	// 保存目录越界（存量脏数据）时不把 cwd 放到脚本目录外，退回脚本根目录。
+	// 正常拉取流程在 checkSubscriptionPullTarget 就已经失败，这里只是同一套口径的兜底。
+	if absWorkDir, err := filepath.Abs(workDir); err != nil || !pathutil.IsWithinBase(config.C.Data.ScriptsDir, absWorkDir) {
+		return config.C.Data.ScriptsDir
+	}
+	return workDir
 }

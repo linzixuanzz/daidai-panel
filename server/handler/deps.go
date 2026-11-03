@@ -266,6 +266,11 @@ func (h *DepsHandler) Create(c *gin.Context) {
 		if strings.ContainsAny(name, ";|&`$(){}") {
 			continue
 		}
+		// 以 - 开头的名字会被 pip / npm / apk / apt 当成选项（如 --index-url、--registry 换掉安装源），
+		// 与上面的非法字符同口径直接跳过，不建记录、不安装。
+		if strings.HasPrefix(name, "-") {
+			continue
+		}
 
 		for _, pythonVersion := range dependencyPythonInstallVersions(req.Type) {
 			// 同名已安装 / 安装中 / 排队中的跳过、不重复安装。查重口径见 findExistingDependency。

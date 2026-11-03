@@ -2,6 +2,8 @@ package handler
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -60,12 +62,24 @@ func newDebugRun() *debugRun {
 	}
 }
 
+// newDebugRunID 生成调试运行 / 运行代码 / 系统命令行的 run_id：可读前缀 + 16 位十六进制随机串（crypto/rand）。
+// 以前直接用毫秒时间戳（console 还带自增序号），run_id 可以按时间猜出来，
+// 拿到另一个有权限的令牌就能去读别人正在跑的输出、停掉或清掉它。
+func newDebugRunID(prefix string) string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		// crypto/rand 读失败极少见；退回纳秒时间戳，至少不让这次运行起不来。
+		return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+	}
+	return prefix + "_" + hex.EncodeToString(buf)
+}
+
 func (h *ScriptHandler) storeRun(runID string, run *debugRun) {
 	h.mu.Lock()
 	// 写入新记录前先修剪（#159 修复 C）：用户调试完离开后，下次再调试时内存就回到基线
 	h.pruneDebugRunsLocked()
 	if _, exists := h.debugRuns[runID]; !exists {
-		// run_id 按毫秒时间戳生成，同一毫秒连点两下会撞上同一个 id（沿用原来的覆盖行为）；
+		// run_id 现在是随机串，正常不会重复；万一撞上沿用原来的覆盖行为，
 		// 这时 order 里已经有它，不再追加第二份
 		h.order = append(h.order, runID)
 	}

@@ -113,7 +113,8 @@ func (h *ScriptHandler) DebugRun(c *gin.Context) {
 	if req.Path != "" {
 		runName = filepath.Base(req.Path)
 	}
-	runID := fmt.Sprintf("%d_%s", time.Now().UnixMilli(), runName)
+	// 随机串在前、脚本名在后：脚本名只是方便人看，不可预测靠前面的随机串。
+	runID := newDebugRunID("debug") + "_" + runName
 	h.storeRun(runID, run)
 
 	startTime := time.Now()

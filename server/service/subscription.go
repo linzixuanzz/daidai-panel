@@ -70,8 +70,14 @@ func PullSubscriptionWithContext(ctx context.Context, sub *model.Subscription, o
 	var output string
 	var pullErr error
 
+	// 落盘路径先过越界检查：保存目录 / 别名的存量脏数据（如 ../xxx）在这里就让整次拉取失败，
+	// 拉取前指令、拉取、钩子、任务同步都不跑。拉取函数内部还会再查一次（拉取前指令可能改了目录）。
+	pullErr = checkSubscriptionPullTarget(sub)
+
 	// 拉取前指令跑在真正拉取之前，失败就不往下走了（详见 runSubscriptionPreScriptIfConfigured）。
-	pullErr = runSubscriptionPreScriptIfConfigured(sub, emit)
+	if pullErr == nil {
+		pullErr = runSubscriptionPreScriptIfConfigured(sub, emit)
+	}
 	if pullErr == nil && ctx.Err() != nil {
 		pullErr = fmt.Errorf("拉取已停止")
 	}
@@ -254,18 +260,13 @@ func gitHasWorkingTreeChanges(ctx context.Context, repoDir string, env []string)
 }
 
 func pullGitRepoWithCallback(ctx context.Context, sub *model.Subscription, authCfg gitAuthConfig, emit PullCallback) (string, error) {
-	saveDir := sub.SaveDir
-	if saveDir == "" {
-		saveDir = sub.Alias
-		if saveDir == "" {
-			parts := strings.Split(sub.URL, "/")
-			saveDir = strings.TrimSuffix(parts[len(parts)-1], ".git")
-		}
-	}
+	saveDir := subscriptionSaveDir(sub)
 
-	destDir := filepath.Join(config.C.Data.ScriptsDir, saveDir)
-	if absDestDir, err := filepath.Abs(destDir); err == nil {
-		destDir = absDestDir
+	// 目录公式与 subscriptionSaveDir 一致，另外挡住越界和「就是脚本根目录」两种情况：
+	// 下面的 reset --hard / clean -fd 落在错的目录上会直接毁掉别处的文件。
+	destDir, err := resolveGitSubscriptionDestDir(config.C.Data.ScriptsDir, sub)
+	if err != nil {
+		return "", err
 	}
 	env := authCfg.Env
 
@@ -288,7 +289,8 @@ func pullGitRepoWithCallback(ctx context.Context, sub *model.Subscription, authC
 			return fullOutput.String(), err
 		}
 
-		fetchArgs := []string{"fetch", "--depth", "1", "--prune", "origin"}
+		// 分支名是用户填的，放在 `--` 之后：以 - 开头的值（如 --upload-pack=...）不会被 git 当成选项。
+		fetchArgs := []string{"fetch", "--depth", "1", "--prune", "--", "origin"}
 		if strings.TrimSpace(sub.Branch) != "" {
 			fetchArgs = append(fetchArgs, strings.TrimSpace(sub.Branch))
 		}
@@ -404,7 +406,8 @@ func pullGitRepoWithCallback(ctx context.Context, sub *model.Subscription, authC
 				return fullOutput.String(), err
 			}
 
-			fetchArgs := []string{"fetch", "--depth", "1", "--prune", "origin"}
+			// 同上：分支名放在 `--` 之后，防止被当成 git 选项。
+			fetchArgs := []string{"fetch", "--depth", "1", "--prune", "--", "origin"}
 			if strings.TrimSpace(sub.Branch) != "" {
 				fetchArgs = append(fetchArgs, strings.TrimSpace(sub.Branch))
 			}
@@ -473,7 +476,8 @@ func pullGitRepoWithCallback(ctx context.Context, sub *model.Subscription, authC
 	if sub.Branch != "" {
 		args = append(args, "-b", sub.Branch)
 	}
-	args = append(args, authCfg.RemoteURL, destDir)
+	// `--` 之后的都按位置参数处理：地址以 - 开头时不会被 git 当成选项（如 --upload-pack=...）。
+	args = append(args, "--", authCfg.RemoteURL, destDir)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = config.C.Data.ScriptsDir
 	cmd.Env = env
@@ -856,7 +860,12 @@ func singleFileSubscriptionDestPath(scriptsDir string, sub *model.Subscription) 
 
 func pullSingleFileWithCallback(ctx context.Context, sub *model.Subscription, _ string, emit PullCallback) (string, error) {
 	saveDir, filename := singleFileSubscriptionTarget(sub)
-	destPath := singleFileSubscriptionDestPath(config.C.Data.ScriptsDir, sub)
+	// 目标路径公式不变（singleFileSubscriptionDestPath），只多一道越界检查：
+	// 别名 / 保存目录带 ../ 的存量数据会把文件写到脚本目录外，这里直接让拉取失败。
+	destPath, err := resolveSingleFileSubscriptionDestPath(config.C.Data.ScriptsDir, sub)
+	if err != nil {
+		return "", err
+	}
 	emit(fmt.Sprintf("[下载] %s -> %s/%s", sub.URL, saveDir, filename))
 	output, err := DownloadFileWithContext(ctx, sub.URL, destPath)
 	if output != "" {

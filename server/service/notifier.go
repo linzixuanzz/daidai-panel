@@ -533,14 +533,20 @@ func sendEmailWithFormat(cfg map[string]string, title, content, format string) e
 	addr := net.JoinHostPort(host, port)
 	auth := smtp.PlainAuth("", user, pass, host)
 
+	// 邮件头的值里不能有换行：标题（可能来自任务名、脚本调用通知接口时传的 title）、发件人、收件人里混进 \r\n，
+	// 就能在报文里伪造新的头（如 Bcc 把通知抄送给别人），甚至提前结束头部改写正文。统一换成空格。
+	// 只改拼进报文头的这三个值；MAIL FROM / RCPT TO 用的 from、recipients 不动（net/smtp 自己会拒绝带换行的地址）。
+	headerValue := strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ")
+	headerFrom, headerTo, headerSubject := headerValue.Replace(from), headerValue.Replace(to), headerValue.Replace(title)
+
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
-		from, to, title, content)
+		headerFrom, headerTo, headerSubject, content)
 	if format == NotifyContentHTML {
 		// 只有调用方声明了 html 才发 text/html；text / markdown / 未声明都保持上面的纯文本报文，逐字节不变。
 		// 必须带 MIME-Version，否则部分客户端不认 Content-Type、照样显示源码；
 		// 正文用 quoted-printable，避免压缩成一行的 HTML 超过 SMTP 单行 998 字节被拒收。
 		msg = fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n%s",
-			from, to, title, encodeNotifyQuotedPrintable(content))
+			headerFrom, headerTo, headerSubject, encodeNotifyQuotedPrintable(content))
 	}
 
 	if smtpImplicitSSLEnabled(cfg, port) {

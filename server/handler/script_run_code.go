@@ -64,7 +64,8 @@ func (h *ScriptHandler) RunCode(c *gin.Context) {
 		return
 	}
 
-	runID := fmt.Sprintf("code_%d", time.Now().UnixMilli())
+	// 随机 run_id（见 newDebugRunID），前缀 code 保留给人看。
+	runID := newDebugRunID("code")
 	h.storeRun(runID, run)
 
 	startTime := time.Now()

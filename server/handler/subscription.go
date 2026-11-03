@@ -231,6 +231,11 @@ func (h *SubscriptionHandler) Create(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	// 保存目录 / 别名会直接拼进脚本目录下的落盘路径，带 ../ 或绝对路径就能写到脚本目录外，落库前拦下。
+	if err := service.ValidateSubscriptionTarget(req.Type, req.URL, req.SaveDir, req.Alias); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 	authType, sshKeyID, authToken, err := normalizeSubscriptionAuthInput(req.AuthType, req.SSHKeyID, req.AuthToken)
 	if err != nil {
 		response.BadRequest(c, err.Error())
@@ -334,6 +339,47 @@ func validateChangedSubscriptionFilterFields(updates map[string]interface{}, sub
 	return nil
 }
 
+// validateChangedSubscriptionTargetFields 校验这次改动后的保存目录 / 别名，口径同 validateChangedSubscriptionFilterFields：
+// 只校验真的改了的字段。App 每次保存都会把 save_dir / alias 原样回传，库里的存量值（升级前保存的、青龙备份导入的）
+// 若不合规，全量校验会让用户连改个名字都被 400 挡住；存量越界值由拉取时的兜底拦下并在日志里提示修改。
+// - 保存目录：改了才校验；
+// - 别名：改了，或订阅类型改了（别名在单文件订阅里是文件名、在 git 订阅里是目录名，规则不同）才校验；
+// - git 订阅的最终目录（不能是脚本根目录等）：类型、地址、保存目录、别名任一改了才校验。
+// 非字符串的值（null、数字）不在这里拦，维持 map 更新原有的写库行为。
+func validateChangedSubscriptionTargetFields(updates map[string]interface{}, sub *model.Subscription) error {
+	subType, url, saveDir, alias := sub.Type, sub.URL, sub.SaveDir, sub.Alias
+	typeChanged, urlChanged, saveDirChanged, aliasChanged := false, false, false, false
+	if text, ok := updates["type"].(string); ok && text != sub.Type {
+		subType, typeChanged = text, true
+	}
+	if text, ok := updates["url"].(string); ok && text != sub.URL {
+		url, urlChanged = text, true
+	}
+	if text, ok := updates["save_dir"].(string); ok && text != sub.SaveDir {
+		saveDir, saveDirChanged = text, true
+	}
+	if text, ok := updates["alias"].(string); ok && text != sub.Alias {
+		alias, aliasChanged = text, true
+	}
+
+	if saveDirChanged {
+		if err := service.ValidateSubscriptionSaveDir(saveDir); err != nil {
+			return err
+		}
+	}
+	if aliasChanged || typeChanged {
+		if err := service.ValidateSubscriptionAlias(subType, alias); err != nil {
+			return err
+		}
+	}
+	if typeChanged || urlChanged || saveDirChanged || aliasChanged {
+		if err := service.ValidateGitSubscriptionTargetDir(subType, url, saveDir, alias); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (h *SubscriptionHandler) Update(c *gin.Context) {
 	subID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
 
@@ -379,6 +425,11 @@ func (h *SubscriptionHandler) Update(c *gin.Context) {
 	}
 
 	if err := validateChangedSubscriptionFilterFields(updates, &sub); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	if err := validateChangedSubscriptionTargetFields(updates, &sub); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
