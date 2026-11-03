@@ -283,7 +283,7 @@ func sendToChannel(ch model.NotifyChannel, title, content string, context map[st
 	case "serverchan":
 		err = sendServerchan(cfg, title, content)
 	case "feishu":
-		err = sendFeishu(cfg, title, content)
+		err = sendFeishuWithFormat(cfg, title, content, contentType)
 	case "gotify":
 		err = sendGotify(cfg, title, content)
 	case "pushdeer":
@@ -1417,14 +1417,74 @@ func sendServerchan(cfg map[string]string, title, content string) error {
 }
 
 func sendFeishu(cfg map[string]string, title, content string) error {
+	return sendFeishuWithFormat(cfg, title, content, "")
+}
+
+// sendFeishuWithFormat 按渠道配置的 msg_type 发飞书机器人消息（issue #172）：
+//   - text（默认，含老渠道没有这个键、未知值）：报文与改动前逐字节一致；
+//   - post：富文本，标题单独加粗，正文按行拆成段落；
+//   - interactive：卡片，标题放在彩色标题栏里。
+//
+// 与钉钉不同，调用方声明的格式（issue #135）不覆盖消息类型——飞书的类型是用户在渠道里挑的样式；
+// 格式只决定卡片正文用 plain_text 还是 lark_md。html 在进来之前已经转成纯文本、格式为空。
+func sendFeishuWithFormat(cfg map[string]string, title, content, format string) error {
 	webhook := cfg["webhook"]
 	if webhook == "" {
 		return fmt.Errorf("飞书 Webhook URL 为空")
 	}
-	body := map[string]interface{}{
-		"msg_type": "text",
-		"content":  map[string]string{"text": fmt.Sprintf("%s\n%s", title, content)},
+
+	var body map[string]interface{}
+	switch strings.ToLower(strings.TrimSpace(cfg["msg_type"])) {
+	case "post":
+		// 正文按行拆成段落：先把 \r\n 归一成 \n，空行也保留成一个空段落，排版与原文一致
+		lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+		paragraphs := make([][]map[string]string, 0, len(lines))
+		for _, line := range lines {
+			paragraphs = append(paragraphs, []map[string]string{{"tag": "text", "text": line}})
+		}
+		body = map[string]interface{}{
+			"msg_type": "post",
+			"content": map[string]interface{}{
+				"post": map[string]interface{}{
+					"zh_cn": map[string]interface{}{
+						"title":   title,
+						"content": paragraphs,
+					},
+				},
+			},
+		}
+	case "interactive":
+		// 默认 plain_text：脚本输出里的 *、<、[ 不会被飞书当成 markdown 误渲染；调用方明确声明 markdown 才用 lark_md
+		textTag := "plain_text"
+		if format == NotifyContentMarkdown {
+			textTag = "lark_md"
+		}
+		// 卡片标题栏不能为空，空标题兜底成「通知」
+		cardTitle := title
+		if strings.TrimSpace(cardTitle) == "" {
+			cardTitle = "通知"
+		}
+		body = map[string]interface{}{
+			"msg_type": "interactive",
+			"card": map[string]interface{}{
+				"config": map[string]interface{}{"wide_screen_mode": true},
+				"header": map[string]interface{}{
+					"title":    map[string]string{"tag": "plain_text", "content": cardTitle},
+					"template": "blue",
+				},
+				"elements": []map[string]interface{}{
+					{"tag": "div", "text": map[string]string{"tag": textTag, "content": content}},
+				},
+			},
+		}
+	default:
+		// text 与未知值：保持老报文不变（notifier_legacy_payload_test.go 锁着它）
+		body = map[string]interface{}{
+			"msg_type": "text",
+			"content":  map[string]string{"text": fmt.Sprintf("%s\n%s", title, content)},
+		}
 	}
+	// 三种消息类型都支持加签：timestamp / sign 放在报文顶层，算法不变
 	if secret := cfg["secret"]; secret != "" {
 		timestamp := time.Now().Unix()
 		stringToSign := fmt.Sprintf("%d\n%s", timestamp, secret)

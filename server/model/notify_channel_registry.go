@@ -400,6 +400,12 @@ var registeredNotifyChannels = []NotifyChannelDefinition{
 		Fields: []NotifyFieldDefinition{
 			notifyInput("webhook", "Webhook URL", "https://open.feishu.cn/open-apis/bot/v2/hook/xxx").required(),
 			notifyInput("secret", "加签秘钥 (可选)", "安全设置中的签名校验秘钥"),
+			// 默认 text：老渠道没有这个键时按 text 发，报文与加这一项之前逐字节一致（issue #172）
+			notifySelect("msg_type", "消息类型", "富文本标题会加粗；卡片标题显示在彩色标题栏里", []SystemConfigOption{
+				{Value: "text", Label: "文本"},
+				{Value: "post", Label: "富文本"},
+				{Value: "interactive", Label: "卡片"},
+			}).withDefault("text"),
 		},
 	},
 	{
