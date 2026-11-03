@@ -73,18 +73,19 @@ type panelUpdatePlan struct {
 	ReleaseVersion  string
 	AssetName       string
 	AssetURL        string
+	AssetDigest     string // Release 附件的 "sha256:<hex>"，下载后据此校验；为空时拒绝更新
 	InstallDir      string
 	BinaryName      string
 	ExecutablePath  string
 	// 下面三个只在 Magisk 模块版用到：面板数据目录（新进程的工作目录）、
 	// 前端静态目录、模块本体目录。见 system_update_magisk.go 顶部的路径说明。
-	DataDir    string
-	WebDir     string
-	ModuleDir  string
-	CurrentPID int
-	ServerPID       int
-	ServerPIDFile   string
-	Watchtower      watchtowerRuntimeConfig
+	DataDir       string
+	WebDir        string
+	ModuleDir     string
+	CurrentPID    int
+	ServerPID     int
+	ServerPIDFile string
+	Watchtower    watchtowerRuntimeConfig
 }
 
 type watchtowerRuntimeConfig struct {

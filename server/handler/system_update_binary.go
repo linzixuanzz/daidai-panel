@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,6 +66,7 @@ func buildBinaryPanelUpdatePlan(release *panelReleaseInfo) (*panelUpdatePlan, er
 		ReleaseVersion: strings.TrimSpace(release.version()),
 		AssetName:      asset.Name,
 		AssetURL:       asset.BrowserDownloadURL,
+		AssetDigest:    asset.Digest,
 		InstallDir:     installDir,
 		BinaryName:     binaryName,
 		ExecutablePath: executablePath,
@@ -122,7 +125,7 @@ func executeBinaryPanelUpdateWithOptions(plan *panelUpdatePlan, options panelUpd
 
 	archivePath := filepath.Join(workDir, sanitizeUpdateFileName(plan.AssetName))
 	panelUpdater.setRunning("downloading", fmt.Sprintf("正在下载二进制更新包 %s", plan.AssetName))
-	if err := downloadBinaryUpdateAsset(resolveBinaryUpdateDownloadURL(plan.AssetURL), archivePath); err != nil {
+	if err := downloadBinaryUpdateAsset(resolveBinaryUpdateDownloadURL(plan.AssetURL), archivePath, plan.AssetDigest); err != nil {
 		failPanelBinaryUpdate(options, err)
 		return
 	}
@@ -202,10 +205,37 @@ func resolveBinaryUpdateBaseDir() string {
 	return filepath.Join(os.TempDir(), "daidai-panel")
 }
 
-func downloadBinaryUpdateAsset(assetURL, archivePath string) error {
+// parseReleaseAssetSHA256 从 GitHub 附件的 digest（"sha256:<hex>"）里取出十六进制校验值。
+// 拿不到合法的 SHA-256 就不更新：更新包会直接替换面板程序，宁可让用户手动升级也不能装一个没核对过的包。
+func parseReleaseAssetSHA256(digest string) (string, error) {
+	digest = strings.ToLower(strings.TrimSpace(digest))
+	if digest == "" {
+		return "", fmt.Errorf("GitHub Release 没有提供更新包的 SHA-256 校验值，无法确认下载内容完整可信，已中止更新；请稍后重试或手动下载升级")
+	}
+	hexValue, ok := strings.CutPrefix(digest, "sha256:")
+	if !ok {
+		return "", fmt.Errorf("更新包校验值格式不受支持（%s），已中止更新；请手动下载升级", digest)
+	}
+	if len(hexValue) != sha256.Size*2 {
+		return "", fmt.Errorf("更新包 SHA-256 校验值格式无效，已中止更新；请手动下载升级")
+	}
+	if _, err := hex.DecodeString(hexValue); err != nil {
+		return "", fmt.Errorf("更新包 SHA-256 校验值格式无效，已中止更新；请手动下载升级")
+	}
+	return hexValue, nil
+}
+
+// downloadBinaryUpdateAsset 下载更新包并核对 SHA-256（expectedDigest 来自 GitHub Release 附件的 digest）。
+// 校验值缺失或不一致时删掉已下载的文件并返回错误，调用方据此中止更新。
+func downloadBinaryUpdateAsset(assetURL, archivePath, expectedDigest string) (err error) {
 	assetURL = strings.TrimSpace(assetURL)
 	if assetURL == "" {
 		return fmt.Errorf("更新包下载地址为空")
+	}
+	// 先确认有校验值再下载，省得白下几十 MB。
+	expectedSHA256, err := parseReleaseAssetSHA256(expectedDigest)
+	if err != nil {
+		return err
 	}
 
 	client := service.NewHTTPClient(20 * time.Minute)
@@ -229,10 +259,26 @@ func downloadBinaryUpdateAsset(assetURL, archivePath string) error {
 	if err != nil {
 		return fmt.Errorf("创建更新包文件失败: %w", err)
 	}
-	defer file.Close()
+	// 任何一步失败都不留下半截或未通过校验的更新包，避免后续流程误用。
+	defer func() {
+		if err != nil {
+			_ = os.Remove(archivePath)
+		}
+	}()
 
-	if _, err := io.Copy(file, resp.Body); err != nil {
-		return fmt.Errorf("保存二进制更新包失败: %w", err)
+	hasher := sha256.New()
+	_, copyErr := io.Copy(io.MultiWriter(file, hasher), resp.Body)
+	closeErr := file.Close()
+	if copyErr != nil {
+		return fmt.Errorf("保存二进制更新包失败: %w", copyErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("保存二进制更新包失败: %w", closeErr)
+	}
+
+	actualSHA256 := hex.EncodeToString(hasher.Sum(nil))
+	if actualSHA256 != expectedSHA256 {
+		return fmt.Errorf("更新包 SHA-256 校验失败（期望 %s，实际 %s），下载内容可能被篡改或加速代理返回了错误文件，已中止更新", expectedSHA256, actualSHA256)
 	}
 	return nil
 }

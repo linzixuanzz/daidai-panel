@@ -3,6 +3,7 @@ package handler
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -353,16 +354,25 @@ func (h *SystemHandler) UploadBackup(c *gin.Context) {
 		return
 	}
 
-	backupDir := filepath.Join(config.C.Data.Dir, "backups")
-	os.MkdirAll(backupDir, 0755)
-	dst := filepath.Join(backupDir, filename)
+	src, err := file.Open()
+	if err != nil {
+		response.InternalError(c, "读取上传文件失败")
+		return
+	}
+	defer src.Close()
 
-	if err := c.SaveUploadedFile(file, dst); err != nil {
+	// 先落成临时文件、校验内容，通过才改名为正式备份；同名已存在时自动改名，响应里返回实际文件名。
+	savedName, err := service.StoreUploadedBackup(src, filename)
+	if err != nil {
+		if errors.Is(err, service.ErrBackupUploadInvalid) {
+			response.BadRequest(c, err.Error())
+			return
+		}
 		response.InternalError(c, "保存文件失败")
 		return
 	}
 
-	response.Success(c, gin.H{"message": "上传成功", "data": gin.H{"filename": filename}})
+	response.Success(c, gin.H{"message": "上传成功", "data": gin.H{"filename": savedName}})
 }
 
 func (h *SystemHandler) DownloadBackup(c *gin.Context) {
@@ -828,15 +838,19 @@ func (h *SystemHandler) RegisterRoutes(r *gin.RouterGroup) {
 		// 不挂 OpenAPIAccess —— 这是「让面板彻底消失」的操作，只允许登录管理员本人执行。
 		sys.POST("/stop", middleware.RequireAdmin(), h.StopPanel)
 		sys.GET("/panel-log", middleware.RequireUserToken(), middleware.RequireAdmin(), h.PanelLog)
+		// 备份 scope 的应用令牌只放行「创建 / 列出 / 下载 / 看恢复进度」这类不改变面板现状的操作。
+		// 上传、恢复、删除会覆盖或销毁数据（上传 + 恢复 = 用任意内容替换整个面板），只允许管理员账号本人：
+		// RequireAdmin 要求 role 恰好是 admin，应用令牌的 role 是 app:...，直接 403。
 		sys.POST("/backup", middleware.OpenAPIAccess("backup"), middleware.RequireRole("admin"), h.Backup)
-		sys.POST("/backup/upload", middleware.OpenAPIAccess("backup"), middleware.RequireRole("admin"), h.UploadBackup)
+		sys.POST("/backup/upload", middleware.RequireAdmin(), h.UploadBackup)
 		sys.GET("/backups", middleware.OpenAPIAccess("backup"), middleware.RequireRole("admin"), h.BackupList)
 		sys.GET("/backup/download", middleware.OpenAPIAccess("backup"), middleware.RequireRole("admin"), h.DownloadBackup)
 		sys.GET("/backup/download/:filename", middleware.OpenAPIAccess("backup"), middleware.RequireRole("admin"), h.DownloadBackup)
 		sys.GET("/restore/progress", middleware.OpenAPIAccess("backup"), middleware.RequireRole("admin"), h.RestoreProgress)
-		sys.POST("/restore", middleware.OpenAPIAccess("backup"), middleware.RequireRole("admin"), h.Restore)
-		sys.DELETE("/backup", middleware.OpenAPIAccess("backup"), middleware.RequireRole("admin"), h.DeleteBackup)
-		sys.GET("/config-script", middleware.RequireRole("admin"), h.GetConfigScript)
-		sys.PUT("/config-script", middleware.RequireRole("admin"), h.SaveConfigScript)
+		sys.POST("/restore", middleware.RequireAdmin(), h.Restore)
+		sys.DELETE("/backup", middleware.RequireAdmin(), h.DeleteBackup)
+		// config.sh 里的变量会注入每个任务的运行环境（能改 PATH 之类），同样只给管理员账号本人。
+		sys.GET("/config-script", middleware.RequireAdmin(), h.GetConfigScript)
+		sys.PUT("/config-script", middleware.RequireAdmin(), h.SaveConfigScript)
 	}
 }

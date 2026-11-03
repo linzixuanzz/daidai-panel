@@ -24,6 +24,9 @@ type panelReleaseAsset struct {
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 	Size               int64  `json:"size"`
+	// Digest 是 GitHub 为每个 Release 附件算好的校验值，形如 "sha256:<hex>"。
+	// 下载更新包后用它核对内容，防止下载链路（含用户配置的加速代理）返回被篡改的程序。
+	Digest string `json:"digest"`
 }
 
 func (r panelReleaseInfo) version() string {

@@ -14,6 +14,7 @@ import (
 
 // 发送通知与系统备份（#139）。通知走 POST /notifications/send（权限 notifications），
 // 备份走 /system/backup* 与 /system/restore（权限 backup；登录令牌要求管理员）。
+// 其中删除与恢复只认管理员账号本人，应用凭据即使有 backup 权限也会被拒（见 backupAdminOnlyHint）。
 
 func (t *toolset) registerNotifyBackupReadTools(s *mcp.Server) {
 	addReadTool(s, "list_backups", "查询备份",
@@ -30,14 +31,18 @@ func (t *toolset) registerNotifyBackupWriteTools(s *mcp.Server) {
 			"name 与已有备份同名时会覆盖那个文件。数据多时耗时较长。",
 		writeHints{destructive: true}, t.createBackup)
 	addWriteTool(s, "delete_backup", "删除备份",
-		"按文件名删除一个备份文件，不可恢复。",
+		"按文件名删除一个备份文件，不可恢复。"+backupAdminOnlyHint,
 		writeHints{destructive: true, idempotent: true}, t.deleteBackup)
 	addWriteTool(s, "restore_backup", "恢复备份",
 		"⚠️ 用备份文件覆盖当前面板数据，不可撤销：备份里包含的每一项（任务与执行日志、订阅与 SSH 密钥、环境变量、配置〔含开放 API 应用、通知渠道、IP 白名单〕、依赖、任务视图、脚本目录）"+
 			"都会先被清空，再写入备份里的内容，当前的这部分数据无法找回，务必先用 create_backup 备份一份。"+
-			"恢复配置会替换开放 API 应用，当前 MCP 使用的凭据可能随之失效。网页端恢复后会重启面板，这个工具不会，恢复完成后请提醒管理员重启一次面板。大备份可能耗时较长。",
+			"恢复配置会替换开放 API 应用，当前 MCP 使用的凭据可能随之失效。网页端恢复后会重启面板，这个工具不会，恢复完成后请提醒管理员重启一次面板。大备份可能耗时较长。"+backupAdminOnlyHint,
 		writeHints{destructive: true}, t.restoreBackup)
 }
+
+// 恢复与删除会覆盖或销毁数据，面板只允许管理员账号本人执行：用应用凭据（app_key / 应用令牌）连接时，
+// 这两个工具会被面板以 403 拒绝，backup 权限只覆盖查询与创建备份。
+const backupAdminOnlyHint = "仅限用管理员账号的登录令牌连接时使用；用应用凭据连接（即使勾了 backup 权限）调用会被拒绝。"
 
 // ---- 通知 --------------------------------------------------------------------
 

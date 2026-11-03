@@ -38,20 +38,21 @@ const defaultAndroidRuntimeBinDir = "/data/adb/daidai-panel/bin"
 
 // androidRuntimePreset 定义了面板预置的运行时下载源。
 type androidRuntimePreset struct {
-	Name            string `json:"name"`              // python / node
-	Label           string `json:"label"`             // 展示用
-	Arch            string `json:"arch"`              // arm64 / amd64
-	URL             string `json:"url"`               // 下载地址 (tar.gz)
-	StripComponents int    `json:"strip_components"`  // 解压时去掉的顶层目录层数
-	CheckBin        string `json:"check_bin"`         // 解压后期望存在的可执行文件相对路径 (相对 bin 目录)
-	SizeMB          int    `json:"size_mb"`           // 预估大小
-	Note            string `json:"note"`              // 备注
+	Name            string `json:"name"`             // python / node
+	Label           string `json:"label"`            // 展示用
+	Arch            string `json:"arch"`             // arm64 / amd64
+	URL             string `json:"url"`              // 下载地址 (tar.gz)
+	StripComponents int    `json:"strip_components"` // 解压时去掉的顶层目录层数
+	CheckBin        string `json:"check_bin"`        // 解压后期望存在的可执行文件相对路径 (相对 bin 目录)
+	SizeMB          int    `json:"size_mb"`          // 预估大小
+	Note            string `json:"note"`             // 备注
 }
 
 // 预置下载源 —— 会跟随后续 Release 更新，用户也可以通过 `/install` 接口传入自定义 URL。
 // 这里选择的是社区常用的静态/可移植构建：
 //   - Python: python-build-standalone (indygreg) aarch64-unknown-linux-gnu / x86_64-unknown-linux-gnu
 //   - Node.js: 官方 nodejs.org linux-arm64 / linux-x64 包
+//
 // 由于 Android 是 bionic libc，这些预构建并不总是能跑，因此同时保留 Termux 一键方案。
 var androidRuntimePresets = []androidRuntimePreset{
 	{
@@ -94,12 +95,12 @@ var androidRuntimePresets = []androidRuntimePreset{
 }
 
 type androidRuntimeStatus struct {
-	Supported bool                       `json:"supported"`
-	Arch      string                     `json:"arch"`
-	BinDir    string                     `json:"bin_dir"`
-	Termux    bool                       `json:"termux_detected"`
-	Runtimes  []androidRuntimeItem       `json:"runtimes"`
-	Presets   []androidRuntimePreset     `json:"presets"`
+	Supported bool                   `json:"supported"`
+	Arch      string                 `json:"arch"`
+	BinDir    string                 `json:"bin_dir"`
+	Termux    bool                   `json:"termux_detected"`
+	Runtimes  []androidRuntimeItem   `json:"runtimes"`
+	Presets   []androidRuntimePreset `json:"presets"`
 }
 
 type androidRuntimeItem struct {
@@ -111,9 +112,9 @@ type androidRuntimeItem struct {
 
 // androidSupported 判断当前进程是不是跑在 Android 上（面具版）。
 // 判定方式：
-//   1) 真实 Android 二进制（runtime.GOOS == "android"）
-//   2) Magisk 模块显式注入的环境变量
-//   3) 宿主侧可见的模块目录
+//  1. 真实 Android 二进制（runtime.GOOS == "android"）
+//  2. Magisk 模块显式注入的环境变量
+//  3. 宿主侧可见的模块目录
 func androidSupported() bool {
 	if runtime.GOOS == "android" {
 		return true
@@ -245,9 +246,9 @@ func (h *AndroidRuntimeHandler) Status(c *gin.Context) {
 }
 
 type androidInstallRequest struct {
-	Name            string `json:"name" binding:"required"`        // python / node
-	URL             string `json:"url"`                             // 可选：自定义下载源
-	StripComponents int    `json:"strip_components"`                // 解压层数
+	Name            string `json:"name" binding:"required"` // python / node
+	URL             string `json:"url"`                     // 可选：自定义下载源
+	StripComponents int    `json:"strip_components"`        // 解压层数
 }
 
 // Install 以 SSE 形式流式返回下载/解压进度。
@@ -320,6 +321,12 @@ func (h *AndroidRuntimeHandler) Install(c *gin.Context) {
 		emit("❌ 创建目标目录失败: " + err.Error())
 		return
 	}
+	// 目标目录本身可能经过软链（如 /data/adb 下的挂载），后面所有「是否越界」都按解析后的真实路径比较。
+	realTargetDir, err := filepath.EvalSymlinks(targetDir)
+	if err != nil {
+		emit("❌ 解析目标目录失败: " + err.Error())
+		return
+	}
 
 	client := &http.Client{Timeout: 30 * time.Minute}
 	resp, err := client.Get(req.URL)
@@ -378,14 +385,28 @@ func (h *AndroidRuntimeHandler) Install(c *gin.Context) {
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
+			// 路径上已有的软链（包括 outPath 自己）解析后必须仍在目标目录内，否则 MkdirAll 会顺着软链建到外面去。
+			if !androidRealPathWithin(realTargetDir, outPath) {
+				emit("⚠ 跳过经软链指向目标目录外的路径: " + hdr.Name)
+				continue
+			}
 			if err := os.MkdirAll(outPath, os.FileMode(hdr.Mode)&0o777|0o755); err != nil {
 				emit("❌ 创建目录失败: " + err.Error())
 				return
 			}
 		case tar.TypeReg, tar.TypeRegA:
+			// 先确认父目录解析软链后仍在目标目录内：恶意包可以先放一个指向外部的软链，再借它把文件写出去。
+			if !androidRealPathWithin(realTargetDir, filepath.Dir(outPath)) {
+				emit("⚠ 跳过经软链指向目标目录外的文件: " + hdr.Name)
+				continue
+			}
 			if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 				emit("❌ 创建父目录失败: " + err.Error())
 				return
+			}
+			// 同名位置已有软链时先删掉它再写（与 tar 的默认行为一致），不顺着软链写到它指向的文件里。
+			if info, err := os.Lstat(outPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+				_ = os.Remove(outPath)
 			}
 			f, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode)&0o777)
 			if err != nil {
@@ -399,6 +420,22 @@ func (h *AndroidRuntimeHandler) Install(c *gin.Context) {
 			}
 			f.Close()
 		case tar.TypeSymlink:
+			// 软链只允许指向目标目录内部：官方包里的包内相对链接（如 bin/npm -> ../lib/node_modules/npm/bin/npm-cli.js）照常创建，
+			// 绝对路径或解析后跑到目标目录外的一律跳过，否则后续条目能顺着它写到系统任意位置。
+			linkDir := filepath.Dir(outPath)
+			if !androidRealPathWithin(realTargetDir, linkDir) {
+				emit("⚠ 跳过经软链指向目标目录外的软链: " + hdr.Name)
+				continue
+			}
+			if err := os.MkdirAll(linkDir, 0o755); err != nil {
+				emit("❌ 创建父目录失败: " + err.Error())
+				return
+			}
+			realLinkDir, err := filepath.EvalSymlinks(linkDir)
+			if err != nil || !androidSymlinkTargetWithin(realTargetDir, realLinkDir, hdr.Linkname) {
+				emit("⚠ 跳过指向目标目录外的软链: " + hdr.Name + " -> " + hdr.Linkname)
+				continue
+			}
 			_ = os.Remove(outPath)
 			if err := os.Symlink(hdr.Linkname, outPath); err != nil {
 				emit("⚠ 创建软链失败(" + outPath + "): " + err.Error())
@@ -426,6 +463,66 @@ func (h *AndroidRuntimeHandler) Install(c *gin.Context) {
 	}
 
 	emit("完成。请在「任务」页面选择 Python/Node 运行时测试脚本执行。")
+}
+
+// androidPathWithin 判断 p 是否等于 root 或位于 root 之下（纯字符串比较，调用方负责先解析软链）。
+func androidPathWithin(root, p string) bool {
+	rel, err := filepath.Rel(root, p)
+	if err != nil || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+// androidSymlinkTargetWithin 判断软链目标是否落在 realRoot 内。realLinkDir 是软链所在目录解析软链后的真实路径。
+//
+// 规则：
+//   - 绝对路径一律不行（解压出来的运行时可能被挪位置，包内链接本来就该是相对的）；
+//   - 「..」只允许出现在开头。操作系统解析软链时是逐段走的，遇到中途的 a/.. 会先进 a（a 可能本身是软链）再回上一级，
+//     而 filepath.Join 会把 a/.. 直接消掉，两者可能对不上；只许开头的「..」时，从已解析的真实目录往上走与字符串计算一致；
+//   - 按上面算出的落点必须在 realRoot 内。
+func androidSymlinkTargetWithin(realRoot, realLinkDir, linkname string) bool {
+	if strings.TrimSpace(linkname) == "" {
+		return false
+	}
+	if strings.HasPrefix(linkname, "/") || strings.HasPrefix(linkname, `\`) || filepath.IsAbs(linkname) || filepath.VolumeName(linkname) != "" {
+		return false
+	}
+	seenName := false
+	for _, segment := range strings.Split(strings.ReplaceAll(linkname, `\`, "/"), "/") {
+		switch segment {
+		case "", ".":
+			continue
+		case "..":
+			if seenName {
+				return false
+			}
+		default:
+			seenName = true
+		}
+	}
+	return androidPathWithin(realRoot, filepath.Join(realLinkDir, filepath.FromSlash(linkname)))
+}
+
+// androidRealPathWithin 找到 p 最深的已存在祖先（含 p 自己），解析其中的软链后判断是否仍在 realRoot 内。
+// 尚不存在的那几级会被 MkdirAll 建成普通目录，不会是软链，所以只看已存在的部分就够了。
+func androidRealPathWithin(realRoot, p string) bool {
+	current := p
+	for {
+		if _, err := os.Lstat(current); err == nil {
+			resolved, err := filepath.EvalSymlinks(current)
+			if err != nil {
+				// 悬空软链之类解析不了的，当作不安全处理。
+				return false
+			}
+			return androidPathWithin(realRoot, resolved)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return false
+		}
+		current = parent
+	}
 }
 
 type androidUninstallRequest struct {

@@ -425,6 +425,17 @@
           >
             默认拒绝。留空表示该应用创建成功，但没有任何接口访问权限。
           </div>
+          <!-- 上传 / 恢复 / 删除备份会覆盖或销毁数据，服务端只放行管理员账号本人，这里提前说清楚免得以为勾了就能用 -->
+          <div
+            v-if="form.scopesList.includes('backup')"
+            style="
+              margin-top: 4px;
+              color: var(--el-text-color-secondary);
+              font-size: 12px;
+            "
+          >
+            「系统备份」权限可创建、列出、下载备份；上传、恢复、删除备份需管理员账号本人操作。
+          </div>
         </el-form-item>
         <el-form-item label="速率限制">
           <el-input-number v-model="form.rate_limit" :min="0" :max="10000" />

@@ -262,6 +262,7 @@ func buildMagiskPanelUpdatePlan(release *panelReleaseInfo) (*panelUpdatePlan, er
 		ReleaseVersion: strings.TrimSpace(release.version()),
 		AssetName:      asset.Name,
 		AssetURL:       asset.BrowserDownloadURL,
+		AssetDigest:    asset.Digest,
 		BinaryName:     binaryName,
 		ExecutablePath: magiskPanelBinaryPath,
 		InstallDir:     filepath.Dir(magiskPanelBinaryPath),
@@ -296,7 +297,7 @@ func executeMagiskPanelUpdateWithOptions(plan *panelUpdatePlan, options panelUpd
 
 	archivePath := filepath.Join(workDir, sanitizeUpdateFileName(plan.AssetName))
 	panelUpdater.setRunning("downloading", fmt.Sprintf("正在下载更新包 %s", plan.AssetName))
-	if err := downloadBinaryUpdateAsset(resolveBinaryUpdateDownloadURL(plan.AssetURL), archivePath); err != nil {
+	if err := downloadBinaryUpdateAsset(resolveBinaryUpdateDownloadURL(plan.AssetURL), archivePath, plan.AssetDigest); err != nil {
 		failPanelBinaryUpdate(options, err)
 		return
 	}

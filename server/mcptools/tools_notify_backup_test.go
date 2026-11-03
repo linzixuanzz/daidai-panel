@@ -175,3 +175,14 @@ func TestRestoreBackupForwardsAndWarns(t *testing.T) {
 		}
 	}
 }
+
+// 面板只允许管理员账号本人恢复、删除备份，应用凭据调用会 403；工具描述要提前说清，免得 AI 白试。
+func TestDestructiveBackupToolsMentionAdminOnly(t *testing.T) {
+	session := connectTestClient(t, &fakeDispatcher{respond: okResponder(map[string]any{})}, true)
+	tools := listedTools(t, session)
+	for _, name := range []string{"restore_backup", "delete_backup"} {
+		if !strings.Contains(tools[name].Description, "管理员账号") {
+			t.Errorf("%s 的描述应当说明只有管理员账号能用: %s", name, tools[name].Description)
+		}
+	}
+}
