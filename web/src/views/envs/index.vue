@@ -13,7 +13,7 @@ import DdMoreMenu from '@/components/ui/DdMoreMenu.vue'
 import type { SplitButtonItem } from '@/components/ui/DdSplitButton.vue'
 // ArrowDown 不在 main.ts 的全局图标表里，要单独引；模板里以 <Lock /> 这类标签写的图标（Lock / Unlock / View / Hide / Check …）走全局注册。
 // 其余几个是给 el-button 的 :icon 传组件对象用的（移动端纯图标按钮与批量栏），显式局部引入，不依赖 main.ts 的全局表。
-import { ArrowDown, CircleCheck, CircleClose, Close, Delete, Download, Edit, Folder, Plus } from '@element-plus/icons-vue'
+import { ArrowDown, CircleCheck, CircleClose, Close, Delete, Download, Edit, Folder, Plus, Refresh } from '@element-plus/icons-vue'
 import { maskEnvValue, shouldMaskEnvValue, type EnvValueMaskMode } from '@/utils/envSecret'
 import { scrollListToTop } from '@/utils/scrollToTop'
 import {
@@ -465,6 +465,22 @@ async function loadNames() {
     nameOptions.value = Array.isArray(res.data) ? res.data : []
   } catch {
     // ignore
+  }
+}
+
+// 「刷新」按钮（#174）：别处（APP、脚本、另一个标签页）改了变量后，不用整页刷新就能看到。
+// 按当前筛选、当前页重拉列表，同时重拉分组与变量名选项；筛选条件和分页一概不动。
+// 勾选与临时揭示由 loadData 自己清（与翻页、改筛选同一口径）。
+// 请求中按钮转圈并拦住连点；loadData 自带序号闸，就算漏过一次也只会以最新那次为准。
+const refreshing = ref(false)
+async function handleRefresh() {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    // 三个函数各自吞掉了错误（列表失败会弹「加载环境变量失败」），这里不会被某一个卡住
+    await Promise.all([loadData(), loadGroups(), loadNames()])
+  } finally {
+    refreshing.value = false
   }
 }
 
@@ -1256,6 +1272,15 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
+        <!-- 刷新（#174）：与导出、新建同款 32×32 纯图标按钮，排在最前，按「查看 → 导出 → 新建」的轻重顺序 -->
+        <el-button
+          class="dd-icon-only-btn"
+          :icon="Refresh"
+          :loading="refreshing"
+          aria-label="刷新"
+          title="刷新"
+          @click="handleRefresh"
+        />
         <el-button
           class="dd-icon-only-btn"
           :icon="Download"
@@ -1368,6 +1393,17 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
         </div>
       </div>
       <div class="toolbar__right">
+        <!-- 刷新（#174）：桌面也用 32×32 纯图标按钮（title / aria-label 写明「刷新」），不用带字的按钮。
+             右区每宽一点左槽就窄一点：带字按钮约 +84px，1280 宽 + 展开侧栏时左槽会掉到换行阈值 ~726px 以下，
+             筛选区被挤成两行（账见下方 .toolbar__search 的注释）；纯图标只占 32 + 10(gap) = 42px，左槽仍有约 763px。 -->
+        <el-button
+          class="dd-icon-only-btn"
+          :icon="Refresh"
+          :loading="refreshing"
+          aria-label="刷新"
+          title="刷新"
+          @click="handleRefresh"
+        />
         <!-- 原来是一个「…」更多下拉：主体只能展开菜单，最常用的导出永远要点两次，
              按钮上也看不出这里能干什么。改成真正的 Split Button：
              主体「导出」直接下载 JSON（默认/往返格式），其余格式与导入留在菜单里。 -->
