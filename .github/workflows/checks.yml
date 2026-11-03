@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Go 版本以 server/go.mod 为准（go 1.25.0），与 Dockerfile 的 golang:1.25-alpine 一致。
+      # Go 版本以 server/go.mod 为准（go 1.26.0 + toolchain go1.27.3，setup-go 会装 toolchain 行的版本），与 Dockerfile 的 golang:1.27-alpine 一致。
       # 用 go-version-file 而非硬编码，保证升级 go.mod 时 CI 自动跟随。
       - name: Set up Go
         uses: actions/setup-go@v6

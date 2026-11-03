@@ -434,7 +434,7 @@ bash Magisk/build.sh 3.4.1 arm64 debian
 
 前置依赖：
 
-- **Go 1.22+**（静态编译 `CGO_ENABLED=0`）
+- **Go 1.26+**（`server/go.mod` 写了 `toolchain go1.27.3`，默认会自动切到该版本编译；静态编译 `CGO_ENABLED=0`）
 - **Node.js 24**（首次构建自动跑 `npm ci && npm run build`，已有 `web/dist` 会跳过）
 
 > ⚠️ **跑过 `npm run build:demo` 之后别直接打包**：在线演示 Demo 与发布版写的是同一个
