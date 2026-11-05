@@ -178,6 +178,7 @@ func TestRegisteredSecretConfigsAreMarked(t *testing.T) {
 	expected := map[string]bool{
 		"captcha_key":              true,
 		"backup_schedule_password": true,
+		"github_token":             true,
 	}
 
 	actual := make(map[string]bool)

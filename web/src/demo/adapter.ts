@@ -862,6 +862,48 @@ route('GET', '/system/console/run/:runId/logs', () => ({
 route('PUT', '/system/console/run/:runId/stop', () => ({ message: '已停止' }))
 route('DELETE', '/system/console/run/:runId', () => ({ message: '已清除' }))
 
+// ---- 「后台进程」页（#176，admin-only 的 /system/processes） -------------------
+/**
+ * 演示站没有真实进程，给一条「任务里 setsid nohup 拉起、已脱离任务」的样例行，让页面不是空的。
+ * 挂在演示数据里第一个任务上；任务名、ID 都从 db 里取，点任务名能跳到定时任务页定位到它。
+ * scope=all 时再多一条非任务进程，和后端「全部进程」的形状一致。
+ * 结束进程一律 blocked()：演示站没有可结束的东西，给 200 等于宣称结束成功。
+ */
+route('GET', '/system/processes', (ctx) => {
+  const scope = ctx.params['scope'] === 'all' ? 'all' : 'task'
+  const task = db().tasks[0]
+  const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3600 * 1000).toISOString()
+  const rows: Array<Record<string, unknown>> = []
+  if (task) {
+    rows.push({
+      pid: 4312,
+      pgid: 4312,
+      task_id: task.id,
+      task_name: task.name,
+      cmdline: 'python3 -u keepalive_bot.py --daemon',
+      started_at: hoursAgo(3),
+      rss_bytes: 48 * 1024 * 1024,
+      state: 'detached',
+      start_ticks: 1234567,
+    })
+  }
+  if (scope === 'all') {
+    rows.push({
+      pid: 58,
+      pgid: 1,
+      task_id: null,
+      task_name: '',
+      cmdline: 'nginx: master process nginx -g daemon off;',
+      started_at: hoursAgo(148),
+      rss_bytes: 6 * 1024 * 1024,
+      state: 'other',
+      start_ticks: 2048,
+    })
+  }
+  return { data: rows, supported: true, all_supported: true, scope }
+})
+route('POST', '/system/processes/kill', () => blocked())
+
 // ===========================================================================
 // 系统配置（/configs）
 // ===========================================================================

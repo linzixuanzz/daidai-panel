@@ -32,6 +32,7 @@ func Setup(engine *gin.Engine) {
 	platformTokenHandler := handler.NewPlatformTokenHandler()
 	sponsorHandler := handler.NewSponsorHandler()
 	androidRuntimeHandler := handler.NewAndroidRuntimeHandler()
+	processHandler := handler.NewProcessHandler()
 
 	authHandler.RegisterRoutes(v1)
 	authHandler.RegisterRoutes(legacy)
@@ -86,6 +87,10 @@ func Setup(engine *gin.Engine) {
 
 	androidRuntimeHandler.RegisterRoutes(v1)
 	androidRuntimeHandler.RegisterRoutes(legacy)
+
+	// 「后台进程」页（#176）：/system/processes 单独一个 handler，不往 system.go 里塞
+	processHandler.RegisterRoutes(v1)
+	processHandler.RegisterRoutes(legacy)
 
 	// 内置 MCP 服务（issue #128）。它的工具调用会在进程内回放到上面这些 /api/v1 接口，
 	// 所以要把 engine 本身交给它；回放发生在请求期，届时所有路由（含静态前端）都已注册完。

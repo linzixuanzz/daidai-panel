@@ -893,6 +893,13 @@ func (e *TaskExecutor) runTask(req *ExecutionRequest, taskLog *model.TaskLog, ti
 	if envErr != nil {
 		log.Printf("prepare task runtime env failed: %v", envErr)
 	}
+	// 任务标识（#176）：「后台进程」页靠它认出进程属于哪个任务。放在构建完之后写，
+	// 所以不受「可用环境变量」范围裁剪，用户建了同名变量也会被面板值覆盖；
+	// DAIDAI_ 前缀在前置脚本回传的保护名单里，前置脚本 export 也改不掉它。
+	if envVars == nil {
+		envVars = make(map[string]string)
+	}
+	envVars[TaskIDEnvKey] = strconv.FormatUint(uint64(task.ID), 10)
 	// 记到执行窗口上：面板关停时这次执行要是卡住、等不到下面结算里的吊销，ShutdownSchedulerV2 在截止时据它吊销。
 	e.attachRunScriptToken(run, scriptToken)
 

@@ -31,6 +31,8 @@ export interface SettingsConfigForm {
   proxy_url: string
   update_image_mirror: string
   binary_update_proxy: string
+  // #177：只用于检查更新时访问 GitHub API（服务端 Secret 配置，密码框渲染）
+  github_token: string
   auto_update_enabled: boolean
   trusted_proxy_cidrs: string
   captcha_enabled: boolean

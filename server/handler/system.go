@@ -487,9 +487,23 @@ func (h *SystemHandler) CheckUpdate(c *gin.Context) {
 	currentVersion := Version
 
 	release, err := fetchLatestPanelRelease()
+	// rateLimitErr 非空表示 API 被限流、这次的 release 来自网页回退（#177）：只有版本号，没有附件和 digest
+	var rateLimitErr *githubAPIError
 	if err != nil {
-		response.InternalError(c, err.Error())
-		return
+		var apiErr *githubAPIError
+		if !errors.As(err, &apiErr) || !apiErr.RateLimited {
+			response.InternalError(c, err.Error())
+			return
+		}
+		tag, fallbackErr := fetchLatestPanelTagFromWeb()
+		if fallbackErr != nil {
+			// 回退也失败时，报的仍是限流本身（带恢复时间与填 Token 的提示），比回退的报错更有用
+			response.InternalError(c, err.Error())
+			return
+		}
+		rateLimitErr = apiErr
+		// tag 已在 parsePanelReleaseTagFromRedirect 里校验过只含版本号字符，可以直接拼进地址
+		release = &panelReleaseInfo{TagName: tag, HTMLURL: panelReleaseTagPageBase + tag}
 	}
 
 	latestVersion := release.version()
@@ -511,7 +525,14 @@ func (h *SystemHandler) CheckUpdate(c *gin.Context) {
 		updateTarget = buildWatchtowerUpdateTarget(watchtowerCfg)
 	} else {
 		plan, planErr := buildPanelUpdatePlanForRelease(release)
-		if planErr != nil {
+		if rateLimitErr != nil && (planErr != nil || plan.DeploymentType != panelUpdateDeploymentDocker) {
+			// 网页回退拿不到附件 digest：二进制 / Magisk 更新必须先校验更新包，这时不能放行一键更新。
+			// 回退的 release 没有附件，二进制 / Magisk 的方案本来就会构建失败，这里统一换成限流的说法。
+			// 旧 Docker Socket 更新链只拉镜像、不下 Release 附件，不受影响，走下面的原逻辑。
+			autoUpdateSupported = false
+			updateDisabledReason = describePanelUpdateRateLimited(rateLimitErr)
+			updateTarget = gin.H{"deployment_type": detectPanelDeploymentTypeHint()}
+		} else if planErr != nil {
 			autoUpdateSupported = false
 			updateDisabledReason = planErr.Error()
 			// 构建方案失败时也要把「当前是什么部署形态」告诉前端。
@@ -523,20 +544,29 @@ func (h *SystemHandler) CheckUpdate(c *gin.Context) {
 		}
 	}
 
-	response.Success(c, gin.H{
-		"data": gin.H{
-			"current":                currentVersion,
-			"latest":                 latestVersion,
-			"has_update":             hasUpdate,
-			"release_name":           release.Name,
-			"release_url":            release.HTMLURL,
-			"release_notes":          release.Body,
-			"published_at":           release.PublishedAt,
-			"auto_update_supported":  autoUpdateSupported,
-			"update_disabled_reason": updateDisabledReason,
-			"update_target":          updateTarget,
-		},
-	})
+	data := gin.H{
+		"current":                currentVersion,
+		"latest":                 latestVersion,
+		"has_update":             hasUpdate,
+		"release_name":           release.Name,
+		"release_url":            release.HTMLURL,
+		"release_notes":          release.Body,
+		"published_at":           release.PublishedAt,
+		"auto_update_supported":  autoUpdateSupported,
+		"update_disabled_reason": updateDisabledReason,
+		"update_target":          updateTarget,
+	}
+	if rateLimitErr != nil {
+		// 只在网页回退时才多出这两个字段（APP 也调本接口，已有字段语义一律不变）。
+		// rate_limited_reset_at 是 RFC3339；GitHub 没给恢复时间时为空串。
+		data["rate_limited"] = true
+		resetAt := ""
+		if !rateLimitErr.ResetAt.IsZero() {
+			resetAt = rateLimitErr.ResetAt.Format(time.RFC3339)
+		}
+		data["rate_limited_reset_at"] = resetAt
+	}
+	response.Success(c, gin.H{"data": data})
 }
 
 func (h *SystemHandler) UpdatePanel(c *gin.Context) {

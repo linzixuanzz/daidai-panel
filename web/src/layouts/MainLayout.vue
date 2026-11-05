@@ -15,6 +15,7 @@ import {
   Bell,
   Box,
   Connection,
+  Cpu,
   Document,
   Download,
   Expand,
@@ -44,7 +45,8 @@ const drawerVisible = ref(false)
 const panelTitle = ref('呆呆面板')
 const panelIcon = ref('')
 const panelVersion = ref('')
-const routeCacheMax = 14
+// 与侧栏菜单项总数一致（工作台 11 + 管理后台 4），v3.4.3 加「后台进程」时从 14 调到 15
+const routeCacheMax = 15
 
 // 侧边栏 logo 的兜底图标。
 // 这里不能写死 '/favicon-512.webp'：:src 是 v-bind 表达式，不经过 Vite 的 transformAssetUrls，
@@ -71,6 +73,8 @@ const canAccessAdmin = computed(() => hasRole('admin'))
 const workspaceItems = [
   { index: '/dashboard', title: '仪表板', icon: Odometer, minRole: 'viewer' },
   { index: '/tasks', title: '定时任务', icon: Timer, minRole: 'viewer' },
+  // 「后台进程」（#176）紧跟在定时任务下面：看的都是任务拉起的进程
+  { index: '/processes', title: '后台进程', icon: Cpu, minRole: 'admin' },
   { index: '/subscriptions', title: '订阅管理', icon: Download, minRole: 'operator' },
   { index: '/envs', title: '环境变量', icon: Setting, minRole: 'operator' },
   { index: '/config-file', title: '配置文件', icon: Document, minRole: 'admin' },

@@ -1238,6 +1238,13 @@ func buildBootstrapProcessEnv(envVars map[string]string) []string {
 		env = append(env, key+"="+value)
 	}
 
+	// 任务标识（#176）：其它用户变量都走 env 文件、在子进程里才落地，/proc/<pid>/environ 里看不到；
+	// 「后台进程」页正是靠 environ 认出进程属于哪个任务，所以这一个必须放进真实进程环境，子孙进程也会继承。
+	// 只有任务执行会在 envVars 里放它，调试运行、ddp、run-code 没有这个键，行为不变。
+	if taskID := strings.TrimSpace(envVars[TaskIDEnvKey]); taskID != "" {
+		env = append(env, TaskIDEnvKey+"="+taskID)
+	}
+
 	return AppendProxyEnv(env)
 }
 

@@ -3047,6 +3047,9 @@ html.dark {
 // 改用 shouldReduceMotion()：先读 readMotionPreference()，「跟随系统」时才看 matchMedia。
 // SFC 引不到这里的 mixin（vite 没配 additionalData），新增页面级 reduce 段时照这个写法在自己文件里写一份，
 // 否则「始终开启 / 减少动效」管不到它。
+//
+// 例外（issue #178）：两处生效路径的通配之后各有一条 .cm-scroller 的 transition-duration: 0s，
+// 让 CodeMirror 滚动区不吃 1ms 过渡，原因见那两条规则上的注释。
 // ============================================================================
 @mixin dd-reduced-motion-tokens {
   // 把动效压缩到几乎不可见；新增 --dd-motion-* 令牌时必须同步加进来
@@ -3093,6 +3096,15 @@ html.dark {
   :where(:root:not(.dd-motion-force)) *::after {
     @include dd-reduced-motion-universal;
   }
+
+  // CodeMirror 滚动区内部不做任何过渡（issue #178）：上面的通配把 transition-duration 设成 1ms，
+  // 而 transition-property 默认是 all，CodeMirror 改 .cm-gap 的内联高度后会在同一次 measure 里同步测量，
+  // 这时过渡还没走、读到的是旧高度，查找跳转 / scrollIntoView 就滚到错误位置。
+  // 这条特异性 (0,1,0) 的 !important 压过通配的 (0,0,0)；全局的 1ms 不能改成 0（别处依赖 transitionend）。
+  :where(:root:not(.dd-motion-force)) .cm-scroller,
+  :where(:root:not(.dd-motion-force)) .cm-scroller * {
+    transition-duration: 0s !important;
+  }
 }
 
 // 个人设置里选了「减少动效」：不看系统，同一套压缩
@@ -3107,4 +3119,10 @@ html.dd-motion-off {
 :where(html.dd-motion-off) *::before,
 :where(html.dd-motion-off) *::after {
   @include dd-reduced-motion-universal;
+}
+
+// 同上：CodeMirror 滚动区内部不做过渡，否则 .cm-gap 高度变化被拖成 1ms 过渡，查找跳转滚错位置（issue #178）
+:where(html.dd-motion-off) .cm-scroller,
+:where(html.dd-motion-off) .cm-scroller * {
+  transition-duration: 0s !important;
 }

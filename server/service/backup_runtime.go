@@ -1028,7 +1028,13 @@ func shouldSkipRestoredSystemConfigKey(key string) bool {
 	case
 		"auto_update_last_checked_at",
 		"auto_update_pending_version",
-		"auto_update_pending_started_at":
+		"auto_update_pending_started_at",
+		// 静默更新巡检的限流 / 失败去重状态（#177，定义见 handler/system_update_auto.go），同样是运行时状态
+		"auto_update_next_check_at",
+		"auto_update_rate_limited_since",
+		"auto_update_rate_limit_notified",
+		"auto_update_last_failure",
+		"auto_update_last_failure_at":
 		return true
 	default:
 		return false
@@ -1040,6 +1046,12 @@ func protectedRuntimeSystemConfigKeys() []string {
 		"auto_update_last_checked_at",
 		"auto_update_pending_version",
 		"auto_update_pending_started_at",
+		// #177 静默更新巡检的限流 / 失败去重状态
+		"auto_update_next_check_at",
+		"auto_update_rate_limited_since",
+		"auto_update_rate_limit_notified",
+		"auto_update_last_failure",
+		"auto_update_last_failure_at",
 	}
 }
 

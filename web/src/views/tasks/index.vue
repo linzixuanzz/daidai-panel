@@ -849,6 +849,16 @@ async function handleRouteQueryAction() {
     return
   }
 
+  // 「后台进程」页点任务名跳过来（#176）：按任务名搜索，把这条任务定位出来
+  const locateKeyword = typeof route.query.keyword === 'string' ? route.query.keyword.trim() : ''
+  if (locateKeyword) {
+    keyword.value = locateKeyword
+    page.value = 1
+    await clearTaskRouteQuery()
+    void loadTasks()
+    return
+  }
+
   const taskId = Number(route.query.task_id)
   if (taskId > 0 && route.query.action === 'run') {
     await clearTaskRouteQuery()

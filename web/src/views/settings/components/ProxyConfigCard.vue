@@ -114,6 +114,24 @@ const binaryProxyOptions = [
       </span>
     </div>
 
+    <!-- #177：匿名访问 GitHub API 按出口 IP 每小时只有 60 次，共用代理时常被别人用光，检查更新就会报限流。
+         服务端只在请求 api.github.com 时带上它，不会带到加速源与 Release 下载地址。
+         与其它 Secret 配置（captcha_key、备份密码）一样用密码框 + show-password；
+         autocomplete=new-password 防止浏览器把登录密码自动填进来 -->
+    <div class="form-field">
+      <label>GitHub Token</label>
+      <el-input
+        v-model="form.github_token"
+        type="password"
+        show-password
+        autocomplete="new-password"
+        placeholder="可选，留空则匿名访问"
+      />
+      <span class="form-hint">
+        只用于检查更新，提高 GitHub API 的限流额度（匿名每小时 60 次，共用代理出口时容易被用光）；填一个不勾任何权限的 fine-grained token 即可。
+      </span>
+    </div>
+
     <div class="switch-row">
       <div class="switch-item">
         <span class="switch-label">静默更新</span>

@@ -164,7 +164,7 @@ var registeredSystemConfigSpecs = finalizeSystemConfigSpecs([]systemConfigSpec{
 	// runTask 每次执行现读一次，不需要进 handler.reloadRuntimeConfigKeys。
 	// ⚠️ APP 的系统设置页按 schema 渲染，这个开关会自动出现在 APP 里并能保存，所以说明文字必须对两端都适用，
 	// 不能写「仅网页端生效」之类的措辞。
-	newBoolConfig("cleanup_leftover_processes", "任务结束后清理残留进程", "true", "定时、手动任务的主命令结束后，结束它留在后台的进程（如 nohup、& 启动的），避免越积越多占用内存；开机任务不清理。需要常驻的进程请用 setsid nohup … & 启动，或关闭此项", "tasks"),
+	newBoolConfig("cleanup_leftover_processes", "任务结束后清理残留进程", "true", "定时、手动任务的主命令结束后，结束它留在后台的进程（如 nohup、& 启动的），避免越积越多占用内存；开机任务不清理。需要常驻的进程请用 setsid nohup … & 启动，或关闭此项。可在侧栏『后台进程』查看仍在运行的进程", "tasks"),
 	newEnumConfig(
 		"python_default_version",
 		"默认 Python 版本",
@@ -201,6 +201,10 @@ var registeredSystemConfigSpecs = finalizeSystemConfigSpecs([]systemConfigSpec{
 	newValidatedStringConfig("proxy_url", "代理地址", "", "出站请求代理地址", "network", normalizeProxyURL),
 	newValidatedStringConfig("update_image_mirror", "系统更新镜像源", "", "旧 Docker Socket 更新链路使用的可选镜像源（Watchtower 部署请通过 DAIDAI_PANEL_IMAGE 配置仓库）", "network", normalizeUpdateImageMirror),
 	newValidatedStringConfig("binary_update_proxy", "二进制更新加速源", "", "二进制更新下载加速源（留空直连 GitHub Release）", "network", normalizeBinaryUpdateProxy),
+	// #177：匿名访问 GitHub API 按出口 IP 每小时只有 60 次，共用代理出口时常被别人用光，检查更新就会报限流。
+	// 填了 Token 后只在请求 https://api.github.com 时带上（见 handler/system_release.go 的 applyGitHubAPIToken），
+	// 绝不带到 github.com 网页、Release 下载地址和加速代理。审计只记键名，不会记录它的值。
+	newSecretStringConfig("github_token", "GitHub Token", "", "只用于检查更新时访问 GitHub API，提高限流额度；填一个不勾任何权限的 fine-grained token 即可", "network"),
 	newValidatedStringConfig(
 		"trusted_proxy_cidrs",
 		"可信代理 CIDR",

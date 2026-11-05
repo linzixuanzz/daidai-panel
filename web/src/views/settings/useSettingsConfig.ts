@@ -148,6 +148,7 @@ export function useSettingsConfig() {
     proxy_url: '',
     update_image_mirror: '',
     binary_update_proxy: '',
+    github_token: '',
     auto_update_enabled: false,
     trusted_proxy_cidrs: '',
     captcha_enabled: false,
@@ -287,6 +288,7 @@ export function useSettingsConfig() {
         proxy_url: readConfigString(cfgs, 'proxy_url', ''),
         update_image_mirror: readConfigString(cfgs, 'update_image_mirror', ''),
         binary_update_proxy: readConfigString(cfgs, 'binary_update_proxy', ''),
+        github_token: readConfigString(cfgs, 'github_token', ''),
         auto_update_enabled: readConfigBool(cfgs, 'auto_update_enabled', false),
         trusted_proxy_cidrs: readConfigString(cfgs, 'trusted_proxy_cidrs', ''),
         captcha_enabled: readConfigBool(cfgs, 'captcha_enabled', false),
@@ -479,7 +481,7 @@ export function useSettingsConfig() {
   }
 
   function handleSaveProxy() {
-    void saveConfigKeys(['proxy_url', 'update_image_mirror', 'binary_update_proxy', 'auto_update_enabled', 'trusted_proxy_cidrs'])
+    void saveConfigKeys(['proxy_url', 'update_image_mirror', 'binary_update_proxy', 'github_token', 'auto_update_enabled', 'trusted_proxy_cidrs'])
   }
 
   function handleSaveCaptcha() {

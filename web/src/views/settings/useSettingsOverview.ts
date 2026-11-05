@@ -81,8 +81,12 @@ export function useSettingsOverview() {
       badgesStore.noteUpdateAvailable(Boolean(res.data?.has_update))
       // 手动检查也记一笔「上次检查更新时间」：后端静默更新巡检按它判断是否满 24 小时，
       // 「代理设置」页静默更新开关下方也只读展示它。概览页不再展示，但这次写入不能跟着删
-      const now = new Date().toISOString()
-      void configApi.set({ key: 'auto_update_last_checked_at', value: now }).catch(() => {})
+      // 但 GitHub API 被限流、结果来自网页回退（rate_limited）时不记：那次只拿到了版本号、没拿到更新包校验值，
+      // 记了会让静默更新以为「刚查过」而再等 24 小时（#177）
+      if (!res.data?.rate_limited) {
+        const now = new Date().toISOString()
+        void configApi.set({ key: 'auto_update_last_checked_at', value: now }).catch(() => {})
+      }
       if (res.data.has_update) {
         releaseNotesVisible.value = true
         if (res.data.auto_update_supported) {

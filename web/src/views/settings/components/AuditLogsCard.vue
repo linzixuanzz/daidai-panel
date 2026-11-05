@@ -43,7 +43,8 @@ const ACTION_LABELS: Record<string, string> = {
   'ssh_key.delete': '删除 SSH 密钥',
   'system.update': '更新面板',
   'system.restart': '重启面板',
-  'system.stop': '停止面板'
+  'system.stop': '停止面板',
+  'process.kill': '结束后台进程'
 }
 const actionOptions = Object.entries(ACTION_LABELS).map(([value, label]) => ({ value, label }))
 
@@ -53,7 +54,7 @@ function actionLabel(action: string) {
 
 // 删除、清空、恢复这类会销毁或覆盖数据的操作标红，扫一眼就能看到
 function actionTagType(action: string) {
-  if (/\.(delete|remove|clear|restore|reset_secret|password_reset|disable)$/.test(action) || action === 'console.run') return 'danger'
+  if (/\.(delete|remove|clear|restore|reset_secret|password_reset|disable|kill)$/.test(action) || action === 'console.run') return 'danger'
   if (action.startsWith('system.')) return 'warning'
   return 'info'
 }

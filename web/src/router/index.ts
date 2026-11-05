@@ -40,6 +40,7 @@ const routeComponents = {
   layout: () => import('@/layouts/MainLayout.vue'),
   dashboard: () => import('@/views/dashboard/index.vue'),
   tasks: () => import('@/views/tasks/index.vue'),
+  processes: () => import('@/views/processes/index.vue'),
   scripts: () => import('@/views/scripts/index.vue'),
   envs: () => import('@/views/envs/index.vue'),
   configFile: () => import('@/views/config-file/index.vue'),
@@ -57,6 +58,7 @@ const routeComponents = {
 const routePreloaders: Record<string, () => Promise<unknown>> = {
   '/dashboard': routeComponents.dashboard,
   '/tasks': routeComponents.tasks,
+  '/processes': routeComponents.processes,
   '/scripts': routeComponents.scripts,
   '/envs': routeComponents.envs,
   '/config-file': routeComponents.configFile,
@@ -192,6 +194,13 @@ const router = createRouter({
           name: 'Tasks',
           component: routeComponents.tasks,
           meta: { title: '定时任务', icon: 'Timer', minRole: 'viewer' }
+        },
+        {
+          // 「后台进程」（#176）：查看并结束任务拉起、脱离任务的常驻进程。能看到所有任务的命令行、还能结束进程，只给管理员。
+          path: 'processes',
+          name: 'Processes',
+          component: routeComponents.processes,
+          meta: { title: '后台进程', icon: 'Cpu', minRole: 'admin' }
         },
         {
           path: 'scripts',

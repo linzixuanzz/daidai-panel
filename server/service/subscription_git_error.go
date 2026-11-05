@@ -2,7 +2,9 @@ package service
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 )
 
@@ -35,11 +37,12 @@ type gitFailureSignals struct {
 	repoNotFound bool // 仓库不存在或无权访问 / 404
 	unreachable  bool // DNS 解析失败、连接超时、连接被拒
 	refNotFound  bool // 分支 / ref 在远端不存在
+	noGetrandom  bool // 宿主机内核太老，没有 getrandom 系统调用，git 建不了临时文件（#173）
 }
 
 // any 返回是否识别出了任何特征。
 func (s gitFailureSignals) any() bool {
-	return s.rateLimited || s.promisor || s.authFailed || s.repoNotFound || s.unreachable || s.refNotFound
+	return s.rateLimited || s.promisor || s.authFailed || s.repoNotFound || s.unreachable || s.refNotFound || s.noGetrandom
 }
 
 // detectGitFailureSignals 只做特征识别，不组装文案，方便单独测。
@@ -115,7 +118,52 @@ func detectGitFailureSignals(text string) gitFailureSignals {
 			"could not find remote ref",
 			"not found in upstream",
 		),
+		// `error: unable to get random bytes for temporary file: Function not implemented`
+		// 是 git 调 getrandom 拿到 ENOSYS：群晖 DSM 6 这类老 NAS 的内核是 3.10，而 getrandom 3.17 才有。与网络、代理无关。
+		noGetrandom: has("unable to get random bytes"),
 	}
+}
+
+// 下面三个抽成变量只为单测能替换：内核版本文件、当前 CPU 架构、是否 Magisk 模块版。
+var (
+	kernelOSReleasePath        = "/proc/sys/kernel/osrelease"
+	gitHintRuntimeArch         = runtime.GOARCH
+	gitHintIsMagiskModuleCheck = IsMagiskModuleRuntime
+)
+
+// buildGitNoGetrandomHint 给「内核不支持 getrandom」出一行 [提示]（#173）。
+//
+// 2026-11-05 实测：alpine:3.23 的 git 2.52 动态依赖 getrandom，Debian bookworm 的 git 2.39 读 /dev/urandom，
+// 所以 Alpine 镜像换成 Debian 版就能在老内核上拉库。Alpine 判断复用 playwright_runtime.go 的 DetectLinuxOSRelease。
+// Debian 版镜像只有 amd64 / arm64，别的架构叫人换镜像没用，只能升级宿主系统（README 的镜像标签表）。
+func buildGitNoGetrandomHint() string {
+	kernel := ""
+	if data, err := os.ReadFile(kernelOSReleasePath); err == nil {
+		kernel = strings.TrimSpace(string(data))
+		// 只是拼进提示的版本号，异常长的内容不往日志里塞
+		if len(kernel) > 64 {
+			kernel = ""
+		}
+	}
+	// 有版本号时是「宿主机内核 3.10.105 不支持」，读不到时是「宿主机内核不支持」，中间不能多出空格
+	host := "宿主机内核"
+	if kernel != "" {
+		host += " " + kernel + " "
+	}
+	head := "[提示] " + host + "不支持 getrandom（Linux 3.17 起才有），"
+
+	if DetectLinuxOSRelease().ID != "alpine" {
+		return head + "git 无法创建临时文件，请升级宿主系统。"
+	}
+	if gitHintIsMagiskModuleCheck() {
+		// 面具模块没有镜像标签可换，对应的出路是改刷 Debian 版模块
+		return head + "Alpine 版模块里的 git 依赖它，无法创建临时文件。请改刷 Debian 版面具模块（daidai-panel-magisk-debian-vX.Y.Z.zip），或升级系统。"
+	}
+	if gitHintRuntimeArch != "amd64" && gitHintRuntimeArch != "arm64" {
+		return head + "Alpine 镜像里的 git 依赖它，无法创建临时文件；Debian 版镜像只有 amd64 / arm64，当前架构 " + gitHintRuntimeArch + " 只能升级宿主系统。"
+	}
+	// 标签写法与 README 一致：把 latest 换成 debian（latest → debian、latest-full → debian-full），写死 :debian 会让 full 用户丢掉工具链
+	return head + "Alpine 镜像里的 git 依赖它，无法创建临时文件。请换用 debian 镜像（把镜像标签里的 latest 换成 debian，如 latest → debian、latest-full → debian-full），或升级宿主系统。"
 }
 
 // 各类失败的提示文案。每条都要说清三件事：什么错了、为什么会这样、下一步怎么办。
@@ -142,7 +190,8 @@ const (
 // output 是命令的合并输出（stdout+stderr），err 是命令返回的错误。
 // 识别不出来时返回 ""，调用方照常输出原有的通用错误，不做任何改变。
 //
-// 返回值自带 `[错误]` 前缀，与本包其它 emit 文案风格一致，调用方直接 emit 即可。
+// 返回值自带 `[错误]` 前缀，与本包其它 emit 文案风格一致，调用方直接 emit 即可；
+// 唯一例外是内核不支持 getrandom（#173），那条是解释环境原因的 `[提示]`，同样是单行。
 func classifyGitFailure(output string, err error) string {
 	if err == nil {
 		return ""
@@ -157,6 +206,12 @@ func classifyGitFailure(output string, err error) string {
 	signals := detectGitFailureSignals(text)
 	if !signals.any() {
 		return ""
+	}
+
+	// 内核不支持 getrandom 时 git 连临时文件都建不了，别的特征（如果有）都是它的连带结果，直接给这一条 [提示]。
+	// 它跟在 git 自己的 `error: unable to get random bytes …` 行后面，说明原因与出路。
+	if signals.noGetrandom {
+		return buildGitNoGetrandomHint()
 	}
 
 	// 根因优先级：先给能直接解释「远端为什么拒绝」的结论。

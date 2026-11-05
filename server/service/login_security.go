@@ -437,6 +437,7 @@ const (
 	AuditSystemUpdate       = "system.update"
 	AuditSystemRestart      = "system.restart"
 	AuditSystemStop         = "system.stop"
+	AuditProcessKill        = "process.kill"
 )
 
 // 审计字段的长度上限（按字符数），与 security_audits 表的列宽一致。
