@@ -78,7 +78,9 @@ func TestDisable2FAAcceptsValidCode(t *testing.T) {
 	token := testutil.MustCreateAccessToken(t, user.Username, user.Role)
 	secret := seedEnabled2FA(t, user.ID)
 
-	code := service.GenerateCurrentTOTPForTest(secret)
+	// seedEnabled2FA 启用时已经用掉了当前时间步的码，同一个码不能再用（防重放），
+	// 这里取下一个时间步的码，相当于用户等验证器跳到新码再来关闭
+	code := service.GenerateNextTOTPForTest(secret)
 	body := fmt.Sprintf(`{"code":"%s"}`, code)
 
 	engine := newProtectedRouter()

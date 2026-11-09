@@ -2682,7 +2682,7 @@ route('POST', '/open-api/apps/:id/task-trigger-link', (ctx) => {
       task_id: task.id,
       task_name: task.name,
       app_name: app.name,
-      notice: '该链接长期有效且无需登录，请只配置到企业微信应用菜单里；需要作废时调用「作废全部触发链接」',
+      notice: '该链接长期有效且无需登录，请只配置到企业微信应用菜单里；需要作废时调用「作废全部触发链接」。禁用 / 删除签发它的应用，或禁用任务，链接随即失效',
     },
   }
 })

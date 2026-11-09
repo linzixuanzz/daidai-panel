@@ -37,9 +37,8 @@ Environment=PIP_USER=
 Environment=PIP_INSTALL_OPTION=
 Environment=PYTHONUSERBASE=
 
-# 反向代理 trusted proxy CIDR，多个用逗号分隔（如 127.0.0.1/32,10.0.0.0/8）。
-# 留空表示默认只信任 loopback；NAS 反代场景按需配置。
-# Environment=DAIDAI_TRUSTED_PROXY_CIDRS=127.0.0.1/32,192.168.0.0/16
+# 反向代理的可信代理不走环境变量，在面板「系统设置 → 代理设置 → 可信代理 CIDR」里配置。
+# v3.4.4 起默认只信任本机（127.0.0.1 / ::1）；面板放在 nginx、NAS 反代等之后时，把反代的来源地址加进去。
 
 # 端口（可选，默认 5700）
 # Environment=SERVER_PORT=5700

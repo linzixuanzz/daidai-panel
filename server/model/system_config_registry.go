@@ -205,11 +205,13 @@ var registeredSystemConfigSpecs = finalizeSystemConfigSpecs([]systemConfigSpec{
 	// 填了 Token 后只在请求 https://api.github.com 时带上（见 handler/system_release.go 的 applyGitHubAPIToken），
 	// 绝不带到 github.com 网页、Release 下载地址和加速代理。审计只记键名，不会记录它的值。
 	newSecretStringConfig("github_token", "GitHub Token", "", "只用于检查更新时访问 GitHub API，提高限流额度；填一个不勾任何权限的 fine-grained token 即可", "network"),
+	// v3.4.4 起默认只信任本机（审计 H-2），旧默认含全部私网段，存量实例的迁移见 system_config.go 的 InitDefaultConfigs。
+	// 说明文字会原样下发给 APP 的设置页，所以要把「留空 = 只信任本机、反代后面要自己填」讲出来。
 	newValidatedStringConfig(
 		"trusted_proxy_cidrs",
 		"可信代理 CIDR",
 		strings.Join(netutil.DefaultTrustedProxyCIDRs(), "\n"),
-		"可信代理 CIDR/IP 列表（逗号、空格或换行分隔）",
+		"可信代理 CIDR/IP 列表（逗号、空格或换行分隔）。留空只信任本机；面板在反代后面时，填反代访问面板的来源地址",
 		"network",
 		normalizeTrustedProxyCIDRs,
 	),

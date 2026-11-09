@@ -344,6 +344,13 @@ func TestLoginRecordsForwardedPublicIPFromTrustedProxyHop(t *testing.T) {
 	user := testutil.MustCreateLoginUser(t, "forwarded-ip-user", "admin", password)
 	engine := newProtectedRouter()
 
+	// 默认可信代理已收窄到只信任本机，这条用例要模拟「私网里的反代」，
+	// 必须显式把 192.168.0.0/16 配成可信，不能再依赖默认值；用完恢复默认，别影响后面的用例。
+	if err := middleware.ConfigureTrustedProxyCIDRs("192.168.0.0/16"); err != nil {
+		t.Fatalf("configure trusted proxies: %v", err)
+	}
+	t.Cleanup(func() { _ = middleware.ConfigureTrustedProxyCIDRs("") })
+
 	rec := performJSONRequest(engine, http.MethodPost, "/api/v1/auth/login", `{"username":"`+user.Username+`","password":"`+password+`"}`, map[string]string{
 		"X-Forwarded-For": "198.51.100.45",
 	}, "192.168.1.2")

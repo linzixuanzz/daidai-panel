@@ -4,10 +4,13 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/subtle"
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"daidai-panel/database"
@@ -46,16 +49,69 @@ func GenerateCurrentTOTPForTest(secret string) string {
 	return generateTOTPCode(secret, counter)
 }
 
+// GenerateNextTOTPForTest 返回「下一个时间步」的验证码，等价于用户等验证器跳到下一个码再输入。
+// 同一个时间步的码成功用过一次就不能再用（防重放），测试里要「再验证一次」时用它，
+// 不用去清进程内的防重放记录，生产校验口径保持不变。下一个时间步仍在 ±1 窗口内，校验照样能过。
+func GenerateNextTOTPForTest(secret string) string {
+	counter := uint64(time.Now().Unix()/int64(TOTPPeriod) + 1)
+	return generateTOTPCode(secret, counter)
+}
+
+// ValidateTOTP 是纯校验：只看 code 在不在 ±1 窗口里，不记、也不查「用过没有」。
+// 保留给只需要判断码对不对的调用方与测试；校验用户的码必须走 ValidateUserTOTP / VerifyAndEnableTwoFactor。
 func ValidateTOTP(secret, code string) bool {
-	now := time.Now().Unix()
+	_, ok := matchTOTPStep(secret, code, math.MinInt64)
+	return ok
+}
+
+// matchTOTPStep 在 ±1 窗口里找与 code 匹配、且时间步大于 after 的那一步，返回该时间步。
+// 三个窗口都算完、用常量时间比较，不因为在第几个窗口命中而提前返回，避免按耗时猜码。
+func matchTOTPStep(secret, code string, after int64) (int64, bool) {
+	now := time.Now().Unix() / int64(TOTPPeriod)
+	var matched int64
+	found := false
 	for _, offset := range []int64{-1, 0, 1} {
-		counter := uint64((now / int64(TOTPPeriod)) + offset)
-		generated := generateTOTPCode(secret, counter)
-		if generated == code {
-			return true
+		step := now + offset
+		generated := generateTOTPCode(secret, uint64(step))
+		// 密钥解不开时 generateTOTPCode 返回空串，空串和空串比也算「相等」，这里必须排除，不能让空码通过
+		if generated == "" {
+			continue
+		}
+		// 已经用过（step <= after）的时间步即使码对也不算：极小概率下相邻两步的码相同，
+		// 这时继续往后找，让下一个时间步的同一个码仍能正常使用
+		if subtle.ConstantTimeCompare([]byte(generated), []byte(code)) == 1 && step > after && !found {
+			matched, found = step, true
 		}
 	}
-	return false
+	return matched, found
+}
+
+// totpReplay 记每个用户最后一次成功使用的 TOTP 时间步，用来拒绝同一个码在 90 秒窗口内被重复使用。
+// 只放进程内、不落库：重启后清空最多放过一次「重启前刚用过的码」，换来不加表不加列、不碰备份恢复的格式。
+var totpReplay = struct {
+	mu       sync.Mutex
+	lastUsed map[uint]int64
+}{lastUsed: make(map[uint]int64)}
+
+// consumeUserTOTP 校验 code 并把匹配的时间步记为已用。校验与记录在同一把锁里完成：
+// 两个并发请求拿同一个码来，只会有一个看到「还没用过」，另一个必然被拒。
+func consumeUserTOTP(userID uint, secret, code string) bool {
+	totpReplay.mu.Lock()
+	defer totpReplay.mu.Unlock()
+
+	step, ok := matchTOTPStep(secret, code, totpReplay.lastUsed[userID])
+	if !ok {
+		return false
+	}
+	totpReplay.lastUsed[userID] = step
+	return true
+}
+
+// clearUserTOTPReplay 删掉该用户的已用记录：重新设置或关闭 2FA 后密钥会变，旧的时间步记录没有意义了。
+func clearUserTOTPReplay(userID uint) {
+	totpReplay.mu.Lock()
+	delete(totpReplay.lastUsed, userID)
+	totpReplay.mu.Unlock()
 }
 
 func generateTOTPCode(secret string, counter uint64) string {
@@ -107,6 +163,8 @@ func SetupTwoFactor(userID uint) (string, string, error) {
 			return "", "", err
 		}
 	}
+	// 换了新密钥，上一把密钥留下的已用时间步不再适用；不清的话，启用时输入的第一个码可能被误判成重放
+	clearUserTOTPReplay(userID)
 
 	var user model.User
 	database.DB.First(&user, userID)
@@ -121,7 +179,8 @@ func VerifyAndEnableTwoFactor(userID uint, code string) error {
 		return fmt.Errorf("2FA 尚未设置")
 	}
 
-	if !ValidateTOTP(tfa.Secret, code) {
+	// 启用时用掉的码同样记为已用：否则偷看到这个码的人能立刻拿它再去登录一次
+	if !consumeUserTOTP(userID, tfa.Secret, code) {
 		return fmt.Errorf("验证码无效")
 	}
 
@@ -131,6 +190,7 @@ func VerifyAndEnableTwoFactor(userID uint, code string) error {
 
 func DisableTwoFactor(userID uint) {
 	database.DB.Where("user_id = ?", userID).Delete(&model.TwoFactorAuth{})
+	clearUserTOTPReplay(userID)
 }
 
 func IsTwoFactorEnabled(userID uint) bool {
@@ -144,5 +204,6 @@ func ValidateUserTOTP(userID uint, code string) bool {
 	if err := silentDB().Where("user_id = ? AND enabled = ?", userID, true).First(&tfa).Error; err != nil {
 		return false
 	}
-	return ValidateTOTP(tfa.Secret, code)
+	// 登录、关闭 2FA、添加通行密钥都走这里，共用同一份已用记录：一个码在哪条路径上用过，其它路径也不能再用
+	return consumeUserTOTP(userID, tfa.Secret, code)
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"daidai-panel/database"
+	"daidai-panel/pkg/netutil"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -147,6 +148,7 @@ func InitDefaultConfigs() {
 		if def.Key == "log_background_color" && strings.TrimSpace(existing.Value) == LegacyLogBackgroundColor {
 			normalizedValue = def.DefaultValue
 		}
+		// trusted_proxy_cidrs 的旧默认迁移不在这里做，见循环后面的 migrateLegacyTrustedProxyCIDRsOnce。
 		if normalizedValue != existing.Value {
 			updates["value"] = normalizedValue
 		}
@@ -155,7 +157,45 @@ func InitDefaultConfigs() {
 		}
 	}
 
+	// 放在上面的循环之后：此时 trusted_proxy_cidrs 这一行一定存在且已规范化。
+	migrateLegacyTrustedProxyCIDRsOnce()
+
 	removeDeprecatedSystemConfigs("command_timeout")
+}
+
+// TrustedProxyCIDRsMigratedConfigKey 标记「trusted_proxy_cidrs 的旧默认迁移已经做过」，值固定写 "1"。
+//
+// 和 WecomTriggerLinkGenerationConfigKey 一样刻意不进注册表：这是面板自己写的状态，不是给人填的配置项。
+// 它会随备份导出、随恢复写回（见 service/backup_runtime.go 的 restoreBackupManifest）。
+const TrustedProxyCIDRsMigratedConfigKey = "trusted_proxy_cidrs_migrated"
+
+// migrateLegacyTrustedProxyCIDRsOnce 把 v3.4.3 及之前的旧默认抬到新默认，一辈子只做一次。
+//
+// trusted_proxy_cidrs 在 v3.4.3 及之前默认信任全部私网段（审计 H-2）：经 Docker 网桥、内网反代
+// 进来的请求可以随手伪造 X-Forwarded-For，绕过 IP 白名单和登录限流。v3.4.4 起默认只信任本机。
+// 老实例库里那行是建表时写入的旧默认，升级不会自愈，所以库里存的（按集合）正好等于旧默认时要改写。
+//
+// 为什么要标记行，而不像 log_background_color 那样「等于旧默认就改」每次启动都判断：
+// 旧默认那几段私网是一个有意义的安全选择 —— 反代确实在内网另一台机器上的管理员，会在设置页里
+// 主动把这几段加回来。没有标记的话，每次重启、每次恢复备份都会把它悄悄改回本机，管理员的选择被吞掉。
+// 有了标记：只在第一次（升级到 v3.4.4 后首次启动，或恢复了不带标记的老备份）判断一次，之后永不再碰。
+func migrateLegacyTrustedProxyCIDRsOnce() {
+	var marker SystemConfig
+	if err := silentDB().Where("`key` = ?", TrustedProxyCIDRsMigratedConfigKey).First(&marker).Error; err == nil {
+		return
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		// 查库本身出错：这次先不动，下次启动再判断。不能当成「没迁移过」，否则可能误改用户的设置。
+		return
+	}
+
+	if netutil.IsLegacyDefaultTrustedProxyCIDRs(GetConfig("trusted_proxy_cidrs", "")) {
+		if err := SetConfig("trusted_proxy_cidrs", strings.Join(netutil.DefaultTrustedProxyCIDRs(), "\n")); err != nil {
+			// 改写失败就不写标记，下次启动还会再试
+			return
+		}
+	}
+	// 新装实例、用户改过的实例也写标记：它们同样「已经过了迁移这一关」，以后无论值变成什么都不再碰
+	_ = SetConfig(TrustedProxyCIDRsMigratedConfigKey, "1")
 }
 
 func removeDeprecatedSystemConfigs(keys ...string) error {

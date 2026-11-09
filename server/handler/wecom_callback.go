@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -8,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"daidai-panel/database"
@@ -259,7 +262,62 @@ const (
 
 	// wecomCallbackRequestBodyLimit 是路由层的请求体上限（middleware.BodyLimit）。
 	wecomCallbackRequestBodyLimit = 1 << 20
+
+	// wecomCallbackMaxSkewSeconds：回调 URL 上的 timestamp 与服务器时间最多差这么多秒（安全审计 M-2）。
+	// 签名只覆盖 token+timestamp+nonce+encrypt，不卡时间的话，抓到的一份合法报文任何时候都能重放。
+	wecomCallbackMaxSkewSeconds = 300
+
+	// wecomReplayTTL 是去重记录的保留时长。要盖住整个时间窗（前后各 300 秒 = 10 分钟），
+	// 否则一份报文过了去重期、却还在时间窗内，就又能重放一次。
+	wecomReplayTTL = 10 * time.Minute
+
+	// wecomReplayCacheLimit 是去重表的条目上限，防止内存无限增长。
+	// 能写进这张表的都是验签通过的报文，正常企业微信流量远到不了这个量。
+	wecomReplayCacheLimit = 4096
 )
+
+// 回调去重表：包级共享（/api 与 /api/v1 两套前缀、所有接入配置共用一份），键里带接入配置 ID 互不干扰。
+// 只存在内存里，重启后清空；重启前后的重放仍有时间窗兜底。
+var (
+	wecomReplayMu   sync.Mutex
+	wecomReplaySeen = map[string]time.Time{}
+)
+
+// wecomSeenRecently 判断 key 在 TTL 内是否已经出现过；没出现过就顺手记下并返回 false。
+// 「查」和「记」必须在同一把锁里：分开做的话，两个并发的重放请求会同时判成「第一次」，一起跑任务。
+func wecomSeenRecently(key string) bool {
+	now := time.Now()
+	wecomReplayMu.Lock()
+	defer wecomReplayMu.Unlock()
+
+	if seenAt, ok := wecomReplaySeen[key]; ok && now.Sub(seenAt) <= wecomReplayTTL {
+		return true
+	}
+
+	// 不起后台清理协程（与 middleware.FailureLimiter 同一做法）：条目多起来时顺手扫掉过期的。
+	if len(wecomReplaySeen) >= wecomReplayCacheLimit {
+		for k, seenAt := range wecomReplaySeen {
+			if now.Sub(seenAt) > wecomReplayTTL {
+				delete(wecomReplaySeen, k)
+			}
+		}
+		// 扫完还是满的（10 分钟内真有这么多条），只能挤掉最老的一条给新记录腾位置：
+		// 宁可让最老那条失去去重保护，也不能让表无限长大。
+		if len(wecomReplaySeen) >= wecomReplayCacheLimit {
+			oldestKey := ""
+			var oldestAt time.Time
+			for k, seenAt := range wecomReplaySeen {
+				if oldestKey == "" || seenAt.Before(oldestAt) {
+					oldestKey, oldestAt = k, seenAt
+				}
+			}
+			delete(wecomReplaySeen, oldestKey)
+		}
+	}
+
+	wecomReplaySeen[key] = now
+	return false
+}
 
 // wecomEncryptedEnvelope 是企业微信 POST 过来的外层信封。
 // 除了 Encrypt 之外的字段都不可信（没参与签名），只用来写日志。
@@ -281,6 +339,9 @@ type wecomPlainMessage struct {
 	Event        string   `xml:"Event"`
 	EventKey     string   `xml:"EventKey"`
 	AgentID      string   `xml:"AgentID"`
+	// MsgId 只有普通消息才有（事件没有）。企业微信 5 秒没收到响应会换一个 nonce 把同一条消息重发，
+	// 外层报文指纹因此对不上，只能靠它认出「这是同一条」。
+	MsgID string `xml:"MsgId"`
 }
 
 // Verify 处理企业微信后台保存「接收消息服务器配置」时发来的那一次 GET 验签。
@@ -316,6 +377,7 @@ func (h *WecomCallbackHandler) Verify(c *gin.Context) {
 // 能立刻看到；验签之后一律回 200 + 空串。后者是刻意的 —— 企业微信要求 5 秒内响应，
 // 非 200 会被它当失败重试三次，而重试意味着同一条「运行 xx」指令被执行三遍。
 // 指令的执行结果走现有的 wecom_app 通知渠道异步推回，不占这次响应。
+// 唯一的例外是时间戳超出时间窗（v3.4.4，安全审计 M-2）：那是重放或服务器时间不准，回 401 让管理员看得见。
 func (h *WecomCallbackHandler) Receive(c *gin.Context) {
 	trigger, ok := h.loadTrigger(c)
 	if !ok {
@@ -346,6 +408,22 @@ func (h *WecomCallbackHandler) Receive(c *gin.Context) {
 		return
 	}
 
+	// 防重放第一道：时间窗。timestamp 参与了签名，改不了，所以过期的报文只可能是旧报文被拿来重放。
+	// 这里回 401 而不是 200：真是服务器时间不准时，管理员能在企业微信后台看到失败，而不是指令静默没跑。
+	timestamp := strings.TrimSpace(c.Query("timestamp"))
+	sentAt, parseErr := strconv.ParseInt(timestamp, 10, 64)
+	if parseErr != nil {
+		log.Printf("[企业微信触发] 接入配置 %d(%s) 收到的消息时间戳无法解析（%q），已丢弃", trigger.ID, trigger.Name, timestamp)
+		response.Unauthorized(c, "企业微信回调已过期")
+		return
+	}
+	if skew := time.Now().Unix() - sentAt; skew > wecomCallbackMaxSkewSeconds || skew < -wecomCallbackMaxSkewSeconds {
+		log.Printf("[企业微信触发] 接入配置 %d(%s) 收到的消息时间戳与服务器时间相差 %d 秒（上限 %d 秒），按重放丢弃；若正常消息也被拒，请检查服务器时间是否准确",
+			trigger.ID, trigger.Name, skew, wecomCallbackMaxSkewSeconds)
+		response.Unauthorized(c, "企业微信回调已过期")
+		return
+	}
+
 	plain, err := wxcrypt.Decrypt(trigger.EncodingAESKey, trigger.CorpID, envelope.Encrypt)
 	if err != nil {
 		// 这里最常见的是 ErrReceiveIDMismatch：消息能解开但不是发给本企业的。
@@ -355,9 +433,26 @@ func (h *WecomCallbackHandler) Receive(c *gin.Context) {
 		return
 	}
 
+	// 防重放第二道：时间窗内按整份报文的指纹去重。只卡时间窗的话，窗口内仍能原样重放。
+	// 放在解密之后才记：解不开的报文本来就回 401，不该占去重表，也不该在重放时变成 200。
+	// 见过的报文回 200 空串：它可能是企业微信自己的重试，回非 200 只会招来更多重试。
+	envelopeSum := sha256.Sum256([]byte(fmt.Sprintf("%d|%s|%s|%s", trigger.ID, timestamp, c.Query("nonce"), envelope.Encrypt)))
+	if wecomSeenRecently("envelope|" + hex.EncodeToString(envelopeSum[:])) {
+		log.Printf("[企业微信触发] 接入配置 %d(%s) 收到重复的回调报文，已忽略", trigger.ID, trigger.Name)
+		replyWecomEmpty(c)
+		return
+	}
+
 	var message wecomPlainMessage
 	if err := xml.Unmarshal(plain, &message); err != nil {
 		log.Printf("[企业微信触发] 接入配置 %d(%s) 的消息体解析失败: %v", trigger.ID, trigger.Name, err)
+		replyWecomEmpty(c)
+		return
+	}
+
+	// 同一条消息被企业微信换 nonce 重发时，外层指纹不同，靠 MsgId 认出来；事件消息没有 MsgId，跳过这一道。
+	if msgID := strings.TrimSpace(message.MsgID); msgID != "" && wecomSeenRecently(fmt.Sprintf("msg|%d|%s", trigger.ID, msgID)) {
+		log.Printf("[企业微信触发] 接入配置 %d(%s) 收到重复的消息（MsgId=%s），已忽略", trigger.ID, trigger.Name, msgID)
 		replyWecomEmpty(c)
 		return
 	}

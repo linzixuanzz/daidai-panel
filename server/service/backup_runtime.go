@@ -986,6 +986,12 @@ aborted = aborted + excluded.aborted, other = other + excluded.other`,
 	}
 
 	UpdateRestoreProgress("finalizing", "正在刷新任务调度与恢复后状态...", 92)
+	// 勾了「配置」时 system_configs 整表换成了备份里的行，trusted_proxy_cidrs 的旧默认迁移靠这里接上：
+	//   - v3.4.4 之前的老备份不带 model.TrustedProxyCIDRsMigratedConfigKey，InitDefaultConfigs 会把
+	//     其中的旧默认（全部私网段）抬到新默认，并补上标记；
+	//   - 新备份带着标记（导出时整表照搬、restoreSystemConfigs 也不跳过它），里面即使是那几段私网，
+	//     也是管理员自己选的，原样保留。
+	// 没勾「配置」时库里的标记和值都没动过，这里同样什么都不改。
 	model.InitDefaultConfigs()
 	_ = middleware.ConfigureTrustedProxyCIDRs(model.GetRegisteredConfig("trusted_proxy_cidrs"))
 

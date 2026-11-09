@@ -42,11 +42,7 @@ cors:
 
 ### 3. 反向代理后 IP 显示为本地
 
-如果面板放在 NAS 反代之后，请配置信任代理 CIDR：
-```ini
-# /etc/systemd/system/daidai-panel.service
-Environment=DAIDAI_TRUSTED_PROXY_CIDRS=127.0.0.1/32,192.168.0.0/16
-```
+可信代理在面板里配置：「系统设置 → 代理设置 → 可信代理 CIDR」（没有对应的环境变量）。v3.4.4 起默认只信任本机（127.0.0.1 / ::1），如果面板放在 nginx、NAS 反代等之后，请把反代的来源地址（IP 或 CIDR）加进去，否则登录日志、限流等看到的都是反代的地址。
 
 ### 4. SQLite 写入失败
 

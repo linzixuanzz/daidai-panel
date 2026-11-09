@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"daidai-panel/database"
@@ -33,17 +34,50 @@ const (
 	openAPITokenFailureWindow = 10 * time.Minute
 )
 
+// 触发链接（GET /open-api/trigger）只有一道限流：每个任务 10 秒内只受理 1 次，
+// 企业微信里连点几下菜单不该把同一个任务排进队列好几遍。
+//
+// 不再按客户端 IP 限流：v3.4.4 起默认只信任回环代理，反代后面的所有人会共用同一个 IP，
+// 一个拿垃圾票狂打的匿名客户端就能让所有人的链接一直 429。而票据是 HMAC 验签、验过才查库，
+// 垃圾票几乎零成本；真正要约束的资源是「任务被排进队列的次数」，按任务冷却就够了。
+const taskTriggerCooldown = 10 * time.Second
+
+// taskTriggerNow 是触发冷却用的时钟，平时就是 time.Now；
+// 单独成变量只为让用例能拨表验证冷却边界，不用真的睡 10 秒。
+var taskTriggerNow = time.Now
+
 type OpenAPIHandler struct {
 	// tokenFailures 只数 POST /open-api/token 的失败（app_key 不存在、secret 不对）。
 	// 挂在 handler 上而不是每次注册时现构造：/api 与 /api/v1 两个前缀共用同一个 handler，
 	// 共用计数才能防住「换个前缀接着猜」。
 	tokenFailures *middleware.FailureLimiter
+
+	// triggerAcceptedAt 记每个任务最近一次「被受理」的时间，同样挂在 handler 上，
+	// 让 /api 与 /api/v1 两套前缀共用，换个前缀刷不出第二次。
+	// 故意不用 middleware.RateLimiter：它被拒的请求也会刷新时间，连点就能把冷却一直往后推；
+	// 这里只有受理时才写，被拒的点击不延长冷却。
+	triggerMu         sync.Mutex
+	triggerAcceptedAt map[uint]time.Time
 }
 
 func NewOpenAPIHandler() *OpenAPIHandler {
 	return &OpenAPIHandler{
-		tokenFailures: middleware.NewFailureLimiter(openAPITokenFailureLimit, openAPITokenFailureWindow),
+		tokenFailures:     middleware.NewFailureLimiter(openAPITokenFailureLimit, openAPITokenFailureWindow),
+		triggerAcceptedAt: make(map[uint]time.Time),
 	}
+}
+
+// acceptTaskTrigger 判断这个任务此刻能不能受理；能的话顺手记下受理时间。
+// 判断和写入在同一把锁里，两个并发的点击只会有一个通过。
+func (h *OpenAPIHandler) acceptTaskTrigger(taskID uint) bool {
+	now := taskTriggerNow()
+	h.triggerMu.Lock()
+	defer h.triggerMu.Unlock()
+	if last, ok := h.triggerAcceptedAt[taskID]; ok && now.Sub(last) < taskTriggerCooldown {
+		return false
+	}
+	h.triggerAcceptedAt[taskID] = now
+	return true
 }
 
 func generateRandomKey(length int) string {
@@ -395,6 +429,7 @@ func (h *OpenAPIHandler) CallLogs(c *gin.Context) {
 // 第 2 条路由刻意没有任何中间件（和同层的 POST /open-api/token 一样）：企业微信内置浏览器
 // 打开菜单链接时带不了 Authorization 头。它的防线是「两级总开关 + 票据验签 + 票据只绑一个任务」，
 // 和 handler/mcp.go 的「路由公开 + handler 内强鉴权」是同一套口径。
+// v3.4.4 起（安全审计 M-1）还要求签发应用仍存在且启用、任务未禁用，同一任务受理后有 10 秒冷却。
 // ---------------------------------------------------------------------------
 
 // taskTriggerResource 是触发票据的资源标识。它参与签名但不随票据传输，
@@ -467,7 +502,7 @@ func (h *OpenAPIHandler) IssueTaskTriggerLink(c *gin.Context) {
 			"task_name": task.Name,
 			"app_name":  app.Name,
 			// 提醒前端把这句话显示出来：链接长期有效，等同于这一个任务的永久触发权。
-			"notice": "该链接长期有效且无需登录，请只配置到企业微信应用菜单里；需要作废时调用「作废全部触发链接」",
+			"notice": "该链接长期有效且无需登录，请只配置到企业微信应用菜单里；需要作废时调用「作废全部触发链接」。禁用 / 删除签发它的应用，或禁用任务，链接随即失效",
 		},
 	})
 }
@@ -505,7 +540,19 @@ func (h *OpenAPIHandler) TaskTrigger(c *gin.Context) {
 	}
 	// 先验票再查库：不验票就查库会让未授权访问者靠 404 / 401 的差异探测某个任务存不存在。
 	// 无效、过期、已作废三种情况对外一律同一句话，同样是为了不泄漏可区分的信息。
-	if _, err := trigticket.Verify(config.C.JWT.Secret, ticket, taskTriggerResource(uint(taskID)), currentTaskTriggerGeneration()); err != nil {
+	subject, err := trigticket.Verify(config.C.JWT.Secret, ticket, taskTriggerResource(uint(taskID)), currentTaskTriggerGeneration())
+	if err != nil {
+		respondTaskTriggerPage(c, http.StatusUnauthorized, "链接已失效", "请让管理员重新生成触发链接")
+		return
+	}
+
+	// 票据是无状态的，验签通过只说明「当初签过」。签发它的应用被删除或禁用后，管理员的预期是
+	// 链接跟着失效，所以这里按 subject（签发时写的 app:<app_key>）回查应用。
+	// 应用不存在 / 已禁用 / subject 不是这个形态，都与票据无效同一口径，不给外人多一种可区分的失败原因。
+	appKey, isAppSubject := strings.CutPrefix(subject, "app:")
+	var app model.OpenApp
+	if !isAppSubject || appKey == "" ||
+		database.DB.Where("app_key = ?", appKey).First(&app).Error != nil || !app.Enabled {
 		respondTaskTriggerPage(c, http.StatusUnauthorized, "链接已失效", "请让管理员重新生成触发链接")
 		return
 	}
@@ -515,16 +562,32 @@ func (h *OpenAPIHandler) TaskTrigger(c *gin.Context) {
 		return
 	}
 
-	task, err := runTaskByID(uint(taskID))
+	// 禁用任务是管理员最直觉的止血手段，链接必须认它。
+	// 查不到任务时不在这里处理，交给下面的 runTaskByID 按原口径回「未能触发」。
+	var task model.Task
+	if database.DB.First(&task, taskID).Error == nil && task.Status == model.TaskStatusDisabled {
+		respondTaskTriggerPage(c, http.StatusForbidden, "任务已禁用", strings.TrimSpace(task.Name+" 已被管理员禁用，启用后链接才会恢复"))
+		return
+	}
+
+	// 每个任务的冷却放在所有校验之后、真正入队之前：
+	// 放在验票前的话，没有票的人拿着 task_id 狂打就能把正常用户的点击一直挡在外面。
+	// map 不做清理：键是管理员建的任务 ID，数量有限，且只有验票通过的请求才会写进来。
+	if !h.acceptTaskTrigger(uint(taskID)) {
+		respondTaskTriggerPage(c, http.StatusTooManyRequests, "操作太频繁", "这个任务 10 秒内只受理一次，请稍后再试")
+		return
+	}
+
+	runTask, err := runTaskByID(uint(taskID))
 	if err != nil {
 		name := ""
-		if task != nil {
-			name = task.Name
+		if runTask != nil {
+			name = runTask.Name
 		}
 		respondTaskTriggerPage(c, http.StatusOK, "未能触发", strings.TrimSpace(name+" "+err.Error()))
 		return
 	}
-	respondTaskTriggerPage(c, http.StatusOK, "已触发", task.Name)
+	respondTaskTriggerPage(c, http.StatusOK, "已触发", runTask.Name)
 }
 
 // respondTaskTriggerPage 回一段不依赖任何外部资源的极简 HTML。

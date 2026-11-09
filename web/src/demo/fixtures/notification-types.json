@@ -898,9 +898,9 @@
         },
         {
           "key": "qq",
-          "label": "QQ 号/群号 (可选)",
+          "label": "QQ 群号（群发必填）",
           "widget": "input",
-          "placeholder": "留空则按 Qmsg 端默认配置发送"
+          "placeholder": "群发时填群号，需先在 Qmsg 控制台添加并绑定该群；私聊发给 Key 绑定的 QQ"
         }
       ]
     },

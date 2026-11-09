@@ -41,6 +41,12 @@ func (s *AuthService) NeedInit() bool {
 // 面板刚装好时两个并发的 /auth/init 都能看到 0 个用户，不加锁就会建出两个管理员。
 var initAdminMu sync.Mutex
 
+// 登录时「用户不存在」分支拿来陪跑 bcrypt 的占位哈希，第一次用到时才生成（见 Login）
+var (
+	dummyPasswordHashOnce sync.Once
+	dummyPasswordHash     string
+)
+
 func (s *AuthService) InitAdmin(username, password string) (*model.User, error) {
 	// 先在锁外判一次：已初始化的面板直接拒，返回顺序与原来一致；拿到锁后还要再判一次才算数。
 	if !s.NeedInit() {
@@ -85,15 +91,23 @@ func (s *AuthService) Login(username, password, totpCode string) (*model.User, s
 
 	var user model.User
 	if err := database.DB.Where("username = ?", username).First(&user).Error; err != nil {
+		// 用户不存在也照样跑一次 bcrypt 比对：否则「查无此人」几毫秒就返回、「密码错」要几十毫秒，
+		// 按响应耗时就能判断账号是否存在。占位哈希用同一个 crypto.HashPassword 生成，cost 自然一致
+		dummyPasswordHashOnce.Do(func() {
+			dummyPasswordHash, _ = crypto.HashPassword("daidai-panel-login-timing-placeholder")
+		})
+		crypto.CheckPassword(password, dummyPasswordHash)
 		return nil, "", "", nil, nil, ErrUserNotFound
-	}
-
-	if !user.Enabled {
-		return nil, "", "", nil, nil, ErrUserDisabled
 	}
 
 	if !crypto.CheckPassword(password, user.Password) {
 		return nil, "", "", nil, nil, ErrInvalidPassword
+	}
+
+	// 禁用判断放在密码校验之后：密码错一律回「用户名或密码错误」，
+	// 只有密码对了才告诉对方账号已禁用，不能凭「账号已被禁用」的提示探测出哪些账号存在
+	if !user.Enabled {
+		return nil, "", "", nil, nil, ErrUserDisabled
 	}
 
 	if IsTwoFactorEnabled(user.ID) {

@@ -234,6 +234,14 @@ func (h *SecurityHandler) Setup2FA(c *gin.Context) {
 		return
 	}
 
+	// SetupTwoFactor 会把记录重置成「新密钥 + 未启用」：如果放任已启用的账号再调一次，
+	// 只凭一个登录会话、不用动态码就能把两步验证悄悄关掉，绕过 Disable2FA 的验码。
+	// 网页和 APP 都只在未启用时才显示「设置」按钮，所以这里直接拒绝，要重新绑定先走关闭流程。
+	if service.IsTwoFactorEnabled(user.ID) {
+		response.BadRequest(c, "两步验证已启用，如需重新绑定请先关闭")
+		return
+	}
+
 	secret, uri, err := service.SetupTwoFactor(user.ID)
 	if err != nil {
 		response.InternalError(c, "设置 2FA 失败")

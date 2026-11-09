@@ -36,7 +36,7 @@ go test ./...
 如果本次修改没有对应测试覆盖点，也要在结果里明确说明还有哪些残余风险。
 
 - 用例修改任何包级全局，必须用 `t.Cleanup` 还原；能在 `testutil.SetupTestEnv` 里统一重置的优先放那里。
-- `testutil.SetupTestEnv` 在进入与退出时都会把 middleware 可信代理重置回默认私网段；想验证「可信代理改窄后的行为」的用例，必须在 `SetupTestEnv` **之后**自己配置。
+- `testutil.SetupTestEnv` 在进入与退出时都会把 middleware 可信代理重置回默认值——v3.4.4 起默认**只信任本机**（`127.0.0.1/32`、`::1/128`）。用例要模拟「私网反代转发」时，必须在 `SetupTestEnv` **之后**显式 `middleware.ConfigureTrustedProxyCIDRs("192.168.0.0/16")`，并在 `t.Cleanup` 里 `ConfigureTrustedProxyCIDRs("")` 还原；别依赖「私网默认可信」。
 
 ---
 
@@ -3265,7 +3265,11 @@ var quarantinedScriptDirNames = map[string]bool{
 - 2FA 挑战响应含 captcha 上下文字段
 - 2FA 中间态**不**产生失败登录日志，totp 错误**会**产生
 - 两个路由前缀限流各自独立计数
-- 现成工具：`service.GenerateCurrentTOTPForTest`
+- 现成工具：`service.GenerateCurrentTOTPForTest`；v3.4.4 起还有 `GenerateNextTOTPForTest`（下一个时间步的码）
+- 🔴 v3.4.4 起 TOTP **一码一次**：`service.ValidateUserTOTP` / `VerifyAndEnableTwoFactor` 校验通过即记下该用户已用的时间步（进程内，`step > lastUsed` 才算数，校验与记录在同一把锁里）。
+  所以同一用例里「启用 2FA → 用同一个码登录 / 关闭」会 401/400；第二步要用 `GenerateNextTOTPForTest`。
+  前端凡是「把码交给后端且后端已验过」之后还留着弹窗允许重试的（例：添加通行密钥的 begin 成功后用户取消系统弹窗），**必须清空验证码框并提示换新码**，否则重试必回 `invalid_totp`。
+  `POST /security/2fa/setup` 在 2FA 已启用时回 400，不能借它绕过「关闭需验证码」。
 - ⚠️ 测账号锁定时**直接播种 `model.LoginAttempt` 行**，不要连发 5 次错误登录——
   第 6 个请求会先被 `RateLimit(5, time.Minute)` 挡住并返回**同样的 429**，
   断言就变成在测限流器而不是锁定逻辑。
@@ -6346,3 +6350,51 @@ if claims.NotifyOnly && !(c.Request.Method == http.MethodPost && notifyOnlyAllow
 
 - 以后新增解析令牌的入口（JWTAuth 与 MCP 之外），必须同样检查 `NotifyOnly`；新增执行任务的路径，必须传 `TaskRuntimeEnvScope(task)`；
   内置 helper 将来要调新接口时，先把它加进放行表，否则「指定」任务里的通知会被 403。
+
+---
+
+## 场景：公开入口的客户端 IP、限流与防重放（v3.4.4，安全审计 H-1 / H-2 / M-1 / M-2）
+
+### 1. Scope / Trigger
+- 新增或修改任何**免登录入口**（登录、触发链接、企业微信回调、开放 API 取令牌）、任何**按客户端 IP 判定**的逻辑（限流、锁定、白名单、登录日志）时适用。
+
+### 2. Signatures
+- 客户端 IP：`middleware.ResolveClientIP(c)`；可信代理默认 `netutil.DefaultTrustedProxyCIDRs()` = `127.0.0.1/32`、`::1/128`（旧默认含三个私网段，见 database-guidelines「一次性标记」）。
+- 登录用户名口径：`handler.Login` 入口 `username := validator.SanitizeString(req.Username)`，锁定 / 验证码 / 失败计数 / 登录日志 / 清计数 / `authService.Login` 全用它；`loginAttemptUsername` 先 TrimSpace 再截断。
+- 触发链接：`OpenAPIHandler.acceptTaskTrigger(taskID)`，同一任务受理后 10 秒冷却（`taskTriggerCooldown`），只在受理时写时间。
+- 企业微信回调：验签后 `timestamp` 偏差 > 300 秒 → 401；`sha256(trigger.ID|timestamp|nonce|encrypt)` 与 `trigger.ID|MsgId` 两种指纹 10 分钟去重，命中回 200 空串不执行。
+
+### 3. Contracts
+- 容器内 nginx 经回环转发，`X-Forwarded-For` 最右侧是 nginx 看到的对端；宿主机反代后面的用户要自己把反代地址填进「可信代理 CIDR」，否则全员共用反代 IP。
+- 触发链接验签后按 subject `app:<app_key>` 回查应用：不存在 / 已禁用 → 与票据无效同一口径 401「链接已失效」；任务 `Status == TaskStatusDisabled` → 403。
+
+### 4. Validation & Error Matrix
+- 私网对端 + 伪造 XFF → 取对端地址（白名单 403、日志记对端）
+- `"admin "` 在 `"admin"` 被锁后 → 429 `account_locked`
+- 触发链接 10 秒内第二次 → 429「操作太频繁」；垃圾票 → 401，**不占任何额度**
+- 企业微信旧报文（>300s）→ 401；同报文 / 同 MsgId 重投 → 200 空串、不执行
+
+### 5. Good/Base/Bad Cases
+- Good：限流放在鉴权 / 验签**之后**，key 是已认证的资源（任务 ID）。
+- Base：登录限流按 IP（`RateLimit(5, time.Minute)`），这是唯一可接受的「验证前按 IP 限流」，因为登录本身就是验证。
+- Bad：在验签前用共享 key（IP）挂 `middleware.RateLimiter`——反代后面所有人共用一个 IP，匿名请求就能让全员一直 429。
+
+### 6. Tests Required
+- `middleware/client_ip_default_trust_test.go`：默认配置下 192.168 / 10 / 172.17 对端伪造 XFF 不生效；回环对端取 XFF 最右侧非可信地址。
+- `handler/auth_login_hardening_test.go`：带空白的用户名共用锁定。
+- `handler/task_trigger_hardening_test.go`：禁用任务 403、禁用 / 删除应用 401、垃圾票不限流、被拒的点击不延长冷却（用 `SetTaskTriggerClockForTest` 拨表，不真睡）。
+- `handler/wecom_callback_replay_test.go`：重放只执行一次、换 nonce 同 MsgId 只执行一次、±310 秒 401。用例的 timestamp 必须取当前时间、nonce / MsgId 每次递增，否则会撞去重表。
+
+### 7. Wrong vs Correct
+#### Wrong
+```go
+// middleware.RateLimiter 是滑动窗口：被拒的请求也会刷新 lastSeen，持续刷就永远不放行
+if !h.triggerByIP.Allow(middleware.ResolveClientIP(c)) { /* 429 */ }
+subject, err := trigticket.Verify(...)
+```
+#### Correct
+```go
+subject, err := trigticket.Verify(...) // 先验签，垃圾票零成本
+// ……应用 / 开关 / 任务状态校验……
+if !h.acceptTaskTrigger(uint(taskID)) { /* 429，只有受理才记时间 */ }
+```

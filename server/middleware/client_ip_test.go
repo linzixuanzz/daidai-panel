@@ -5,10 +5,15 @@ import (
 	"testing"
 )
 
+// v3.4.4 起私网段不再默认可信（审计 H-2），这条用例验证的是「用户显式把私网段配成可信代理」时
+// 从内网反代取 XFF 的行为，所以要先自己配上私网段，跑完恢复默认。
 func TestResolveClientIPFromRequestUsesForwardedIPFromTrustedLocalProxy(t *testing.T) {
-	if err := ConfigureTrustedProxyCIDRs(""); err != nil {
-		t.Fatalf("reset trusted proxies: %v", err)
+	if err := ConfigureTrustedProxyCIDRs("127.0.0.1/32\n::1/128\n10.0.0.0/8\n172.16.0.0/12\n192.168.0.0/16"); err != nil {
+		t.Fatalf("configure private trusted proxies: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = ConfigureTrustedProxyCIDRs("")
+	})
 
 	req := httptest.NewRequest("GET", "http://example.com/ping", nil)
 	req.RemoteAddr = "192.168.1.2:34567"

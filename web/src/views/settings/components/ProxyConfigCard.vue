@@ -148,11 +148,16 @@ const binaryProxyOptions = [
         v-model="form.trusted_proxy_cidrs"
         type="textarea"
         :rows="5"
-        placeholder="127.0.0.1/32&#10;10.0.0.0/8&#10;203.0.113.10"
+        placeholder="127.0.0.1/32&#10;::1/128&#10;172.17.0.1"
       />
+      <!-- v3.4.4（审计 H-2）起默认只信任本机：私网段默认可信时，经 Docker 网桥 / 内网反代进来的请求
+           能随手伪造 X-Forwarded-For，绕过 IP 白名单和登录限流。代价是反代后面的用户要自己把反代地址填进来，
+           这里把「填什么、不填会怎样、填错进不去怎么办」一次讲清楚。 -->
       <span class="form-hint">
-        支持 IP、CIDR、逗号或换行分隔。留空会恢复默认私网段与本机地址；保存后客户端 IP 解析会按这份列表判断可信代理。
+        支持 IP、CIDR、逗号或换行分隔。留空恢复默认（只信任本机）。
+        面板在宿主机 nginx、宝塔、Lucky 等反代后面时，把反代访问面板时的来源地址填进来（Docker 默认网桥一般是 172.17.0.1，不确定就填 172.16.0.0/12），否则登录日志、限流看到的都是反代地址。
         经 Cloudflare 等 CDN 访问时，把 CDN 的回源 IP 段也填进来，面板会从 X-Forwarded-For 里取出真实访客 IP（不再读取 CF-Connecting-IP 这类可被伪造的请求头）。
+        开了 IP 白名单后进不去面板，在服务器上执行 ddp ip-whitelist clear 清空白名单（Docker 部署前面加 docker exec -it daidai-panel）。
       </span>
     </div>
 

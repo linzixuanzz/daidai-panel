@@ -577,7 +577,7 @@ panel.add_or_update_env(
         method: 'POST',
         path: '/api/security/2fa/setup',
         title: '生成两步验证密钥',
-        description: '为当前登录用户生成新的 TOTP 密钥并返回 otpauth 链接。此时两步验证仍处于「未启用」状态，需要再调用 /api/security/2fa/verify 输入动态码确认后才真正生效。重复调用会覆盖上一次尚未确认的密钥。',
+        description: '为当前登录用户生成新的 TOTP 密钥并返回 otpauth 链接。此时两步验证仍处于「未启用」状态，需要再调用 /api/security/2fa/verify 输入动态码确认后才真正生效。重复调用会覆盖上一次尚未确认的密钥。两步验证已启用时调用会返回 400「两步验证已启用，如需重新绑定请先关闭」，不会改动现有密钥；要换绑请先调用 DELETE /api/security/2fa 关闭。',
         auth: 'jwt',
         responseExample: JSON.stringify({
           data: {
@@ -2104,7 +2104,7 @@ if __name__ == '__main__':
         method: 'POST',
         path: '/api/open-api/apps/:id/task-trigger-link',
         title: '生成企业微信触发链接',
-        description: '为某个任务签发一条「点一下就执行」的长期链接，用来配到企业微信自建应用的菜单里（issue #145）。需要管理员登录令牌。返回的 url 是完整地址（按当前请求的 Host 与 X-Forwarded-Proto 推导），path 是同一条地址的相对形式。⚠️ 这条链接长期有效且无需登录，等同于这一个任务的永久触发权，只应配置到企业微信菜单里，不要贴进聊天或工单；它会留在企业微信服务器、内置浏览器历史与反向代理访问日志里。票据用 HMAC-SHA256 签名，签名原文里含任务 ID，所以改 URL 上的 task_id 一定验签失败，一张票挪不到别的任务上。需要止血时调用「作废全部企业微信触发链接」。应用不存在返回 404「应用不存在」，任务不存在返回 404「任务不存在」。',
+        description: '为某个任务签发一条「点一下就执行」的长期链接，用来配到企业微信自建应用的菜单里（issue #145）。需要管理员登录令牌。返回的 url 是完整地址（按当前请求的 Host 与 X-Forwarded-Proto 推导），path 是同一条地址的相对形式。⚠️ 这条链接长期有效且无需登录，等同于这一个任务的永久触发权，只应配置到企业微信菜单里，不要贴进聊天或工单；它会留在企业微信服务器、内置浏览器历史与反向代理访问日志里。票据用 HMAC-SHA256 签名，签名原文里含任务 ID，所以改 URL 上的 task_id 一定验签失败，一张票挪不到别的任务上。需要止血时调用「作废全部企业微信触发链接」；禁用 / 删除签发它的应用，或禁用任务，链接也随即失效（v3.4.4 起）。应用不存在返回 404「应用不存在」，任务不存在返回 404「任务不存在」。',
         auth: 'jwt',
         pathParams: [{ name: 'id', type: 'integer', required: true, description: '开放 API 应用 ID，仅用于记录这条链接是以哪个应用的名义签发的' }],
         bodyParams: [{ name: 'task_id', type: 'integer', required: true, description: '要触发的任务 ID；票据只绑这一个任务' }],
@@ -2115,7 +2115,7 @@ if __name__ == '__main__':
             task_id: 1,
             task_name: '签到任务',
             app_name: '企业微信',
-            notice: '该链接长期有效且无需登录，请只配置到企业微信应用菜单里；需要作废时调用「作废全部触发链接」',
+            notice: '该链接长期有效且无需登录，请只配置到企业微信应用菜单里；需要作废时调用「作废全部触发链接」。禁用 / 删除签发它的应用，或禁用任务，链接随即失效',
           },
         }, null, 2),
         responseFields: [
@@ -2141,7 +2141,7 @@ if __name__ == '__main__':
         method: 'GET',
         path: '/api/open-api/trigger',
         title: '凭链接触发任务',
-        description: '企业微信菜单链接真正落地的那一下。这条路由刻意没有挂 JWT 中间件，只认 URL 上的 ticket —— 企业微信内置浏览器打开菜单链接时带不了 Authorization 头；换票接口是 POST /api/open-api/apps/:id/task-trigger-link（需要管理员），不是同路径的 -ticket 形式。防线是三层：①「系统设置 → 企业微信触发」的总开关未开返回 403；② 票据验签（无效、被改过 task_id、已被作废三种情况一律返回 401「链接已失效」，不区分原因以免被拿来探测）；③「允许企业微信触发执行」未开返回 403。三关都过才会执行任务，执行语义与 PUT /api/tasks/:id/run 完全一致。响应是一小段 HTML 而不是 JSON（企业微信会在内置浏览器里直接打开它），页面上只有一行「已触发：<任务名>」或失败原因，带 Cache-Control: no-store。',
+        description: '企业微信菜单链接真正落地的那一下。这条路由刻意没有挂 JWT 中间件，只认 URL 上的 ticket —— 企业微信内置浏览器打开菜单链接时带不了 Authorization 头；换票接口是 POST /api/open-api/apps/:id/task-trigger-link（需要管理员），不是同路径的 -ticket 形式。防线依次是：①「系统设置 → 企业微信触发」的总开关未开返回 403；② 票据验签（无效、被改过 task_id、已被作废、签发它的应用已被禁用或删除，这几种情况一律返回 401「链接已失效」，不区分原因以免被拿来探测）；③「允许企业微信触发执行」未开返回 403；④ 任务已禁用返回 403「任务已禁用」；⑤ 同一个任务受理后有 10 秒冷却，冷却内再点返回 429「操作太频繁」（冷却从上一次受理算起，被拒的点击不会延长冷却；/api 与 /api/v1 两套前缀共用）。不按客户端 IP 限流，无效票据只会得到 401，不会让别人的链接被挡住。全部通过才会执行任务，执行语义与 PUT /api/tasks/:id/run 完全一致。响应是一小段 HTML 而不是 JSON（企业微信会在内置浏览器里直接打开它），页面上只有一行「已触发：<任务名>」或失败原因，带 Cache-Control: no-store。',
         auth: 'ticket',
         queryParams: [
           { name: 'task_id', type: 'integer', required: true, description: '任务 ID，必须与签发时一致，改了一定验签失败', example: '1' },
@@ -2262,12 +2262,12 @@ Content-Type: text/plain; charset=utf-8
         method: 'POST',
         path: '/api/wecom/callback/:id',
         title: '企业微信消息回调（拉起任务）',
-        description: '企业微信把用户在应用里发的消息投到这里。面板先验 msg_signature、再用 EncodingAESKey 解密、再强制校验明文尾部 receiveid 与 CorpID 一致（这一步没有开关，漏了就等于任何人都能拉起任务），然后从文字消息的 Content 或菜单点击事件的 EventKey 里解指令。支持四种写法：「运行 签到任务」「运行签到任务」「run 12」「run 签到任务」；纯数字一律当任务 ID。命中后用接入配置绑定的开放 API 应用现铸一枚短期令牌，在进程内回放 PUT /api/v1/tasks/:id/run 或 POST /api/v1/tasks/run-by-name —— 也就是说 scope 校验、调用频率限制与「Open API」页面的调用日志全部照常生效，这条入口不比开放 API 多任何权限。还受两道闸门约束：「允许企业微信触发执行」未开时只验签不执行；每条接入配置可以再配任务白名单（留空=不限制）。回包口径：验签之前的失败按真实状态码回（403/404/401），验签之后一律回 200 + 空串 —— 企业微信要求 5 秒内响应、非 200 会重试三次，重试意味着同一条指令被执行三遍；任务执行结果走现有的「企业微信应用」通知渠道异步推回，不占这次响应。',
+        description: '企业微信把用户在应用里发的消息投到这里。面板先验 msg_signature、再用 EncodingAESKey 解密、再强制校验明文尾部 receiveid 与 CorpID 一致（这一步没有开关，漏了就等于任何人都能拉起任务），然后从文字消息的 Content 或菜单点击事件的 EventKey 里解指令。支持四种写法：「运行 签到任务」「运行签到任务」「run 12」「run 签到任务」；纯数字一律当任务 ID。命中后用接入配置绑定的开放 API 应用现铸一枚短期令牌，在进程内回放 PUT /api/v1/tasks/:id/run 或 POST /api/v1/tasks/run-by-name —— 也就是说 scope 校验、调用频率限制与「Open API」页面的调用日志全部照常生效，这条入口不比开放 API 多任何权限。还受两道闸门约束：「允许企业微信触发执行」未开时只验签不执行；每条接入配置可以再配任务白名单（留空=不限制）。防重放（v3.4.4 起）：timestamp 与服务器时间相差超过 300 秒的报文回 401 且不执行（服务器时间不准时正常消息也会被拒，请先校准时间）；10 分钟内重复投递的同一份报文、或同一个 MsgId（企业微信超时重试会换 nonce 重发）只执行一次，重复的回 200 空串。回包口径：验签之前的失败按真实状态码回（403/404/401），验签之后除上面的时间戳过期外一律回 200 + 空串 —— 企业微信要求 5 秒内响应、非 200 会重试三次，重试意味着同一条指令被执行三遍；任务执行结果走现有的「企业微信应用」通知渠道异步推回，不占这次响应。',
         auth: 'none',
         pathParams: [{ name: 'id', type: 'integer', required: true, description: '面板里那条企业微信接入配置的 ID' }],
         queryParams: [
           { name: 'msg_signature', type: 'string', required: true, description: '企业微信给出的签名' },
-          { name: 'timestamp', type: 'string', required: true, description: '时间戳' },
+          { name: 'timestamp', type: 'string', required: true, description: '时间戳（秒）；与服务器时间相差超过 300 秒回 401' },
           { name: 'nonce', type: 'string', required: true, description: '随机串' },
         ],
         bodyParams: [

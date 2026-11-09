@@ -21,8 +21,10 @@ import (
 // 抓下来的请求（方法、路径、关键请求头、请求体）。所以这里比的是「改动前的真实报文」，不是「新代码和自己的包装函数比」。
 // 以后若有意改变某个渠道的默认报文，要同时改这里的 golden，并在提交说明里写清楚为什么老行为可以变。
 //
-// 覆盖不到的渠道：igot / qmsg / pushover 的接口地址写死在代码里、无法指到 httptest，
-// 它们的发送函数这次也没有改动；pushplus 的地址改成了变量，在 notifier_content_format_test.go 里单独守；
+// 覆盖不到的渠道：igot / pushover 的接口地址写死在代码里、无法指到 httptest，
+// 它们的发送函数这次也没有改动；qmsg 在 v3.4.4 换成了 3.0 接口（报文本来就和老版本不同，不再适合比 golden），
+// 地址改成了包级变量 qmsgSendURL，由 notifier_qmsg_test.go 单独守；
+// pushplus 的地址改成了变量，在 notifier_content_format_test.go 里单独守；
 // serverchan 两代接口（Turbo 版、Server酱³）的地址后来也改成了包级变量，请求路径与请求体（title / desp）
 // 由 notifier_serverchan_test.go 守。
 

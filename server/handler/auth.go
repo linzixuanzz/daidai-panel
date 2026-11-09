@@ -107,9 +107,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	clientType := clientInfo.Type
 	clientName := service.SessionClientDisplayName(clientInfo)
 
-	locked, remaining := service.CheckLoginLock(ip, req.Username)
+	// 用户名在入口统一去掉首尾空白，后面的锁定判定、验证码判定、失败计数、登录日志、清计数和凭据校验全用这一个值。
+	// 以前锁定和计数用原始用户名、凭据校验才 TrimSpace：「admin」被锁后改填「admin 」就是另一行计数，
+	// 却仍能登进同一个账号，锁定形同虚设
+	username := validator.SanitizeString(req.Username)
+
+	locked, remaining := service.CheckLoginLock(ip, username)
 	if locked {
-		service.RecordLoginLog(0, req.Username, ip, clientName, ua, 1, "账号已锁定")
+		service.RecordLoginLog(0, username, ip, clientName, ua, 1, "账号已锁定")
 		remainSec := int(remaining.Seconds())
 		c.JSON(429, gin.H{
 			"error":             fmt.Sprintf("账号已锁定，请 %.0f 分钟后重试", remaining.Minutes()),
@@ -121,13 +126,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if !service.IsIPWhitelisted(ip) {
-		service.RecordLoginLog(0, req.Username, ip, clientName, ua, 1, "IP 不在白名单")
+		service.RecordLoginLog(0, username, ip, clientName, ua, 1, "IP 不在白名单")
 		response.Forbidden(c, "当前 IP 不在登录白名单中")
 		return
 	}
 
 	captchaCfg := service.GetCaptchaRuntimeConfig()
-	if service.IsCaptchaRequired(ip, req.Username) {
+	if service.IsCaptchaRequired(ip, username) {
 		verifyResult, err := service.VerifyLoginCaptcha(req.Captcha)
 		if err != nil {
 			switch err {
@@ -174,7 +179,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		}
 	}
 
-	user, accessToken, refreshToken, accessInfo, refreshInfo, err := h.authService.Login(req.Username, req.Password, req.TOTPCode)
+	user, accessToken, refreshToken, accessInfo, refreshInfo, err := h.authService.Login(username, req.Password, req.TOTPCode)
 	if err == nil {
 		err = commitLoginSession(user, accessInfo, refreshInfo, clientType, clientName, ip, ua)
 		if err == errLoginSessionNotCreated {
@@ -185,8 +190,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if err != nil {
 		switch err {
 		case service.ErrUserNotFound, service.ErrInvalidPassword:
-			failedAttempts := service.RecordFailedLogin(ip, req.Username)
-			service.RecordLoginLog(0, req.Username, ip, clientName, ua, 1, "登录失败")
+			failedAttempts := service.RecordFailedLogin(ip, username)
+			service.RecordLoginLog(0, username, ip, clientName, ua, 1, "登录失败")
 			c.JSON(401, gin.H{
 				"error":                  "用户名或密码错误",
 				"code":                   LoginCodeInvalidCredentials,
@@ -197,7 +202,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				"require_after_failures": captchaCfg.RequireAfterFailures,
 			})
 		case service.ErrUserDisabled:
-			service.RecordLoginLog(0, req.Username, ip, clientName, ua, 1, "登录失败")
+			service.RecordLoginLog(0, username, ip, clientName, ua, 1, "登录失败")
 			response.Forbidden(c, "账号已被禁用")
 		case service.ErrTOTPRequired:
 			// 「要码但还没给码」是登录流程的中间态：用户名密码都是对的，只是还差第二步。
@@ -217,7 +222,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			})
 		case service.ErrInvalidTOTP:
 			// 「给了码但错了」属于真失败，登录日志照记。
-			service.RecordLoginLog(0, req.Username, ip, clientName, ua, 1, "登录失败")
+			service.RecordLoginLog(0, username, ip, clientName, ua, 1, "登录失败")
 			c.JSON(401, gin.H{
 				"error":                  "两步验证码错误",
 				"code":                   LoginCodeInvalidTOTP,
@@ -228,14 +233,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				"require_after_failures": captchaCfg.RequireAfterFailures,
 			})
 		default:
-			service.RecordFailedLogin(ip, req.Username)
-			service.RecordLoginLog(0, req.Username, ip, clientName, ua, 1, "登录失败")
+			service.RecordFailedLogin(ip, username)
+			service.RecordLoginLog(0, username, ip, clientName, ua, 1, "登录失败")
 			response.InternalError(c, "登录失败")
 		}
 		return
 	}
 
-	respondLoginSuccess(c, user, accessToken, refreshToken, req.Username, ip, clientName, ua, false)
+	respondLoginSuccess(c, user, accessToken, refreshToken, username, ip, clientName, ua, false)
 }
 
 // errLoginSessionNotCreated：会话行没落成，调用方回 500「登录失败」，不发令牌。
@@ -281,7 +286,7 @@ func commitLoginSession(user *model.User, accessInfo, refreshInfo *middleware.To
 
 // respondLoginSuccess 是密码登录与通行密钥登录共用的成功收尾：清失败计数、记登录日志、按需发登录通知、回令牌。
 // 响应体两边逐字段相同（message / access_token / refresh_token / user）。
-// attemptUsername 是清失败计数用的用户名：密码登录沿用请求里填的用户名（与改动前一致），通行密钥登录用账号本身的用户名。
+// attemptUsername 是清失败计数用的用户名：密码登录用去掉首尾空白后的用户名（与计数写入时同一口径），通行密钥登录用账号本身的用户名。
 // viaPasskey 为假时日志、通知文案与改动前逐字不变。
 func respondLoginSuccess(c *gin.Context, user *model.User, accessToken, refreshToken, attemptUsername, ip, clientName, ua string, viaPasskey bool) {
 	service.ClearLoginAttempts(ip, attemptUsername)
@@ -472,6 +477,15 @@ func (h *AuthHandler) UploadAvatar(c *gin.Context) {
 
 	if ext != ".webp" {
 		if _, _, err := image.DecodeConfig(file); err != nil {
+			response.BadRequest(c, "文件不是有效的图片")
+			return
+		}
+		file.Seek(0, io.SeekStart)
+	} else {
+		// 标准库没有 webp 解码器，走不了 DecodeConfig；至少核对文件头是「RIFF????WEBP」，
+		// 不让任意内容改个 .webp 后缀就落进头像目录
+		head := make([]byte, 12)
+		if _, err := io.ReadFull(file, head); err != nil || string(head[0:4]) != "RIFF" || string(head[8:12]) != "WEBP" {
 			response.BadRequest(c, "文件不是有效的图片")
 			return
 		}

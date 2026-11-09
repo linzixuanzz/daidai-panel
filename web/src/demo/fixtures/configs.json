@@ -816,8 +816,8 @@
       "value_type": "string"
     },
     "trusted_proxy_cidrs": {
-      "default_value": "127.0.0.1/32\n::1/128\n10.0.0.0/8\n172.16.0.0/12\n192.168.0.0/16",
-      "description": "可信代理 CIDR/IP 列表（逗号、空格或换行分隔）",
+      "default_value": "127.0.0.1/32\n::1/128",
+      "description": "可信代理 CIDR/IP 列表（逗号、空格或换行分隔）。留空只信任本机；面板在反代后面时，填反代访问面板的来源地址",
       "group": "network",
       "group_label": "网络代理",
       "label": "可信代理 CIDR",
@@ -825,7 +825,7 @@
       "registered": true,
       "secret": false,
       "updated_at": null,
-      "value": "127.0.0.1/32\n::1/128\n10.0.0.0/8\n172.16.0.0/12\n192.168.0.0/16",
+      "value": "127.0.0.1/32\n::1/128",
       "value_type": "string"
     },
     "update_image_mirror": {

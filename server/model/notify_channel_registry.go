@@ -456,7 +456,8 @@ var registeredNotifyChannels = []NotifyChannelDefinition{
 				{Value: "send", Label: "私聊/默认 (send)"},
 				{Value: "group", Label: "群发 (group)"},
 			}).withDefault("send"),
-			notifyInput("qq", "QQ 号/群号 (可选)", "留空则按 Qmsg 端默认配置发送"),
+			// 键名保持 qq 不改（兼容已存渠道）；Qmsg 3.0 里它只在群发时作为 group 参数发出（issue #179）。
+			notifyInput("qq", "QQ 群号（群发必填）", "群发时填群号，需先在 Qmsg 控制台添加并绑定该群；私聊发给 Key 绑定的 QQ"),
 		},
 	},
 	{

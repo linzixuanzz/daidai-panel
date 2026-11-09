@@ -42,8 +42,11 @@ func truncateRunes(value string, maxRunes int) string {
 
 // loginAttemptUsername 是失败计数表里用户名的统一口径：写入和查询都要截成同一个值，
 // 否则超长用户名写进去是截断后的，查的时候用原值就对不上。
+// 先去首尾空白再截断，与 AuthService.Login 查用户时的口径一致：「admin」与「admin 」登的是同一个账号，
+// 计数也必须落在同一行，不然加个空格就绕开了锁定。handler 入口已经去过一次，这里再兜一次，
+// 让 GetLoginAttemptCount 等其它调用方不管传进来的是什么都对得上
 func loginAttemptUsername(username string) string {
-	return truncateRunes(username, loginFieldMaxRunes)
+	return truncateRunes(strings.TrimSpace(username), loginFieldMaxRunes)
 }
 
 func RecordLoginLog(userID uint, username, ip, clientName, userAgent string, status int, message string) {

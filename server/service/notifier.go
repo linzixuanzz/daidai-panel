@@ -1607,25 +1607,42 @@ func sendIgot(cfg map[string]string, title, content string) error {
 	return httpPost(apiURL, body, nil)
 }
 
+// qmsgSendURL 是 Qmsg 3.0 的发送接口前缀（后面直接拼 Key）。做成变量只为了测试能指到 httptest。
+//
+// issue #179：旧接口 /send/{key}、/group/{key} 已返回「该接口即将废弃」，而且旧 /group 接口
+// 不认群号参数，用户选了群发、填了群号，消息照样进私聊。3.0 统一走 /v3/send/{key}，
+// 私聊发给 Key 绑定的 QQ，群发靠 group=<群号>（群要先在 Qmsg 控制台添加并绑定）。
+var qmsgSendURL = "https://qmsg.zendee.cn/v3/send/"
+
+// qmsgMaxMsgRunes 是 Qmsg 3.0 对 msg 的长度上限（按字符算）。
+const qmsgMaxMsgRunes = 1800
+
 func sendQmsg(cfg map[string]string, title, content string) error {
 	key := strings.TrimSpace(cfg["key"])
 	if key == "" {
 		return fmt.Errorf("Qmsg Key 为空")
 	}
 
-	mode := strings.ToLower(strings.TrimSpace(cfg["mode"]))
-	path := "send"
-	if mode == "group" {
-		path = "group"
+	msg := fmt.Sprintf("%s\n%s", title, content)
+	// 超长按字符截断而不是按字节：按字节切会把中文切成半个字，整条消息被对端判成非法编码。
+	if runes := []rune(msg); len(runes) > qmsgMaxMsgRunes {
+		msg = string(runes[:qmsgMaxMsgRunes])
 	}
 
-	apiURL := fmt.Sprintf("https://qmsg.zendee.cn/%s/%s", path, key)
 	form := url.Values{}
-	form.Set("msg", fmt.Sprintf("%s\n%s", title, content))
-	if qq := strings.TrimSpace(cfg["qq"]); qq != "" {
-		form.Set("qq", qq)
+	form.Set("msg", msg)
+	// 配置键名沿用旧的 qq，不改名：已经存下来的渠道配置不用迁移就能直接用。
+	// 私聊模式不再传 qq —— 3.0 没有这个参数，消息固定发给 Key 绑定的 QQ。
+	if strings.ToLower(strings.TrimSpace(cfg["mode"])) == "group" {
+		group := strings.TrimSpace(cfg["qq"])
+		if group == "" {
+			// 不填群号时 3.0 会把消息发进私聊，正是 #179 用户看到的「选了群发却收到私聊」，宁可直接报错。
+			return fmt.Errorf("群发模式需要填写 QQ 群号")
+		}
+		form.Set("group", group)
 	}
 
+	apiURL := qmsgSendURL + url.PathEscape(key)
 	req, err := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return err
@@ -1640,19 +1657,35 @@ func sendQmsg(cfg map[string]string, title, content string) error {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
-	}
 
+	// 不论 HTTP 状态先解析 JSON：3.0 的业务失败（例如 Key 不存在）回的是 HTTP 400 + JSON，
+	// 先按状态码报错只能看到一句「HTTP 400」，真正的原因在 message 里。
 	var result struct {
 		Success bool   `json:"success"`
+		Message string `json:"message"`
 		Reason  string `json:"reason"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
+		// 解析不了（网关错误页之类）才退回按 HTTP 状态报。
+		if resp.StatusCode >= 400 {
+			return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
 		return fmt.Errorf("Qmsg 返回无法解析: %s", strings.TrimSpace(string(body)))
 	}
 	if !result.Success {
-		return fmt.Errorf("Qmsg 发送失败: %s", strings.TrimSpace(result.Reason))
+		// 3.0 把原因放在 message；旧接口放在 reason，留着回退以防对端返回旧格式。
+		reason := strings.TrimSpace(result.Message)
+		if reason == "" {
+			reason = strings.TrimSpace(result.Reason)
+		}
+		if reason == "" {
+			reason = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		return fmt.Errorf("Qmsg 发送失败: %s", reason)
+	}
+	if resp.StatusCode >= 400 {
+		// success=true 却带着错误状态码，按失败算，免得把对端异常当成发送成功。
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	return nil

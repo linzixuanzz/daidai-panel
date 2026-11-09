@@ -16,7 +16,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"daidai-panel/database"
 	"daidai-panel/model"
@@ -100,13 +102,19 @@ func mustCreateWecomTask(t *testing.T, name string) *model.Task {
 	return task
 }
 
+// wecomTestSeq 给每条测试消息发一个不重复的 nonce / MsgId。
+// 回调的去重表是包级、跨用例共享的（v3.4.4 防重放），写死同一个值的话，
+// 后面的用例（以及 -count=2 的第二轮）会被当成重放直接忽略。
+var wecomTestSeq atomic.Int64
+
 // postWecomMessage 把一段业务 XML 按企业微信的规矩加密、算签名，再打到回调路由上。
 func postWecomMessage(t *testing.T, engine http.Handler, path string, trigger *model.WecomTrigger, receiveID, innerXML string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	encrypted := encryptWecomMessage(t, trigger.EncodingAESKey, receiveID, innerXML)
-	timestamp := "1700000000"
-	nonce := "123456"
+	// 时间戳必须是「现在」：v3.4.4 起回调会拒掉与服务器时间相差超过 300 秒的报文。
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	nonce := strconv.FormatInt(wecomTestSeq.Add(1), 10)
 	signature := wecomSignature(trigger.CallbackToken, timestamp, nonce, encrypted)
 
 	body := fmt.Sprintf(`<xml><ToUserName><![CDATA[%s]]></ToUserName><AgentID><![CDATA[%s]]></AgentID><Encrypt><![CDATA[%s]]></Encrypt></xml>`,
@@ -127,7 +135,7 @@ func postWecomMessage(t *testing.T, engine http.Handler, path string, trigger *m
 func wecomTextMessage(content string) string {
 	return fmt.Sprintf(`<xml><ToUserName><![CDATA[%s]]></ToUserName><FromUserName><![CDATA[zhangsan]]></FromUserName>`+
 		`<CreateTime>1700000000</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[%s]]></Content>`+
-		`<MsgId>1234567890123456</MsgId><AgentID>1000002</AgentID></xml>`, wecomTestCorpID, content)
+		`<MsgId>%d</MsgId><AgentID>1000002</AgentID></xml>`, wecomTestCorpID, content, 1234567890123456+wecomTestSeq.Add(1))
 }
 
 func wecomMenuEvent(eventKey string) string {

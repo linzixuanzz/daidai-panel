@@ -101,11 +101,19 @@ async function confirmAdd() {
     return
   }
   adding.value = true
+  // 这一轮有没有把两步验证码交给后端并通过：后端验过就作废（一个码只能用一次），
+  // 之后不管是取消还是失败，重试都得换下一个码
+  let totpConsumed = false
   try {
     const begin = await securityApi.passkeyRegisterBegin(
       addForm.value.password,
       twoFAEnabled.value ? totpCode : undefined
     )
+    // 拿到挑战就说明验证码已经用掉了，立刻清空，免得重试时把作废的码又交上去被回「验证码错误」
+    if (twoFAEnabled.value) {
+      totpConsumed = true
+      addForm.value.totpCode = ''
+    }
     const credential = await navigator.credentials.create({
       publicKey: toCreationOptions(begin.data?.options)
     })
@@ -126,14 +134,19 @@ async function confirmAdd() {
   } catch (err: any) {
     // 系统弹窗里取消 / 超时：只提示一句，弹窗留着方便再试
     if (isPasskeyCancelError(err)) {
-      ElMessage.info('已取消')
+      ElMessage.info(totpConsumed ? '已取消。两步验证码只能用一次，请输入新的验证码后重试' : '已取消')
       return
     }
     // 打开时没查到「已开启两步验证」（状态刚变或查询失败），后端说要验证码：把验证码框补出来
     if (err?.response?.data?.code === 'two_factor_required') {
       twoFAEnabled.value = true
     }
-    ElMessage.error(resolvePasskeyErrorMessage(err, '添加通行密钥失败'))
+    const message = resolvePasskeyErrorMessage(err, '添加通行密钥失败')
+    // 验证码已在拿挑战时用掉，失败后也要提醒换新码，不然用户会以为是原来那个码填错了
+    // 去掉原句末尾的句号再拼，免得出现「。。」
+    ElMessage.error(
+      totpConsumed ? `${message.replace(/[。.!！]+$/, '')}。两步验证码只能用一次，请输入新的验证码后重试` : message
+    )
   } finally {
     adding.value = false
   }
