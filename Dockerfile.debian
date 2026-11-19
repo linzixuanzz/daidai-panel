@@ -39,7 +39,21 @@ ARG PYTHON_RUNTIME_MODE=single
 ARG PYTHON_RUNTIME_VERSION=3.12
 ARG INSTALL_FULL_TOOLS=false
 
+# nginx 改走 nginx.org 官方 stable 源：截至 2026-11-19，Debian bookworm 安全源还没有 NGINX2Root 修复，
+# nginx.org 源已有 1.30.7-1~bookworm。
+# 密钥存成 ASCII 格式 + .asc 后缀，apt 直接认，不用额外装 gnupg。
+# Pin-Priority 900 让 nginx 只从 nginx.org 装，不会被 Debian 自带的 1.22 覆盖。
+# nginx.org 的 bookworm 源只有 amd64 / arm64；Debian 镜像以后加平台，要先确认源里有对应架构。
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && curl -fsSL https://nginx.org/keys/nginx_signing.key -o /usr/share/keyrings/nginx-archive-keyring.asc \
+    && echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.asc] https://nginx.org/packages/debian bookworm nginx" \
+       > /etc/apt/sources.list.d/nginx.list \
+    && printf 'Package: *\nPin: origin nginx.org\nPin: release o=nginx\nPin-Priority: 900\n' \
+       > /etc/apt/preferences.d/99nginx \
+    && rm -rf /var/lib/apt/lists/*
+
 # Debian 精简镜像不安装发行版 Python，所有架构统一使用独立 Python 运行时。
+# 末尾的 nginx 版本门禁：nginx.org 源的 NGINX2Root 修复版本是 1.30.7，取不到版本或低于它直接构建失败。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates tzdata bash curl \
     libstdc++6 libgcc-s1 \
@@ -74,6 +88,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     esac \
     && if dpkg-query -W -f='${db:Status-Abbrev}' python3 2>/dev/null | grep -q '^ii' || command -v python3 >/dev/null 2>&1; then \
       echo "Debian 镜像必须只保留独立 Python，但系统 python3 包已被其他依赖引入" >&2; \
+      exit 1; \
+    fi \
+    && nginx_ver="$(dpkg-query -W -f='${Version}' nginx)" \
+    && echo "nginx 包版本：${nginx_ver}" \
+    && if ! dpkg --compare-versions "${nginx_ver}" ge 1.30.7; then \
+      echo "nginx ${nginx_ver} 未包含 NGINX2Root 修复，需要 >= 1.30.7" >&2; \
       exit 1; \
     fi \
     && rm -rf /var/lib/apt/lists/*

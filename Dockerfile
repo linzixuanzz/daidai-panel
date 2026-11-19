@@ -40,13 +40,26 @@ ARG PYTHON_RUNTIME_VERSION=3.12
 ARG INSTALL_FULL_TOOLS=false
 
 # 精简镜像只保留面板运行、脚本执行、仓库订阅和容器降权所需工具。
+# nginx 版本门禁：NGINX2Root（CVE-2026-123007 等）在 Alpine 3.23 的修复版本是 1.28.3-r8。
+# 用 apk 查包版本，因为 `nginx -v` 修复前后都只显示 1.28.3，看不出 -r 修订号。
+# 只有比较结果是 = 或 > 才放行，取不到版本、比较报错一律构建失败，防止命中旧缓存层或某个架构的镜像源滞后，
+# 悄悄发出带漏洞的镜像。某个架构因 Alpine 构建机滞后而失败时，等上游补齐后重跑 job，不要删门禁。
 RUN apk add --no-cache \
     ca-certificates tzdata bash curl \
     gcompat libstdc++ \
     nginx \
     nodejs npm \
     git openssh-client-default \
-    su-exec shadow
+    su-exec shadow \
+    && nginx_ver="$(apk list -I nginx 2>/dev/null | awk '{print $1}' | sed 's/^nginx-//')" \
+    && echo "nginx 包版本：${nginx_ver}" \
+    && case "$(apk version -t "${nginx_ver}" 1.28.3-r8 2>/dev/null)" in \
+      "="|">") ;; \
+      *) \
+        echo "nginx ${nginx_ver} 未包含 NGINX2Root 修复，需要 >= 1.28.3-r8" >&2; \
+        exit 1; \
+        ;; \
+    esac
 
 # 完整版才安装 Go、Docker CLI、下载工具与原生扩展编译链。
 # Alpine 基础镜像自带 BusyBox wget，精简档必须显式移除这个入口。

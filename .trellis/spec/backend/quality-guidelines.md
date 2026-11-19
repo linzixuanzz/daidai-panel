@@ -1308,6 +1308,9 @@ pythonVersion.value = resolveDisplayPythonVersion(
 - Alpine 的 `latest-3.10`、`latest-3.11`、`latest-all` 只发布 `amd64 / arm64`；如果某个平台没有 python-build-standalone 资产，脚本必须失败而不是回退成错误版本。默认 `latest` / `latest-full` 可以在 32 位平台使用经过小版本校验的发行版 Python 3.12。
 - Debian 所有变体和 Alpine 64 位变体只使用 `/opt/daidai-python` 独立运行时；all 镜像只能有三套目标 Python，不能再附带系统 Python。
 - 六个旧无连字符浮动标签和 Debian 旧固定版本格式必须与新标签由同一个 build-push 矩阵项推送，不能增加重复构建任务。
+- 镜像内置 nginx 必须过版本门禁（v3.4.5 起，NGINX2Root）：Alpine 在第一个 `apk add` 的同一 RUN 里用 `apk list -I nginx` 取包版本（`nginx -v` 看不出 `-rN`），`apk version -t` 只有 `=` / `>` 放行；Debian 的 nginx 走 nginx.org stable 源（Pin 900），门禁用 `dpkg --compare-versions ... ge`。门禁一律 fail-closed，取不到版本也算失败。
+- 门禁下限只能往上调。上游出新的 nginx 安全版本时，同时改门禁下限和该 RUN 的文本：release 用 registry inline cache，RUN 文本不变且基础镜像 digest 不变时会复用旧的包安装层。
+- nginx.org 的 Debian 源只有 amd64 / arm64；Debian 镜像要加平台，先确认源里有该架构。
 - 精简镜像的页面手动更新、静默自动更新和 `ddp update` 统一调用 Watchtower HTTP API；请求必须使用 `async=true` 并精确限定当前容器，202 纯文本响应也属于“已接管”成功态。
 - Watchtower 只能刷新容器当前镜像引用。官方固定版本标签和 digest 必须禁用一键/自动更新并提示切换到同族浮动标签，不能把“请求已接管”误报成能够跨版本升级。
 - Compose 的实际 `image` 与容器内 `IMAGE_NAME` 必须共用 `DAIDAI_PANEL_IMAGE`；Watchtower API 地址使用稳定服务名 `http://watchtower:8080`。
@@ -1322,6 +1325,7 @@ pythonVersion.value = resolveDisplayPythonVersion(
 - `PYTHON_RUNTIME_VERSION` 不是 `3.10|3.11|3.12` -> 构建失败，不得回退到 3.12。
 - 独立 Python patch 版本、pip 或 venv 校验失败 -> 构建失败，不得发布该标签。
 - 64 位或 Debian 镜像检测到系统 `python3` -> 构建失败，防止双 Python 回归。
+- nginx 包版本低于门禁下限或取不到 -> 构建失败。某个架构因发行版构建机滞后而失败时，等上游补齐后 `gh run rerun --failed`，不要删门禁；`docker-debian` 依赖 `docker-alpine`，而 `release` 先于 Docker 任务发出 Release，所以要等所有架构都有修复包再打 tag。
 - 精简镜像检测到 Go、gofmt、Docker CLI、wget 或编译链 -> 构建失败。
 - Watchtower 缺 URL / token -> 禁用手动触发并给出缺失配置提示；定时轮询状态仍可展示。
 - 官方固定版本标签或 digest 使用 Watchtower -> 禁用一键 / 自动更新，提示切换到同族浮动标签。
