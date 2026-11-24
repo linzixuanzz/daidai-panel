@@ -96,6 +96,7 @@ func run(outDir string) error {
 //	:64-67  default_value / value_type / group，并用 def.Description 覆盖上面那个空串
 //	:73-75  label / group_label / order
 //	:80     secret（无论真假都写，不是 omitempty）
+//	        web_only 仅在注册表标了 true 时才有（网页请求口径；APP 请求时 List 整项跳过）
 //	:81-86  min / max 仅在注册表给了区间时才有
 //	:87-89  cfg == nil ⇒ value 回落 def.DefaultValue —— 这就是「全新安装态」，Demo 要的正是它
 //	:90-92  options 仅在注册表给了枚举项时才有
@@ -123,6 +124,11 @@ func buildFreshInstallConfigItems() map[string]any {
 			"label":         def.Label,
 			"order":         def.Order,
 			"secret":        def.Secret,
+		}
+		// web_only 只在为 true 时才写（buildConfigResponseItem 同样只在 true 时下发）。
+		// Demo 是网页端，按网页请求的口径复刻：web_only 项照常出现，APP 请求时整项不下发的分支这里用不上。
+		if def.WebOnly {
+			item["web_only"] = true
 		}
 		if def.Min != nil {
 			item["min"] = *def.Min
@@ -158,6 +164,7 @@ var configItemKeyForDefinitionField = map[string]string{
 	"min":           "min",
 	"max":           "max",
 	"options":       "options",
+	"web_only":      "web_only",
 }
 
 // assertConfigItemsCoverDefinition 拦截「注册表演进了、生成器没跟上」这一类漂移。

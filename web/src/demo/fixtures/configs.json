@@ -607,7 +607,8 @@
       "secret": false,
       "updated_at": null,
       "value": "",
-      "value_type": "string"
+      "value_type": "string",
+      "web_only": true
     },
     "panel_background_effect": {
       "default_value": "theme",
@@ -642,7 +643,8 @@
       "secret": false,
       "updated_at": null,
       "value": "theme",
-      "value_type": "enum"
+      "value_type": "enum",
+      "web_only": true
     },
     "panel_background_image": {
       "default_value": "",
@@ -655,7 +657,8 @@
       "secret": false,
       "updated_at": null,
       "value": "",
-      "value_type": "string"
+      "value_type": "string",
+      "web_only": true
     },
     "panel_custom_css": {
       "default_value": "",
@@ -668,7 +671,8 @@
       "secret": false,
       "updated_at": null,
       "value": "",
-      "value_type": "string"
+      "value_type": "string",
+      "web_only": true
     },
     "panel_density": {
       "default_value": "cozy",
@@ -695,7 +699,8 @@
       "secret": false,
       "updated_at": null,
       "value": "cozy",
-      "value_type": "enum"
+      "value_type": "enum",
+      "web_only": true
     },
     "panel_glass_blur": {
       "default_value": "",
@@ -708,7 +713,8 @@
       "secret": false,
       "updated_at": null,
       "value": "",
-      "value_type": "string"
+      "value_type": "string",
+      "web_only": true
     },
     "panel_icon": {
       "default_value": "",
@@ -854,7 +860,8 @@
       "secret": false,
       "updated_at": null,
       "value": "aurora",
-      "value_type": "enum"
+      "value_type": "enum",
+      "web_only": true
     },
     "panel_title": {
       "default_value": "呆呆面板",

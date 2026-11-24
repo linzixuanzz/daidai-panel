@@ -1492,9 +1492,13 @@ async function handlePin(task: any) {
 function taskActionItems(row: any, options: { alwaysShowDetail?: boolean } = {}): SplitButtonItem[] {
   const op = canOperateTasks.value
   const switchOn = isTaskSwitchOn(row)
+  // 「打开脚本」（issue #180，打开后编辑器是只读查看，和桌面点脚本名一样，所以不叫「编辑脚本」）：移动端卡片不显示命令，没有桌面命令列那个脚本名链接，从这里补一个入口。
+  // 只有命令里能认出脚本路径时才出现；脚本页最低要 operator，所以和其它操作一样按 op 收权限。
+  const hasScript = Boolean(splitTaskCommandDisplay(row.command).script)
   return [
     { key: 'toggle', label: switchOn ? '禁用' : '启用', danger: switchOn, success: !switchOn, visible: op },
     { key: 'edit', label: '编辑', visible: op },
+    { key: 'editScript', label: '打开脚本', visible: op && hasScript },
     { key: 'detail', label: '详情', visible: op || options.alwaysShowDetail === true },
     { key: 'logFiles', label: '日志文件' },
     { key: 'copy', label: '复制', visible: op },
@@ -1508,6 +1512,11 @@ function taskActionItems(row: any, options: { alwaysShowDetail?: boolean } = {})
 function onTaskAction(key: string, row: any) {
   if (key === 'toggle') handleToggle(row)
   else if (key === 'edit') openEdit(row)
+  else if (key === 'editScript') {
+    // 菜单项只在认出脚本时才显示，这里再取一次是防止点击前命令刚被轮询改掉
+    const script = splitTaskCommandDisplay(row.command).script
+    if (script) navigateToScript(script)
+  }
   else if (key === 'detail') openDetail(row)
   else if (key === 'logFiles') openLogFiles(row)
   else if (key === 'copy') handleCopy(row)

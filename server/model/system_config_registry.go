@@ -55,6 +55,24 @@ type SystemConfigDefinition struct {
 	Min     *int                 `json:"min,omitempty"`
 	Max     *int                 `json:"max,omitempty"`
 	Options []SystemConfigOption `json:"options,omitempty"`
+	// WebOnly 标记只被网页端消费的配置项（v4.0 主题工坊那 7 项）。
+	// GET /api/configs 识别出请求来自 APP 时整项不下发（见 handler.ConfigHandler.List）：
+	// APP 设置页按 schema 通用渲染，背景图是几 MB 的 data URL、自定义 CSS 是大段文本，
+	// 下发过去既没用又会把已装在手机上的旧版 APP 设置页撑乱。网页照常拿到，并带上 web_only=true。
+	// 由 finalizeSystemConfigSpecs 按 webOnlySystemConfigKeys 统一打标。
+	WebOnly bool `json:"web_only,omitempty"`
+}
+
+// webOnlySystemConfigKeys 是只对网页端生效、APP 请求 /api/configs 时不下发的配置键。
+// panel_shape_style 刻意不在这里：v4.0 之前 APP 就已经能看到它，保持现状不收回。
+var webOnlySystemConfigKeys = map[string]bool{
+	"panel_theme_preset":      true,
+	"panel_accent_color":      true,
+	"panel_background_effect": true,
+	"panel_background_image":  true,
+	"panel_glass_blur":        true,
+	"panel_density":           true,
+	"panel_custom_css":        true,
 }
 
 type systemConfigSpec struct {
@@ -140,6 +158,7 @@ func finalizeSystemConfigSpecs(specs []systemConfigSpec) []systemConfigSpec {
 			// 漏配中文名时退化成 slug，保证这个字段永远不为空串。
 			specs[i].def.GroupLabel = specs[i].def.Group
 		}
+		specs[i].def.WebOnly = webOnlySystemConfigKeys[specs[i].def.Key]
 	}
 	return specs
 }
@@ -247,7 +266,8 @@ var registeredSystemConfigSpecs = finalizeSystemConfigSpecs([]systemConfigSpec{
 	// ===== v4.0 主题工坊的全站默认（design §1.3）=====
 	// 下面 7 项都只被网页端消费：经公开接口 GET /system/panel-settings 下发，浏览器本机没设置时跟随这里。
 	// 服务端没有运行时状态依赖它们，不需要进 reloadRuntimeConfigKeys。
-	// APP 的设置页按 schema 渲染会显示出来，所以 description 末尾统一写「仅网页端生效，APP 不受影响」。
+	// 这 7 项都在 webOnlySystemConfigKeys 里，APP 请求 /api/configs 时不下发；
+	// description 末尾仍统一写「仅网页端生效，APP 不受影响」，给网页设置页和其它直接调接口的客户端看。
 	newEnumConfig(
 		"panel_theme_preset",
 		"界面风格",

@@ -330,6 +330,94 @@ func TestConfigListExposesPanelShapeStyle(t *testing.T) {
 	}
 }
 
+// v4.0 主题工坊新增的 7 项只对网页生效。APP 的设置页按 /api/configs 通用渲染，
+// 下发过去会多出 7 个没用的输入框（背景图还是几 MB 的 data URL），已经装在手机上的旧版 APP 也会受影响。
+// 所以 APP 请求时这 7 项整项不下发；网页照常拿到，并带 web_only=true。
+var webOnlyPanelConfigKeys = []string{
+	"panel_theme_preset",
+	"panel_accent_color",
+	"panel_background_effect",
+	"panel_background_image",
+	"panel_glass_blur",
+	"panel_density",
+	"panel_custom_css",
+}
+
+func requestConfigList(t *testing.T, token string, headers map[string]string) map[string]interface{} {
+	t.Helper()
+	engine := newProtectedRouter()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/configs", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	payload := decodeJSONMap(t, rec)
+	data, ok := payload["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data map, got %T", payload["data"])
+	}
+	return data
+}
+
+func TestConfigListHidesWebOnlyKeysFromApp(t *testing.T) {
+	testutil.SetupTestEnv(t)
+
+	admin := testutil.MustCreateUser(t, "web-only-app-admin", "admin")
+	token := testutil.MustCreateAccessToken(t, admin.Username, admin.Role)
+	// 库里存过值的行也不能漏出去：List 末尾会把「注册表外的键」兜底下发，web_only 项必须同时从那里摘掉。
+	database.DB.Where("`key` = ?", "panel_custom_css").Delete(&model.SystemConfig{})
+	if err := database.DB.Create(&model.SystemConfig{Key: "panel_custom_css", Value: ".a{color:red}"}).Error; err != nil {
+		t.Fatalf("seed panel_custom_css: %v", err)
+	}
+
+	data := requestConfigList(t, token, map[string]string{"X-Client-App": "daidai-panel-app"})
+
+	for _, key := range webOnlyPanelConfigKeys {
+		if _, exists := data[key]; exists {
+			t.Fatalf("expected %s to be hidden from APP, got %#v", key, data[key])
+		}
+	}
+	// panel_shape_style 在 v4.0 之前 APP 就看得到，不能跟着收回；其它面板项照常下发。
+	for _, key := range []string{"panel_shape_style", "panel_title"} {
+		if _, ok := data[key].(map[string]interface{}); !ok {
+			t.Fatalf("expected %s to still be sent to APP, got %#v", key, data[key])
+		}
+	}
+}
+
+func TestConfigListMarksWebOnlyKeysForWeb(t *testing.T) {
+	testutil.SetupTestEnv(t)
+
+	admin := testutil.MustCreateUser(t, "web-only-web-admin", "admin")
+	token := testutil.MustCreateAccessToken(t, admin.Username, admin.Role)
+
+	// 不带任何客户端头 = 网页
+	data := requestConfigList(t, token, nil)
+
+	for _, key := range webOnlyPanelConfigKeys {
+		item, ok := data[key].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected %s to be sent to web, got %#v", key, data[key])
+		}
+		if got, _ := item["web_only"].(bool); !got {
+			t.Fatalf("expected %s to carry web_only=true, got %#v", key, item["web_only"])
+		}
+	}
+	// 非 web_only 项不带这个键（omitempty 语义），panel_shape_style 尤其不能被标上。
+	shapeStyle, ok := data["panel_shape_style"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected panel_shape_style entry, got %#v", data["panel_shape_style"])
+	}
+	if _, exists := shapeStyle["web_only"]; exists {
+		t.Fatalf("expected panel_shape_style to not carry web_only, got %#v", shapeStyle["web_only"])
+	}
+}
+
 func TestConfigBatchSetUsesRegistryValidation(t *testing.T) {
 	testutil.SetupTestEnv(t)
 

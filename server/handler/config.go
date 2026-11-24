@@ -80,6 +80,10 @@ func buildConfigResponseItem(cfg *model.SystemConfig, def *model.SystemConfigDef
 		// 才能在保存整组配置时不把真实值覆盖掉。要改成服务端打码，必须同时定义
 		// 「未修改」的写入哨兵值并同步改 Web/APP，不能只在这里单方面遮蔽。
 		item["secret"] = def.Secret
+		// web_only 只在为 true 时带上（APP 请求时 List 会把这些项整项跳过，所以实际只有网页端看得到它）。
+		if def.WebOnly {
+			item["web_only"] = true
+		}
 		if def.Min != nil {
 			item["min"] = *def.Min
 		}
@@ -106,8 +110,25 @@ func (h *ConfigHandler) List(c *gin.Context) {
 		configMap[cfg.Key] = cfg
 	}
 
+	// 请求来自 APP 时不下发 web_only 项（v4.0 主题工坊那 7 项，见 SystemConfigDefinition.WebOnly）。
+	// 识别方式与登录时记会话类型（handler/auth.go）同一套，网页照常拿到全部键。
+	isApp := service.DetectSessionClientInfo(
+		c.GetHeader("X-Client-Type"),
+		c.GetHeader("X-Client-App"),
+		c.GetHeader("X-Client-Platform"),
+		c.GetHeader("X-Device-Model"),
+		c.GetHeader("X-Device-Name"),
+		c.GetHeader("X-OS-Version"),
+		c.GetHeader("User-Agent"),
+	).Type == service.SessionClientApp
+
 	data := make(map[string]interface{})
 	for _, def := range model.SystemConfigDefinitions() {
+		if isApp && def.WebOnly {
+			// 库里存过的行也要从 configMap 摘掉，否则会被下面「未注册的键」那段兜底当成未注册项再发出去
+			delete(configMap, def.Key)
+			continue
+		}
 		cfg, exists := configMap[def.Key]
 		if exists {
 			cfgCopy := cfg
