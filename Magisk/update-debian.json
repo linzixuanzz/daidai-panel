@@ -1,6 +1,6 @@
 {
-  "version": "v3.4.5",
-  "versionCode": 30405,
-  "zipUrl": "https://github.com/linzixuanzz/daidai-panel/releases/download/v3.4.5/daidai-panel-magisk-debian-v3.4.5.zip",
-  "changelog": "https://raw.githubusercontent.com/linzixuanzz/daidai-panel/main/docs/release-notes/v3.4.5.md"
+  "version": "v4.0.0",
+  "versionCode": 40000,
+  "zipUrl": "https://github.com/linzixuanzz/daidai-panel/releases/download/v4.0.0/daidai-panel-magisk-debian-v4.0.0.zip",
+  "changelog": "https://raw.githubusercontent.com/linzixuanzz/daidai-panel/main/docs/release-notes/v4.0.0.md"
 }
