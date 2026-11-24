@@ -435,7 +435,61 @@ func EnsureColumns() {
 
 	dropEnvVarUniqueIndex()
 
+	migratePanelShapeStyleToThemeOnce()
+
 	log.Printf("column check completed")
+}
+
+// PanelShapeStyleMigratedConfigKey 标记「v4.0 的圆角一次性迁移已经做过」，值固定写 "1"。
+//
+// 和 trusted_proxy_cidrs_migrated 一样刻意不进注册表：这是面板自己写的状态，不是给人填的配置项，
+// 不注册就不会出现在设置页（/api/configs 只把 registered=true 的项交给设置页渲染），也就不会被误改。
+// 它随备份整表导出、随恢复写回。
+const PanelShapeStyleMigratedConfigKey = "ui_v4_shape_migrated"
+
+// migratePanelShapeStyleToThemeOnce 把存量实例的界面圆角一次性改成 v4.0 新增的 theme（跟随主题），一辈子只做一次。
+//
+// 为什么不分「用户有没有改过」一律改：v4.0 的每套主题都自带圆角刻度，产品决定升级后统一跟随主题（prd Q3），
+// 发布说明里会写明。为什么必须有标记：没有标记的话每次启动都会把管理员之后再选的「直角」改回 theme。
+// 新装实例（此时还没有 panel_shape_style 这一行）同样写标记：之后 InitDefaultConfigs 按注册表默认建成 theme，
+// 以后无论管理员选什么都不再碰。
+//
+// 刻意写原生 SQL：database 包不能引用 model 包（model 依赖 database，会循环引用）。
+// 放在 EnsureColumns 里、也就是 AutoMigrate 之后、InitDefaultConfigs 之前执行，此时 system_configs 表一定已建好。
+// 恢复了不带标记的老备份时，库里的值要到下一次启动才会被迁移（恢复流程不跑 EnsureColumns），这是可接受的。
+func migratePanelShapeStyleToThemeOnce() {
+	columns := getExistingColumns("system_configs")
+	if !columns["key"] || !columns["value"] {
+		// 表不存在或结构异常：不动，下次启动再判断
+		return
+	}
+
+	var markerCount int64
+	if err := DB.Raw("SELECT COUNT(*) FROM system_configs WHERE `key` = ?", PanelShapeStyleMigratedConfigKey).Scan(&markerCount).Error; err != nil {
+		// 查库本身出错不能当成「没迁移过」，否则可能误改管理员的选择；这次先跳过
+		log.Printf("warn: failed to check %s: %v", PanelShapeStyleMigratedConfigKey, err)
+		return
+	}
+	if markerCount > 0 {
+		return
+	}
+
+	// 改值与写标记放在同一个事务里：要么都成功，要么都不生效、下次启动再试，
+	// 不会出现「值改了但没标记」导致下次启动又改一遍的情况。
+	now := time.Now()
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Exec("UPDATE system_configs SET value = 'theme', updated_at = ? WHERE `key` = 'panel_shape_style'", now)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			log.Printf("migrated panel_shape_style to 'theme' (v4.0 one-time migration)")
+		}
+		return tx.Exec("INSERT INTO system_configs (`key`, value, description, updated_at) VALUES (?, '1', '', ?)", PanelShapeStyleMigratedConfigKey, now).Error
+	})
+	if err != nil {
+		log.Printf("warn: failed to migrate panel_shape_style to theme: %v", err)
+	}
 }
 
 // migrateLegacyTaskPIDColumn copies values from the old GORM-derived p_id column

@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -221,8 +222,10 @@ var registeredSystemConfigSpecs = finalizeSystemConfigSpecs([]systemConfigSpec{
 	newTrimmedStringConfig("editor_background_color", "编辑器背景颜色", "", "脚本编辑器背景颜色（留空使用默认样式）", "branding"),
 	newTrimmedStringConfig("log_background_color", "日志背景颜色", "", "日志视图背景颜色（留空跟随当前主题）", "branding"),
 	newTrimmedStringConfig("log_background_image", "日志背景图片", "", "日志视图背景图片（data URL）", "branding"),
-	// 界面圆角开关：网页端把全站圆角刻度化成 --dd-radius-* 三档令牌，这一项决定取直角(全 0)还是圆角。
-	// 默认 square 是为了保持 v3.0.0 以来「扁平工具型」的既有观感，升级的实例不会因为加了这项而变样。
+	// 界面圆角开关：网页端把全站圆角刻度化成 --dd-radius-* 三档令牌，这一项决定圆角取值来源。
+	// v4.0 起新增 theme（跟随当前主题的 --dd-theme-radius-*）并改为默认；square（全 0）与 rounded 保留。
+	// 存量实例在升级后首次启动时由 database.migratePanelShapeStyleToThemeOnce 一次性改成 theme（只跑一次，
+	// 之后管理员再选直角会一直生效）。回滚到 v3.4.x 时旧版 normalize 不认 theme，会兜底成旧默认 square。
 	//
 	// ⚠️ 这项纯粹由客户端消费，服务端没有任何运行时状态依赖它，所以不需要进
 	// handler.reloadRuntimeConfigKeys 的热加载分支。
@@ -232,14 +235,69 @@ var registeredSystemConfigSpecs = finalizeSystemConfigSpecs([]systemConfigSpec{
 	newEnumConfig(
 		"panel_shape_style",
 		"界面圆角",
-		"square",
-		"网页端界面的圆角风格。直角=扁平工具型（默认）；圆角=各控件与卡片带圆角。仅网页端生效，APP 不受影响。",
+		"theme",
+		"网页端界面的圆角风格。跟随主题=按当前界面风格的圆角（默认）；直角=扁平工具型；圆角=各控件与卡片带圆角。仅网页端生效，APP 不受影响。",
 		"branding",
 		[]SystemConfigOption{
+			{Value: "theme", Label: "跟随主题"},
 			{Value: "square", Label: "直角"},
 			{Value: "rounded", Label: "圆角"},
 		},
 	),
+	// ===== v4.0 主题工坊的全站默认（design §1.3）=====
+	// 下面 7 项都只被网页端消费：经公开接口 GET /system/panel-settings 下发，浏览器本机没设置时跟随这里。
+	// 服务端没有运行时状态依赖它们，不需要进 reloadRuntimeConfigKeys。
+	// APP 的设置页按 schema 渲染会显示出来，所以 description 末尾统一写「仅网页端生效，APP 不受影响」。
+	newEnumConfig(
+		"panel_theme_preset",
+		"界面风格",
+		"aurora",
+		"网页端界面的整体风格（配色、背景、字体），明暗仍按各浏览器自己的设置。仅网页端生效，APP 不受影响。",
+		"branding",
+		[]SystemConfigOption{
+			{Value: "classic", Label: "经典"},
+			{Value: "aurora", Label: "极光"},
+			{Value: "mist", Label: "晨雾"},
+			{Value: "terminal", Label: "终端"},
+			{Value: "paper", Label: "纸墨"},
+			{Value: "daidai", Label: "呆呆"},
+			{Value: "clean", Label: "素白"},
+		},
+	),
+	newValidatedStringConfig("panel_accent_color", "界面主色", "", "网页端界面主色，格式 #rrggbb；留空跟随界面风格。仅网页端生效，APP 不受影响。", "branding", normalizePanelAccentColor),
+	newEnumConfig(
+		"panel_background_effect",
+		"背景效果",
+		"theme",
+		"网页端页面背景效果。跟随主题=按界面风格；图片=使用下面的背景图片。仅网页端生效，APP 不受影响。",
+		"branding",
+		[]SystemConfigOption{
+			{Value: "theme", Label: "跟随主题"},
+			{Value: "plain", Label: "纯色"},
+			{Value: "aurora", Label: "极光"},
+			{Value: "grid", Label: "网格"},
+			{Value: "image", Label: "图片"},
+		},
+	),
+	// 与 log_background_image 同一种存法（data URL），大小限制沿用网页端上传日志背景图时的那套，服务端不另设。
+	newTrimmedStringConfig("panel_background_image", "背景图片", "", "网页端页面背景图片（data URL），背景效果选「图片」时使用。仅网页端生效，APP 不受影响。", "branding"),
+	// 刻意用字符串而不是 newIntConfig：留空要表达「跟随主题」，int 类型的空串会被 normalize 成默认数字，分不出来。
+	newValidatedStringConfig("panel_glass_blur", "玻璃模糊", "", "网页端卡片的毛玻璃模糊半径，0~40 的整数（0=不透明卡片）；留空跟随界面风格。仅网页端生效，APP 不受影响。", "branding", normalizePanelGlassBlur),
+	newEnumConfig(
+		"panel_density",
+		"界面密度",
+		"cozy",
+		"网页端界面的疏密程度。仅网页端生效，APP 不受影响。",
+		"branding",
+		[]SystemConfigOption{
+			{Value: "compact", Label: "紧凑"},
+			{Value: "cozy", Label: "舒适"},
+			{Value: "roomy", Label: "宽松"},
+		},
+	),
+	// 自定义 CSS 经公开接口 panel-settings 下发，未登录访客也能读到，网页端管理员界面会写明这一点。
+	// 保存时的安全校验见 normalizePanelCustomCSS（design §1.6）。
+	newValidatedStringConfig("panel_custom_css", "自定义 CSS", "", "注入到网页端所有页面（含登录页）的自定义样式，最长 32768 字节；不允许 @import、外链 url()、expression()、javascript: 等。未登录访客也能读到。仅网页端生效，APP 不受影响。", "branding", normalizePanelCustomCSS),
 	newBoolConfig("backup_schedule_enabled", "启用定时备份", "false", "启用定时备份", "backup"),
 	newEnumConfig(
 		"backup_schedule_frequency",
@@ -769,6 +827,80 @@ func normalizeBackupScheduleSelectionValue(value string) (string, error) {
 	}
 
 	return strings.Join(result, ","), nil
+}
+
+// panelAccentColorPattern 只认 #rrggbb 六位十六进制（不收 #rgb、rgb()、颜色名）：
+// 网页端要拿它直接写进 --dd-accent 并做 color-mix，格式收窄能避免把任意 CSS 片段塞进内联样式。
+var panelAccentColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// normalizePanelAccentColor：留空 = 跟随界面风格；否则必须是 #rrggbb，统一存成小写。
+func normalizePanelAccentColor(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if !panelAccentColorPattern.MatchString(value) {
+		return "", fmt.Errorf("界面主色格式无效，应为 #rrggbb（如 #7c5cff），留空表示跟随界面风格")
+	}
+	return strings.ToLower(value), nil
+}
+
+// normalizePanelGlassBlur：留空 = 跟随界面风格；否则必须是 0~40 的整数（单位 px，网页端自己拼）。
+func normalizePanelGlassBlur(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return "", fmt.Errorf("玻璃模糊需要 0~40 的整数，留空表示跟随界面风格")
+	}
+	if parsed < 0 || parsed > 40 {
+		return "", fmt.Errorf("玻璃模糊需在 0~40 之间")
+	}
+	return strconv.Itoa(parsed), nil
+}
+
+// PanelCustomCSSMaxBytes 是自定义 CSS 的长度上限（按 UTF-8 字节数，不是字符数）。
+const PanelCustomCSSMaxBytes = 32768
+
+// panelCustomCSSForbiddenRules 是自定义 CSS 的拒绝规则（design §1.6），全部忽略大小写，按顺序检查、命中第一条就报错。
+//
+// 目的不是做完整的 CSS 净化，而是挡住「借自定义 CSS 外连或执行脚本」这几条常见路子：
+//   - @import / url(http…) / url(//…)：从外部拉资源，等于让每个访客（含未登录的）去请求第三方地址；
+//     url( 和地址之间允许空白与引号，所以 url( "https://…" ) 也会被拦。url(data:…) 不外连，放行。
+//   - expression( / behavior: ：老 IE 的 CSS 执行脚本入口；javascript: 伪协议同理。
+//   - </style ：网页端把内容塞进 <style> 标签，提前闭合标签就能在后面注入任意 HTML。
+//
+// 已知边界：CSS 转义写法（如 u\72l( ）可以绕过这些字面匹配。网页端注入时只放进 <style> 文本节点，
+// 而且只有管理员能保存，这里拦的是「误粘贴 / 抄来的片段带外链」，不是对抗恶意管理员。
+var panelCustomCSSForbiddenRules = []struct {
+	pattern *regexp.Regexp
+	reason  string
+}{
+	{regexp.MustCompile(`(?i)@import`), "自定义 CSS 不允许使用 @import"},
+	{regexp.MustCompile(`(?i)url\(\s*['"]?\s*(https?:|//)`), "自定义 CSS 不允许 url() 引用外部地址（http:、https:、//），图片请改用 data: 地址"},
+	{regexp.MustCompile(`(?i)expression\s*\(`), "自定义 CSS 不允许使用 expression()"},
+	{regexp.MustCompile(`(?i)javascript\s*:`), "自定义 CSS 不允许包含 javascript:"},
+	{regexp.MustCompile(`(?i)behavior\s*:`), "自定义 CSS 不允许使用 behavior:"},
+	{regexp.MustCompile(`(?i)</style`), "自定义 CSS 不允许包含 </style"},
+}
+
+// normalizePanelCustomCSS 校验管理员保存的自定义 CSS。只去掉首尾空白，正文（含换行）原样保存。
+func normalizePanelCustomCSS(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if len(value) > PanelCustomCSSMaxBytes {
+		return "", fmt.Errorf("自定义 CSS 过长：最多 %d 字节，当前 %d 字节", PanelCustomCSSMaxBytes, len(value))
+	}
+	for _, rule := range panelCustomCSSForbiddenRules {
+		if rule.pattern.MatchString(value) {
+			return "", fmt.Errorf("%s", rule.reason)
+		}
+	}
+	return value, nil
 }
 
 func normalizeBoolDefault(value string) string {

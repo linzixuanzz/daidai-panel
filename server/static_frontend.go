@@ -27,7 +27,7 @@ import (
 // 成 200 + text/html，叠加全局的 X-Content-Type-Options: nosniff，JS/CSS 全部被浏览器拒收：
 //   - index.html（/ 与 SPA 深链回退）→ no-cache：可以存，但每次都要回源校验（Last-Modified 命中即 304）；
 //   - /assets/ 下带 Vite 内容哈希的文件 → public, max-age=31536000, immutable；
-//   - 其余静态文件（/assets 下不带哈希的如 optimization.css、/fonts/*、favicon、/sponsor-portal/*）→ no-cache；
+//   - 其余静态文件（/assets 下不带哈希的如 optimization.css、/fonts/*、根路径白名单文件、/sponsor-portal/*）→ no-cache；
 //   - 缺失的静态资源 → 纯文本 404 + no-store，不再回退 index.html；
 //   - /api/ 下没命中的路由 → 仍是 JSON 404。
 //
@@ -43,6 +43,11 @@ const (
 	// 面板图标。这是单文件白名单：换文件名（如 .svg -> .webp）时必须同步改这里和
 	// web/index.html 的 <link rel="icon">，否则浏览器拿到的是 404。
 	staticFaviconFile = "favicon-512.webp"
+
+	// PWA（v4.0）的清单与 Service Worker，都必须挂在站点根路径：
+	// Service Worker 的默认作用域是它自己所在的目录，放进 /assets/ 就管不到整个面板。
+	staticManifestFile      = "manifest.webmanifest"
+	staticServiceWorkerFile = "sw.js"
 
 	// 小于 1 KiB 的文件压缩收益抵不过 gzip 头和 CPU，直接回原文（与 nginx.conf 的 gzip_min_length 同口径）。
 	gzipAssetMinSize = 1 << 10
@@ -61,6 +66,22 @@ const (
 // try_files 不受影响，但内嵌二进制部署（无 nginx）依赖这一条。
 var staticFrontendDirs = []string{"assets", "fonts", "sponsor-portal"}
 
+// staticRootFiles 是根路径下按单个文件托管的白名单（来自 web/public/ 根目录，Vite 原样拷进产物）。
+// 全部 no-cache、不压缩；文件不存在时回纯文本 404，不回退 index.html。
+// 不在这里的根路径文件会掉进 NoRoute：清单被回成 HTML 会解析失败，sw.js 被回成 HTML 会因 MIME 不对注册失败，
+// 所以新增根路径文件必须加到这里。
+//
+// sw.js 必须 no-cache：浏览器检查 Service Worker 更新时会参考 HTTP 缓存，被缓存住就一直跑旧的 SW。
+// Docker 部署的对应规则在 docker/nginx.conf。
+var staticRootFiles = []string{
+	staticFaviconFile,
+	staticManifestFile,
+	staticServiceWorkerFile,
+	"pwa-192.png",
+	"pwa-512.png",
+	"pwa-maskable-512.png",
+}
+
 // staticAssetPathPrefixes 下的路径没命中文件时一律回 404，不回退 index.html。
 // "/monaco/" 是 v3.1.1 及以前 AMD 版 Monaco 的目录（v3.2.0 删掉）：浏览器缓存里的旧前端还会来要
 // /monaco/vs/loader.js，必须给它一个明确的 404，而不是一段会被当成脚本的 HTML。
@@ -72,7 +93,7 @@ var staticAssetExts = map[string]struct{}{
 	".js": {}, ".mjs": {}, ".css": {}, ".map": {}, ".json": {},
 	".woff": {}, ".woff2": {}, ".ttf": {}, ".otf": {},
 	".png": {}, ".jpg": {}, ".jpeg": {}, ".gif": {}, ".svg": {}, ".webp": {}, ".avif": {}, ".ico": {},
-	".wasm": {},
+	".wasm": {}, ".webmanifest": {},
 }
 
 // gzipCompressibleExts 是 /assets/ 下值得 gzip 的类型。woff2 / webp / png 本身已经压缩过，刻意不列。
@@ -103,6 +124,8 @@ var staticContentTypes = map[string]string{
 	".woff":  "font/woff",
 	".woff2": "font/woff2",
 	".wasm":  "application/wasm",
+	// PWA 清单：Go 的 mime 包内置表和很多系统的 MIME 表里都没有这个扩展名，不写死会拿到空 Content-Type。
+	".webmanifest": "application/manifest+json",
 }
 
 // viteHashedAssetExts 与 docker/nginx.conf 里「带哈希产物」那条 location 的扩展名部分逐字相同。
@@ -184,11 +207,18 @@ func newStaticFrontend(root string) *staticFrontend {
 	}
 }
 
-// register 挂上 /、favicon、白名单目录与 NoRoute。路由集合与改造前（StaticFile + Static）一致，
-// 只是换成自己的处理函数，好控制缓存头、404 与压缩。
+// register 挂上 /、根路径白名单文件、白名单目录与 NoRoute。路由集合与改造前（StaticFile + Static）一致
+// （v4.0 起根路径白名单多了 PWA 那几个文件），只是换成自己的处理函数，好控制缓存头、404 与压缩。
 func (sf *staticFrontend) register(engine *gin.Engine) {
 	handleGetAndHead(engine, "/", sf.serveIndex)
-	handleGetAndHead(engine, "/"+staticFaviconFile, sf.serveFavicon)
+	for _, name := range staticRootFiles {
+		// 与目录白名单不同，这里不看文件在不在都注册：文件缺失时由 serveLocalFile 回纯文本 404，
+		// 而不是掉进 NoRoute 被回退成 index.html。
+		fullPath := filepath.Join(sf.root, name)
+		handleGetAndHead(engine, "/"+name, func(c *gin.Context) {
+			sf.serveLocalFile(c, fullPath)
+		})
+	}
 	for _, sub := range staticFrontendDirs {
 		subDir := filepath.Join(sf.root, sub)
 		if info, err := os.Stat(subDir); err == nil && info.IsDir() {
@@ -207,11 +237,7 @@ func (sf *staticFrontend) serveIndex(c *gin.Context) {
 	sf.serveLocalFile(c, sf.indexPath)
 }
 
-func (sf *staticFrontend) serveFavicon(c *gin.Context) {
-	sf.serveLocalFile(c, filepath.Join(sf.root, staticFaviconFile))
-}
-
-// serveLocalFile 回一个固定路径的文件（index.html、favicon），一律 no-cache、不压缩。
+// serveLocalFile 回一个固定路径的文件（index.html、根路径白名单文件），一律 no-cache、不压缩。
 func (sf *staticFrontend) serveLocalFile(c *gin.Context, fullPath string) {
 	f, err := os.Open(fullPath)
 	if err != nil {

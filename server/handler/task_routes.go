@@ -19,6 +19,12 @@ func (h *TaskHandler) RegisterRoutes(r *gin.RouterGroup) {
 	{
 		tasks.GET("", middleware.RequireRole("viewer"), h.List)
 		tasks.GET("/notification-channels", middleware.RequireRole("viewer"), h.NotificationChannels)
+		// v4.0 洞察类接口（task_insights.go）。静态段 running / upcoming / recent-runs 写在 /:id 系列之前，
+		// 与 /groups、/labels 同一个形态；复用组上的 OpenAPIAccess("tasks")。
+		tasks.GET("/running", middleware.RequireRole("viewer"), h.Running)
+		tasks.GET("/upcoming", middleware.RequireRole("viewer"), h.Upcoming)
+		tasks.GET("/recent-runs", middleware.RequireRole("viewer"), h.RecentRuns)
+		tasks.GET("/:id/health", middleware.RequireRole("viewer"), h.Health)
 		tasks.GET("/:id/latest-log", middleware.RequireRole("viewer"), h.LatestLog)
 		tasks.GET("/:id/live-logs", middleware.RequireRole("viewer"), h.LiveLogs)
 		tasks.GET("/:id/log-files", middleware.RequireRole("viewer"), h.LogFiles)

@@ -71,7 +71,7 @@
       "group": "backup",
       "group_label": "定时备份",
       "label": "启用定时备份",
-      "order": 36,
+      "order": 43,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -98,7 +98,7 @@
           "label": "每月"
         }
       ],
-      "order": 37,
+      "order": 44,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -113,7 +113,7 @@
       "label": "每月执行日",
       "max": 28,
       "min": 1,
-      "order": 40,
+      "order": 47,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -126,7 +126,7 @@
       "group": "backup",
       "group_label": "定时备份",
       "label": "文件名前缀",
-      "order": 41,
+      "order": 48,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -139,7 +139,7 @@
       "group": "backup",
       "group_label": "定时备份",
       "label": "加密密码",
-      "order": 42,
+      "order": 49,
       "registered": true,
       "secret": true,
       "updated_at": null,
@@ -152,7 +152,7 @@
       "group": "backup",
       "group_label": "定时备份",
       "label": "备份内容",
-      "order": 43,
+      "order": 50,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -165,7 +165,7 @@
       "group": "backup",
       "group_label": "定时备份",
       "label": "执行时间",
-      "order": 38,
+      "order": 45,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -208,7 +208,7 @@
           "label": "周六"
         }
       ],
-      "order": 39,
+      "order": 46,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -234,7 +234,7 @@
       "group": "security",
       "group_label": "安全",
       "label": "启用极验验证码",
-      "order": 49,
+      "order": 56,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -257,7 +257,7 @@
           "label": "严格拦截"
         }
       ],
-      "order": 52,
+      "order": 59,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -270,7 +270,7 @@
       "group": "security",
       "group_label": "安全",
       "label": "Captcha ID",
-      "order": 50,
+      "order": 57,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -283,7 +283,7 @@
       "group": "security",
       "group_label": "安全",
       "label": "Captcha Key",
-      "order": 51,
+      "order": 58,
       "registered": true,
       "secret": true,
       "updated_at": null,
@@ -464,7 +464,7 @@
       "label": "APP 端会话上限",
       "max": 20,
       "min": 1,
-      "order": 48,
+      "order": 55,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -509,7 +509,7 @@
       "label": "网页端会话上限",
       "max": 20,
       "min": 1,
-      "order": 47,
+      "order": 54,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -522,7 +522,7 @@
       "group": "mcp",
       "group_label": "MCP 服务",
       "label": "允许写入与执行工具",
-      "order": 54,
+      "order": 61,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -535,7 +535,7 @@
       "group": "mcp",
       "group_label": "MCP 服务",
       "label": "启用 MCP 服务",
-      "order": 53,
+      "order": 60,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -596,6 +596,120 @@
       "value": "",
       "value_type": "string"
     },
+    "panel_accent_color": {
+      "default_value": "",
+      "description": "网页端界面主色，格式 #rrggbb；留空跟随界面风格。仅网页端生效，APP 不受影响。",
+      "group": "branding",
+      "group_label": "面板与运行时",
+      "label": "界面主色",
+      "order": 37,
+      "registered": true,
+      "secret": false,
+      "updated_at": null,
+      "value": "",
+      "value_type": "string"
+    },
+    "panel_background_effect": {
+      "default_value": "theme",
+      "description": "网页端页面背景效果。跟随主题=按界面风格；图片=使用下面的背景图片。仅网页端生效，APP 不受影响。",
+      "group": "branding",
+      "group_label": "面板与运行时",
+      "label": "背景效果",
+      "options": [
+        {
+          "value": "theme",
+          "label": "跟随主题"
+        },
+        {
+          "value": "plain",
+          "label": "纯色"
+        },
+        {
+          "value": "aurora",
+          "label": "极光"
+        },
+        {
+          "value": "grid",
+          "label": "网格"
+        },
+        {
+          "value": "image",
+          "label": "图片"
+        }
+      ],
+      "order": 38,
+      "registered": true,
+      "secret": false,
+      "updated_at": null,
+      "value": "theme",
+      "value_type": "enum"
+    },
+    "panel_background_image": {
+      "default_value": "",
+      "description": "网页端页面背景图片（data URL），背景效果选「图片」时使用。仅网页端生效，APP 不受影响。",
+      "group": "branding",
+      "group_label": "面板与运行时",
+      "label": "背景图片",
+      "order": 39,
+      "registered": true,
+      "secret": false,
+      "updated_at": null,
+      "value": "",
+      "value_type": "string"
+    },
+    "panel_custom_css": {
+      "default_value": "",
+      "description": "注入到网页端所有页面（含登录页）的自定义样式，最长 32768 字节；不允许 @import、外链 url()、expression()、javascript: 等。未登录访客也能读到。仅网页端生效，APP 不受影响。",
+      "group": "branding",
+      "group_label": "面板与运行时",
+      "label": "自定义 CSS",
+      "order": 42,
+      "registered": true,
+      "secret": false,
+      "updated_at": null,
+      "value": "",
+      "value_type": "string"
+    },
+    "panel_density": {
+      "default_value": "cozy",
+      "description": "网页端界面的疏密程度。仅网页端生效，APP 不受影响。",
+      "group": "branding",
+      "group_label": "面板与运行时",
+      "label": "界面密度",
+      "options": [
+        {
+          "value": "compact",
+          "label": "紧凑"
+        },
+        {
+          "value": "cozy",
+          "label": "舒适"
+        },
+        {
+          "value": "roomy",
+          "label": "宽松"
+        }
+      ],
+      "order": 41,
+      "registered": true,
+      "secret": false,
+      "updated_at": null,
+      "value": "cozy",
+      "value_type": "enum"
+    },
+    "panel_glass_blur": {
+      "default_value": "",
+      "description": "网页端卡片的毛玻璃模糊半径，0~40 的整数（0=不透明卡片）；留空跟随界面风格。仅网页端生效，APP 不受影响。",
+      "group": "branding",
+      "group_label": "面板与运行时",
+      "label": "玻璃模糊",
+      "order": 40,
+      "registered": true,
+      "secret": false,
+      "updated_at": null,
+      "value": "",
+      "value_type": "string"
+    },
     "panel_icon": {
       "default_value": "",
       "description": "面板图标（SVG data URL）",
@@ -629,7 +743,7 @@
           "label": "仅写文件"
         }
       ],
-      "order": 44,
+      "order": 51,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -652,7 +766,7 @@
           "label": "systemd"
         }
       ],
-      "order": 45,
+      "order": 52,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -665,7 +779,7 @@
       "group": "branding",
       "group_label": "面板与运行时",
       "label": "systemd 服务名",
-      "order": 46,
+      "order": 53,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -673,12 +787,16 @@
       "value_type": "string"
     },
     "panel_shape_style": {
-      "default_value": "square",
-      "description": "网页端界面的圆角风格。直角=扁平工具型（默认）；圆角=各控件与卡片带圆角。仅网页端生效，APP 不受影响。",
+      "default_value": "theme",
+      "description": "网页端界面的圆角风格。跟随主题=按当前界面风格的圆角（默认）；直角=扁平工具型；圆角=各控件与卡片带圆角。仅网页端生效，APP 不受影响。",
       "group": "branding",
       "group_label": "面板与运行时",
       "label": "界面圆角",
       "options": [
+        {
+          "value": "theme",
+          "label": "跟随主题"
+        },
         {
           "value": "square",
           "label": "直角"
@@ -692,7 +810,50 @@
       "registered": true,
       "secret": false,
       "updated_at": null,
-      "value": "square",
+      "value": "theme",
+      "value_type": "enum"
+    },
+    "panel_theme_preset": {
+      "default_value": "aurora",
+      "description": "网页端界面的整体风格（配色、背景、字体），明暗仍按各浏览器自己的设置。仅网页端生效，APP 不受影响。",
+      "group": "branding",
+      "group_label": "面板与运行时",
+      "label": "界面风格",
+      "options": [
+        {
+          "value": "classic",
+          "label": "经典"
+        },
+        {
+          "value": "aurora",
+          "label": "极光"
+        },
+        {
+          "value": "mist",
+          "label": "晨雾"
+        },
+        {
+          "value": "terminal",
+          "label": "终端"
+        },
+        {
+          "value": "paper",
+          "label": "纸墨"
+        },
+        {
+          "value": "daidai",
+          "label": "呆呆"
+        },
+        {
+          "value": "clean",
+          "label": "素白"
+        }
+      ],
+      "order": 36,
+      "registered": true,
+      "secret": false,
+      "updated_at": null,
+      "value": "aurora",
       "value_type": "enum"
     },
     "panel_title": {
@@ -847,7 +1008,7 @@
       "group": "wecom",
       "group_label": "企业微信触发",
       "label": "允许企业微信触发执行",
-      "order": 56,
+      "order": 63,
       "registered": true,
       "secret": false,
       "updated_at": null,
@@ -860,7 +1021,7 @@
       "group": "wecom",
       "group_label": "企业微信触发",
       "label": "启用企业微信触发",
-      "order": 55,
+      "order": 62,
       "registered": true,
       "secret": false,
       "updated_at": null,

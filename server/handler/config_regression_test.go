@@ -288,21 +288,23 @@ func TestConfigListExposesPanelShapeStyle(t *testing.T) {
 	if got, _ := item["group"].(string); got != "branding" {
 		t.Fatalf("expected panel_shape_style group branding, got %q", got)
 	}
-	if got, _ := item["default_value"].(string); got != "square" {
-		t.Fatalf("expected panel_shape_style default_value square, got %q", got)
+	// v4.0 起默认改为 theme（跟随主题），见 design §1.3 / §1.4。
+	if got, _ := item["default_value"].(string); got != "theme" {
+		t.Fatalf("expected panel_shape_style default_value theme, got %q", got)
 	}
 	// 库里没记录时 value 必须回落成默认值，否则 Web 首帧会拿到空串。
-	if got, _ := item["value"].(string); got != "square" {
-		t.Fatalf("expected panel_shape_style fallback value square, got %q", got)
+	if got, _ := item["value"].(string); got != "theme" {
+		t.Fatalf("expected panel_shape_style fallback value theme, got %q", got)
 	}
 
-	// 选项必须恰好是 square / rounded 两项：多一项 Web 渲染得出来但没有对应刻度，
+	// 选项必须恰好是 theme / square / rounded 三项（v4.0 新增 theme）：多一项 Web 渲染得出来但没有对应刻度，
 	// 少一项则用户切不回去。
 	rawOptions, ok := item["options"].([]interface{})
-	if !ok || len(rawOptions) != 2 {
-		t.Fatalf("expected panel_shape_style to carry 2 options, got %#v", item["options"])
+	if !ok || len(rawOptions) != 3 {
+		t.Fatalf("expected panel_shape_style to carry 3 options, got %#v", item["options"])
 	}
 	wantOptions := []struct{ value, label string }{
+		{"theme", "跟随主题"},
 		{"square", "直角"},
 		{"rounded", "圆角"},
 	}

@@ -479,6 +479,15 @@ func (h *SystemHandler) PanelSettings(c *gin.Context) {
 			"panel_service_manager":   panelServiceManager,
 			"panel_service_name":      panelServiceName,
 			"panel_shape_style":       panelShapeStyle,
+			// v4.0 主题工坊的全站默认（design §1.3）。同样是登录页首屏就要用，只能在这个公开接口里下发。
+			// panel_custom_css 因此对未登录访客可见，这一点写在了注册表说明和网页端管理员界面里。
+			"panel_theme_preset":      model.GetRegisteredConfig("panel_theme_preset"),
+			"panel_accent_color":      model.GetRegisteredConfig("panel_accent_color"),
+			"panel_background_effect": model.GetRegisteredConfig("panel_background_effect"),
+			"panel_background_image":  model.GetRegisteredConfig("panel_background_image"),
+			"panel_glass_blur":        model.GetRegisteredConfig("panel_glass_blur"),
+			"panel_density":           model.GetRegisteredConfig("panel_density"),
+			"panel_custom_css":        model.GetRegisteredConfig("panel_custom_css"),
 		},
 	})
 }
@@ -876,6 +885,9 @@ func (h *SystemHandler) RegisterRoutes(r *gin.RouterGroup) {
 		sys.GET("/stats", middleware.OpenAPIAccess("system"), middleware.RequireRole("viewer"), h.Stats)
 		// 侧栏角标计数：只做 COUNT、按角色裁剪、不打外网，专为高频轮询设计（见 system_badges.go）
 		sys.GET("/badges", middleware.OpenAPIAccess("system"), middleware.RequireRole("viewer"), h.Badges)
+		// 「需要关注」清单（v4.0，见 system_attention.go）。与 badges 同样按角色裁剪；
+		// 不挂 OpenAPIAccess：这是给网页仪表板与铃铛轮询的，应用令牌没有落点，RequireRole 会直接 403。
+		sys.GET("/attention", middleware.RequireRole("viewer"), h.Attention)
 		sys.GET("/version", middleware.OpenAPIAccess("system"), middleware.RequireRole("viewer"), h.Version)
 		sys.GET("/check-update", middleware.OpenAPIAccess("system"), middleware.RequireRole("viewer"), h.CheckUpdate)
 		sys.GET("/health-check", middleware.RequireRole("viewer"), h.HealthCheck)

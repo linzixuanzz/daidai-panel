@@ -255,6 +255,86 @@ func TestStaticFrontendCacheControlByAssetKind(t *testing.T) {
 	}
 }
 
+// PWA（v4.0）的根路径文件：清单要拿到 application/manifest+json、sw.js 要拿到 JavaScript 类型，
+// 全部 no-cache、不压缩。回成 index.html 的话，清单解析失败、Service Worker 因 MIME 不对注册失败。
+func TestStaticFrontendServesPWARootFiles(t *testing.T) {
+	env := newStaticTestEnv(t)
+	// 路由按白名单注册、不看启动时文件在不在，所以环境建好之后再写文件也能命中
+	files := map[string]string{
+		"manifest.webmanifest": `{"name":"呆呆面板","start_url":"/","display":"standalone"}` + strings.Repeat(" ", 2048),
+		"sw.js":                "self.addEventListener('notificationclick', () => {});\n" + strings.Repeat("// pad\n", 400),
+		"pwa-192.png":          "\x89PNG\r\n\x1a\n192",
+		"pwa-512.png":          "\x89PNG\r\n\x1a\n512",
+		"pwa-maskable-512.png": "\x89PNG\r\n\x1a\nmaskable",
+	}
+	for rel, content := range files {
+		writeStaticTestFile(t, env.root, rel, content, staticTestModTime)
+	}
+
+	cases := []struct {
+		target      string
+		contentType string
+	}{
+		{"/manifest.webmanifest", "application/manifest+json"},
+		{"/sw.js", "text/javascript; charset=utf-8"},
+		{"/pwa-192.png", "image/png"},
+		{"/pwa-512.png", "image/png"},
+		{"/pwa-maskable-512.png", "image/png"},
+	}
+	for _, tc := range cases {
+		// 带 gzip 请求头：根路径文件也不该被压缩（压缩只给 /assets/）
+		rec := serveStatic(env.engine, http.MethodGet, tc.target, staticTestGzip)
+		h := rec.Header()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d, want 200", tc.target, rec.Code)
+		}
+		if ct := h.Get("Content-Type"); ct != tc.contentType {
+			t.Fatalf("%s: content-type=%q, want %q", tc.target, ct, tc.contentType)
+		}
+		if cc := h.Get("Cache-Control"); cc != staticCacheNoCache {
+			t.Fatalf("%s: cache-control=%q, want no-cache", tc.target, cc)
+		}
+		if ce := h.Get("Content-Encoding"); ce != "" {
+			t.Fatalf("%s: root files must not be gzipped, got %q", tc.target, ce)
+		}
+		if rec.Body.String() != files[strings.TrimPrefix(tc.target, "/")] {
+			t.Fatalf("%s: body mismatch (fell back to index.html?)", tc.target)
+		}
+	}
+
+	if rec := serveStatic(env.engine, http.MethodHead, "/sw.js", nil); rec.Code != http.StatusOK || rec.Body.Len() != 0 ||
+		rec.Header().Get("Cache-Control") != staticCacheNoCache {
+		t.Fatalf("HEAD /sw.js: status=%d cache-control=%q body=%d bytes", rec.Code, rec.Header().Get("Cache-Control"), rec.Body.Len())
+	}
+	// 条件请求：sw.js 没变时回 304，浏览器的 SW 更新检查靠的就是这个
+	rec := serveStatic(env.engine, http.MethodGet, "/sw.js", map[string]string{"If-Modified-Since": staticTestModTime.Format(http.TimeFormat)})
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("GET /sw.js with If-Modified-Since: status=%d, want 304", rec.Code)
+	}
+}
+
+// 前端产物里还没有 PWA 文件时（例如旧前端目录），这几个路径回纯文本 404，绝不回退成 index.html。
+func TestStaticFrontendMissingPWARootFilesAre404(t *testing.T) {
+	env := newStaticTestEnv(t)
+	for _, target := range []string{"/manifest.webmanifest", "/sw.js", "/pwa-192.png", "/pwa-512.png", "/pwa-maskable-512.png"} {
+		rec := serveStatic(env.engine, http.MethodGet, target, nil)
+		h := rec.Header()
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s: status=%d, want 404", target, rec.Code)
+		}
+		if ct := h.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+			t.Fatalf("%s: content-type=%q, want text/plain (never text/html)", target, ct)
+		}
+		if cc := h.Get("Cache-Control"); cc != staticCacheNoStore {
+			t.Fatalf("%s: cache-control=%q, want no-store", target, cc)
+		}
+	}
+	// 不在白名单里的 .webmanifest 也按静态资源 404，而不是回 index.html
+	if rec := serveStatic(env.engine, http.MethodGet, "/other.webmanifest", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("/other.webmanifest: status=%d, want 404", rec.Code)
+	}
+}
+
 func TestStaticFrontendMissingStaticFilesAre404NotHTML(t *testing.T) {
 	env := newStaticTestEnv(t)
 	targets := []string{
@@ -772,6 +852,22 @@ func TestNginxStaticCacheRulesMatchGo(t *testing.T) {
 		// location 里写了 add_header 就不再继承 server 级的 add_header，X-Robots-Tag 必须重写一遍。
 		if !slices.Contains(body, robots) {
 			t.Fatalf("%s must repeat %s (add_header is not inherited)", tc.header, robots)
+		}
+	}
+	// PWA 根路径文件（v4.0），与 staticRootFiles 同口径：sw.js 与清单都 no-cache，清单还要显式补类型映射
+	// （基础镜像的 mime.types 不一定有 webmanifest，没有就回成 application/octet-stream）。
+	swBody := blockOf(`location = /sw.js {`)
+	if !slices.Contains(swBody, `add_header Cache-Control "no-cache";`) || !slices.Contains(swBody, robots) {
+		t.Fatalf("nginx.conf must serve /sw.js with no-cache and X-Robots-Tag, got %q", swBody)
+	}
+	manifestBody := blockOf(`location = /manifest.webmanifest {`)
+	if !slices.Contains(manifestBody, `types { application/manifest+json webmanifest; }`) ||
+		!slices.Contains(manifestBody, `add_header Cache-Control "no-cache";`) || !slices.Contains(manifestBody, robots) {
+		t.Fatalf("nginx.conf must serve /manifest.webmanifest as application/manifest+json with no-cache, got %q", manifestBody)
+	}
+	for _, name := range []string{staticServiceWorkerFile, staticManifestFile} {
+		if !slices.Contains(staticRootFiles, name) {
+			t.Fatalf("staticRootFiles must contain %s", name)
 		}
 	}
 	if !slices.Contains(lines, robots) {
