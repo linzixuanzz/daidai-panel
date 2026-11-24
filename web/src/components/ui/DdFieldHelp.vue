@@ -125,7 +125,7 @@ onBeforeUnmount(unlistenEscape)
 
   // hover 只改颜色，不位移、不缩放（design-system 硬规则 2）
   &:hover {
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
   }
 
   &:focus-visible {

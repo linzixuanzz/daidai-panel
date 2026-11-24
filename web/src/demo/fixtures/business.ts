@@ -439,6 +439,38 @@ function shapeTodayFailures(rows: SeedLogRow[], now: number) {
 }
 
 /**
+ * v4.0「需要关注」要有内容可看：让两个任务的最近几次执行连续失败。
+ *
+ * 服务端的判定是「启用中、最近 3 条已结束日志全是失败」（handler/system_attention.go），
+ * 按 2%~16% 的随机失败率几乎抽不出来，所以这里直接改事实：
+ *   - 12 证书到期巡检（每天 8 点）最近 4 次失败 —— 仪表板卡片上是「连续失败 4 次」，任务表「最近 20 次」末尾一串红；
+ *   - 13 对象存储同步（每 2 小时）最近 3 次失败 —— 刚好卡在阈值上。
+ * 加上 fixture 里那条安装失败的 pandas 依赖，「需要关注」一共 3 条。
+ * 汇总照旧全部现算，仪表板、日志页、健康画像都会看到同样的失败。
+ *
+ * 必须在 shapeTodayFailures 之后跑：那一步会按比例把今天的部分失败改回成功，放在前面会把这串连续失败打断。
+ * 超时（timeout）本来就记为失败，保持原样，正文会写超时而不是 502。
+ */
+const FAILING_STREAKS: Array<[taskId: number, count: number]> = [
+  [12, 4],
+  [13, 3],
+]
+
+function shapeFailingStreaks(rows: SeedLogRow[]) {
+  for (const [taskId, count] of FAILING_STREAKS) {
+    const latest = rows
+      .filter((row) => row.task_id === taskId)
+      .sort((left, right) => (left.started_at < right.started_at ? 1 : left.started_at > right.started_at ? -1 : 0))
+      .slice(0, count)
+    for (const row of latest) {
+      if (row.kind === 'timeout') continue
+      row.kind = 'fail'
+      row.status = LOG_STATUS_FAILED
+    }
+  }
+}
+
+/**
  * 按任务的执行节律铺出近 30 天的执行日志。
  *
  * 这批日志是仪表盘、执行统计、执行日志页三处数字的【唯一来源】，
@@ -493,6 +525,7 @@ function buildLogs(now: number, tasks: DemoTask[]): DemoTaskLog[] {
   }
 
   shapeTodayFailures(rows, now)
+  shapeFailingStreaks(rows)
 
   // 运行中的两条：与 tasks 里 status=running 的两个任务一一对应。
   // 少了它们，「运行中的任务 = 2」这张卡片就和执行日志页的筛选结果对不上。

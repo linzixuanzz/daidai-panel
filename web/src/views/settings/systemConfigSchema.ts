@@ -72,7 +72,14 @@ export const CONFIG_KEYS_RENDERED_ELSEWHERE: Record<string, string> = {
   subscription_force_overwrite: 'web/src/views/subscriptions/index.vue',
   // 「代理设置」页静默更新开关下方的「上次检查更新时间」只读展示；
   // 值由静默更新巡检与概览页手动检查更新写入，不是用户偏好
-  auto_update_last_checked_at: 'web/src/views/settings/components/ProxyConfigCard.vue'
+  auto_update_last_checked_at: 'web/src/views/settings/components/ProxyConfigCard.vue',
+  // v4.0 主题工坊（管理员区）：风格 / 主色 / 玻璃模糊 / 密度经「设为全站默认」写入，自定义 CSS 有专门的编辑器与片段。
+  // 兜底区只能渲染成单行输入框（自定义 CSS 最长 32KB），所以不在这里重复一份
+  panel_theme_preset: 'web/src/components/ThemeStudio.vue',
+  panel_accent_color: 'web/src/components/ThemeStudio.vue',
+  panel_glass_blur: 'web/src/components/ThemeStudio.vue',
+  panel_density: 'web/src/components/ThemeStudio.vue',
+  panel_custom_css: 'web/src/components/ThemeStudio.vue'
 }
 
 /**

@@ -165,7 +165,7 @@ function clearAll() {
   transition: color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    color: var(--el-color-danger);
+    color: var(--dd-err-ink);
   }
 
   &:focus-visible {

@@ -14,17 +14,22 @@ import {
   Camera,
   Delete,
   MagicStick,
-  Sunny,
   Document,
+  Bell,
+  Brush,
 } from "@element-plus/icons-vue";
 import { authApi } from "@/api/auth";
 import {
-  applyMotionPreference,
-  readMotionPreference,
   type MotionPreference,
   type ThemeMode,
 } from "@/utils/panelAppearance";
 import { useThemeStore } from "@/stores/theme";
+import { useUiStore } from "@/stores/ui";
+import {
+  getDesktopNotifyEnabled,
+  isDesktopNotifySupported,
+  setDesktopNotifyEnabled,
+} from "@/utils/desktopNotify";
 import {
   ensureListPreferencesLoaded,
   readListPreference,
@@ -456,30 +461,80 @@ async function handleDisable2FA() {
   }
 }
 
-// ===== 界面动效（本机偏好，存 localStorage；三档的具体含义见 utils/panelAppearance.ts）=====
+// ===== 界面外观卡（v4.0）：明暗三档 + 动效四档 + 打开主题工坊 =====
+// 风格、主色、背景、模糊、圆角、密度这些细项都挪进了主题工坊（components/ThemeStudio.vue），
+// 这张卡只留最常用的两排；两排都是本机偏好（localStorage），读写全部走 useThemeStore。
+const themeStore = useThemeStore();
+const uiStore = useUiStore();
+
+// 动效四档（旧值 always → 丰富、reduce → 关闭，读取时自动换算，见 utils/panelAppearance.ts）。
+// 当前档位直接读 themeStore.motion：主题工坊里改了动效，这里同步变，不再各自存一份。
 const motionOptions: Array<{ value: MotionPreference; label: string }> = [
   { value: "system", label: "跟随系统" },
-  { value: "always", label: "始终开启" },
-  { value: "reduce", label: "减少动效" },
+  { value: "rich", label: "丰富" },
+  { value: "subtle", label: "克制" },
+  { value: "off", label: "关闭" },
 ];
-const motionPreference = ref<MotionPreference>(readMotionPreference());
 // 系统当前是否开着「减少动态效果」：只用来在说明里提示用户「为什么跟随系统时看不到动画」，
 // 真正的降级完全由 global.scss 里的媒体查询决定，这里读不读都不影响效果。
 const systemReducedMotion = ref(false);
 let reducedMotionQuery: MediaQueryList | null = null;
 
-function setMotionPreference(value: MotionPreference) {
-  // applyMotionPreference 会写 localStorage 并立即改 <html> 上的 class，全站即时生效、无需刷新
-  motionPreference.value = applyMotionPreference(value);
-}
-
 function syncSystemReducedMotion() {
   systemReducedMotion.value = Boolean(reducedMotionQuery?.matches);
 }
 
-// ===== 界面主题（v3.3.2 / issue #145，同为本机偏好，三档含义见 utils/panelAppearance.ts）=====
+// ===== 桌面通知（v4.0 F10，本机偏好）=====
+// 开启时由 utils/desktopNotify.ts 请求浏览器授权，返回的是「实际」状态：用户在授权弹窗里点了拒绝，开关会弹回关闭。
+const desktopNotifySupported = isDesktopNotifySupported();
+const desktopNotifyEnabled = ref(desktopNotifySupported && getDesktopNotifyEnabled());
+const desktopNotifyBusy = ref(false);
+// 浏览器的授权状态（granted / denied / default），只用来在说明里回显真实情况
+const notifyPermission = ref<string>(
+  typeof Notification !== "undefined" ? Notification.permission : "unsupported",
+);
+// 不支持时说明原因：最常见的是用 http + IP 访问（非安全上下文，浏览器直接不给 Notification）
+const desktopNotifyUnsupportedReason = computed(() => {
+  if (desktopNotifySupported) return "";
+  if (typeof window !== "undefined" && !window.isSecureContext) {
+    return "桌面通知需要通过 HTTPS 或 localhost 访问面板，当前地址浏览器不允许发通知。";
+  }
+  return "当前浏览器不支持桌面通知。";
+});
+const notifyPermissionLabel = computed(() => {
+  if (notifyPermission.value === "granted") return "已允许";
+  if (notifyPermission.value === "denied") return "已拒绝";
+  if (notifyPermission.value === "default") return "尚未询问";
+  return "不可用";
+});
+
+async function toggleDesktopNotify(value: string | number | boolean) {
+  const wanted = Boolean(value);
+  desktopNotifyBusy.value = true;
+  try {
+    const actual = await setDesktopNotifyEnabled(wanted);
+    desktopNotifyEnabled.value = actual;
+    if (typeof Notification !== "undefined") {
+      notifyPermission.value = Notification.permission;
+    }
+    // 想开没开成：多半是授权被拒，给出能照着做的提示
+    if (wanted && !actual) {
+      ElMessage.warning(
+        notifyPermission.value === "denied"
+          ? "浏览器拒绝了通知权限：请在地址栏左侧的网站设置里允许通知，再回来打开"
+          : "没有拿到通知权限，桌面通知未开启",
+      );
+    }
+  } catch {
+    desktopNotifyEnabled.value = getDesktopNotifyEnabled();
+    ElMessage.error("切换桌面通知失败");
+  } finally {
+    desktopNotifyBusy.value = false;
+  }
+}
+
+// ===== 明暗（v3.3.2 / issue #145，本机偏好，三档含义见 utils/panelAppearance.ts）=====
 // 顶栏那颗图标按钮只在明/暗之间二态切换，第三档「跟随系统」只有这张卡能选回来。
-const themeStore = useThemeStore();
 const themeOptions: Array<{ value: ThemeMode; label: string }> = [
   { value: "light", label: "明亮" },
   { value: "dark", label: "暗夜" },
@@ -554,6 +609,11 @@ onMounted(async () => {
 // 首次挂载时 onActivated 也会跑一次，不用在 onMounted 里重复
 onActivated(() => {
   void loadPasskeyCount();
+  // 用户可能去浏览器设置里改了通知授权再切回来：按真实状态重新回显
+  if (typeof Notification !== "undefined") {
+    notifyPermission.value = Notification.permission;
+  }
+  desktopNotifyEnabled.value = desktopNotifySupported && getDesktopNotifyEnabled();
 });
 
 watch(activeTab, (tab) => {
@@ -572,7 +632,7 @@ onUnmounted(() => {
 <template>
   <div class="profile-page dd-scroll-page">
     <!-- ================= Hero ================= -->
-    <header class="profile-hero">
+    <header class="profile-hero dd-glass">
       <div class="profile-hero-aura" aria-hidden="true"></div>
 
       <div class="profile-hero-main">
@@ -678,7 +738,7 @@ onUnmounted(() => {
     <!-- ================= Body: sidebar tabs + content ================= -->
     <div class="profile-body">
       <!-- Left sidebar tabs -->
-      <nav class="profile-sidebar">
+      <nav class="profile-sidebar dd-glass">
         <button
           class="sidebar-tab"
           :class="{ active: activeTab === 'profile' }"
@@ -714,7 +774,7 @@ onUnmounted(() => {
         <Transition name="dd-profile-panel" mode="out-in">
         <!-- ===== 基本资料 ===== -->
         <div v-if="activeTab === 'profile'" key="profile" class="profile-panel">
-          <section class="profile-card">
+          <section class="profile-card dd-glass">
             <header class="profile-card-header">
               <span class="card-title">
                 <el-icon :size="15"><User /></el-icon>
@@ -780,77 +840,113 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <!-- 界面主题（v3.3.2，issue #145）：与界面动效同为纯本机偏好，不进服务端配置
+          <!-- 界面外观（v4.0）：明暗三档 + 动效四档 + 打开主题工坊。都是本机偏好，不进服务端配置
                （理由见 utils/panelAppearance.ts）。顶栏那颗图标按钮点一下只在明/暗之间切，
-               第三档「跟随系统」只有这里能选回来。 -->
-          <section class="profile-card">
+               第三档「跟随系统」只有这里能选回来。风格、主色等细项在主题工坊里。 -->
+          <section class="profile-card dd-glass">
             <header class="profile-card-header">
               <span class="card-title">
-                <el-icon :size="15"><Sunny /></el-icon>
-                <span>界面主题</span>
+                <el-icon :size="15"><Brush /></el-icon>
+                <span>界面外观</span>
               </span>
               <span class="pref-scope">仅对当前浏览器生效</span>
             </header>
-            <div class="dd-seg-group" role="radiogroup" aria-label="界面主题">
-              <button
-                v-for="option in themeOptions"
-                :key="option.value"
-                type="button"
-                role="radio"
-                class="dd-seg-btn"
-                :class="{ 'is-active': themeStore.mode === option.value }"
-                :aria-checked="themeStore.mode === option.value"
-                @click="themeStore.setThemeMode(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-            <p class="pref-desc">
-              选「跟随系统」后，面板会跟着操作系统的深色模式自动切换；
-              点顶栏那颗图标按钮则会脱离跟随，落到固定的明亮或暗夜。
-            </p>
-            <p class="pref-desc pref-desc--muted">
-              当前系统：{{ systemDarkTheme ? "深色模式" : "浅色模式" }}
-            </p>
-          </section>
 
-          <!-- 界面动效：纯本机偏好，不进服务端配置（理由见 utils/panelAppearance.ts）。
-               分段控件用全局的 .dd-seg-group / .dd-seg-btn，与全站「多选一」的控件同一套观感。 -->
-          <section class="profile-card">
-            <header class="profile-card-header">
-              <span class="card-title">
-                <el-icon :size="15"><MagicStick /></el-icon>
-                <span>界面动效</span>
-              </span>
-              <span class="pref-scope">仅对当前浏览器生效</span>
-            </header>
-            <div class="dd-seg-group" role="radiogroup" aria-label="界面动效">
-              <button
-                v-for="option in motionOptions"
-                :key="option.value"
-                type="button"
-                role="radio"
-                class="dd-seg-btn"
-                :class="{ 'is-active': motionPreference === option.value }"
-                :aria-checked="motionPreference === option.value"
-                @click="setMotionPreference(option.value)"
-              >
-                {{ option.label }}
-              </button>
+            <div class="pref-row">
+              <span class="pref-row-label">明暗</span>
+              <div class="dd-seg-group" role="radiogroup" aria-label="明暗">
+                <button
+                  v-for="option in themeOptions"
+                  :key="option.value"
+                  type="button"
+                  role="radio"
+                  class="dd-seg-btn"
+                  :class="{ 'is-active': themeStore.mode === option.value }"
+                  :aria-checked="themeStore.mode === option.value"
+                  @click="themeStore.setThemeMode(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
             </div>
-            <p class="pref-desc">
-              系统开了「减少动态效果」时浏览器默认不播动画，选「始终开启」可覆盖；
-              选「减少动效」则无论系统怎么设，动画都压到几乎不可见。
-            </p>
             <p class="pref-desc pref-desc--muted">
-              当前系统：{{
+              「跟随系统」会跟着操作系统的深色模式自动切换，当前系统：{{
+                systemDarkTheme ? "深色模式" : "浅色模式"
+              }}
+            </p>
+
+            <div class="pref-row">
+              <span class="pref-row-label">动效</span>
+              <div class="dd-seg-group" role="radiogroup" aria-label="界面动效">
+                <button
+                  v-for="option in motionOptions"
+                  :key="option.value"
+                  type="button"
+                  role="radio"
+                  class="dd-seg-btn"
+                  :class="{ 'is-active': themeStore.motion === option.value }"
+                  :aria-checked="themeStore.motion === option.value"
+                  @click="themeStore.setMotion(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+            </div>
+            <p class="pref-desc pref-desc--muted">
+              「克制」只保留必要过渡，「关闭」无论系统怎么设都不播动画；当前系统：{{
                 systemReducedMotion ? "已开启减少动态效果" : "未开启减少动态效果"
               }}
             </p>
+
+            <div class="pref-studio-row">
+              <el-button type="primary" @click="uiStore.openStudio()">
+                <el-icon><MagicStick /></el-icon>
+                <span>打开主题工坊</span>
+              </el-button>
+              <span class="pref-desc pref-desc--inline">
+                风格、主色、背景、玻璃模糊、圆角、密度都在主题工坊里，改动实时预览。
+              </span>
+            </div>
+          </section>
+
+          <!-- 桌面通知（v4.0 F10）：本机偏好。开启时请求浏览器授权，被拒时开关会弹回关闭并回显真实状态 -->
+          <section class="profile-card dd-glass">
+            <header class="profile-card-header">
+              <span class="card-title">
+                <el-icon :size="15"><Bell /></el-icon>
+                <span>桌面通知</span>
+              </span>
+              <span class="pref-scope">仅对当前浏览器生效</span>
+            </header>
+            <div class="pref-row">
+              <el-switch
+                :model-value="desktopNotifyEnabled"
+                :loading="desktopNotifyBusy"
+                :disabled="!desktopNotifySupported"
+                active-text="任务连续失败时弹出系统通知"
+                @update:model-value="toggleDesktopNotify"
+              />
+            </div>
+            <p v-if="!desktopNotifySupported" class="pref-desc pref-desc--warn">
+              {{ desktopNotifyUnsupportedReason }}
+            </p>
+            <template v-else>
+              <p class="pref-desc">
+                面板开着（哪怕在后台标签页）时，新出现的失败任务会弹一条系统通知，点击直接打开对应日志；
+                同时开着多个标签页也只弹一次。面板关掉后不会推送，需要时请配置通知渠道。
+              </p>
+              <p
+                class="pref-desc pref-desc--muted"
+                :class="{ 'pref-desc--warn': notifyPermission === 'denied' }"
+              >
+                浏览器授权：{{ notifyPermissionLabel }}<template v-if="notifyPermission === 'denied'">
+                  ，请在地址栏左侧的网站设置里允许通知后再打开</template>
+              </p>
+            </template>
           </section>
 
           <!-- 日志查看（#147）：与上面两张不同，这是账户偏好（/auth/preferences 的 list 组），APP 读写的也是这一份。 -->
-          <section class="profile-card">
+          <section class="profile-card dd-glass">
             <header class="profile-card-header">
               <span class="card-title">
                 <el-icon :size="15"><Document /></el-icon>
@@ -880,7 +976,7 @@ onUnmounted(() => {
             </p>
           </section>
 
-          <section class="profile-card">
+          <section class="profile-card dd-glass">
             <header class="profile-card-header">
               <span class="card-title">
                 <el-icon :size="15"><InfoFilled /></el-icon>
@@ -913,7 +1009,7 @@ onUnmounted(() => {
 
         <!-- ===== 安全设置 ===== -->
         <div v-else-if="activeTab === 'security'" key="security" class="profile-panel">
-          <section class="profile-card">
+          <section class="profile-card dd-glass">
             <header class="profile-card-header">
               <span class="card-title">
                 <el-icon :size="15"><Lock /></el-icon>
@@ -965,7 +1061,7 @@ onUnmounted(() => {
           </section>
 
           <section
-            class="profile-card profile-card--twofa"
+            class="profile-card profile-card--twofa dd-glass"
             :class="{ 'is-on': twoFAEnabled }"
           >
             <div class="twofa-halo" aria-hidden="true"></div>
@@ -1035,7 +1131,7 @@ onUnmounted(() => {
         <!-- ===== 赞助信息 ===== -->
         <div v-else key="sponsors" class="profile-panel">
           <section class="sponsor-panel">
-            <div class="sponsor-toolbar">
+            <div class="sponsor-toolbar dd-glass">
               <div class="sponsor-toolbar-copy">
                 <div class="sponsor-toolbar-title-row">
                   <h3>赞助名单</h3>
@@ -1162,10 +1258,14 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 .profile-page {
-  --profile-accent: #3b82f6;
-  --profile-border: var(--el-border-color-lighter);
-  --profile-surface: var(--el-bg-color);
-  --profile-surface-muted: var(--el-fill-color-light);
+  /* v4.0：全部改读主题令牌（styles/themes/）。
+     hero / 侧栏 / 卡片 / 赞助工具条在模板上挂了 .dd-glass，底色由它给（半透明 surface + 模糊，
+     生效模糊为 0 时 _switches.scss 会把 --dd-surface 换成实色），这里的样式不再写 background，
+     否则 scoped 选择器的特异度会压掉 .dd-glass 的底色与「降低透明度」时的实色兜底。 */
+  --profile-accent: var(--dd-accent);
+  --profile-border: var(--dd-border);
+  --profile-surface: var(--dd-surface-solid);
+  --profile-surface-muted: var(--dd-surface-2);
 
   display: flex;
   flex-direction: column;
@@ -1235,13 +1335,14 @@ onUnmounted(() => {
 .profile-hero {
   position: relative;
   overflow: hidden;
+  /* 资料卡被裁的根因：.profile-page 是固定高度滚动容器（.dd-scroll-page）里的纵向 flex，
+     hero 默认 flex-shrink: 1 又带 overflow: hidden，页面内容一超高 hero 就被压扁，
+     「最近登录」那一行被裁掉。不许它参与收缩，超出的高度交给外层滚动。 */
+  flex-shrink: 0;
   padding: 30px 34px;
-  /* 纯色底：去掉紫蓝渐变与阴影，层次仅靠 1px 描边。
-     注意：暗色下 hero 背景由 global.scss 的 `.profile-hero` 覆盖接管为纯色，与此处一致。
-     hero 是整页最外层的容器类表面 → surface 档 */
+  /* 底色由模板上的 .dd-glass 给，层次靠描边。hero 是整页最外层的容器类表面 → surface 档 */
   border-radius: var(--dd-radius-surface);
-  background: var(--profile-surface);
-  border: 1px solid var(--profile-border);
+  border: var(--dd-border-width) solid var(--profile-border);
 }
 
 /* 原右下角紫色光晕已移除，容器保留占位以免模板结构变动 */
@@ -1282,11 +1383,12 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  /* 头像占位与顶栏头像同一组令牌（G1 的 MainLayout 也读这两个） */
+  color: var(--dd-btn-primary-fg);
   font-family: var(--dd-font-ui);
   font-size: 28px;
   font-weight: 700;
-  background: var(--el-color-primary);
+  background: var(--dd-btn-primary-bg);
   flex-shrink: 0;
   cursor: pointer;
   overflow: hidden;
@@ -1321,13 +1423,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.4);
+  /* 遮罩取正文色半透明：亮色主题是深色遮罩，暗色主题是浅色遮罩；图标取卡底色保证反差 */
+  background: color-mix(in srgb, var(--dd-text) 45%, transparent);
   /* hover 遮罩铺满头像本体，跟随头像走白名单圆形 */
   border-radius: 50%;
   opacity: 0;
   // 时长/缓动走令牌：写死毫秒会绕过 prefers-reduced-motion 的降级
   transition: opacity var(--dd-motion-fast) var(--dd-ease-standard);
-  color: #fff;
+  color: var(--dd-surface-solid);
 }
 
 .profile-avatar-input {
@@ -1349,7 +1452,7 @@ onUnmounted(() => {
   background: var(--profile-surface);
   /* 去阴影后靠 2px 描边与头像本体分隔 */
   border: 2px solid var(--profile-border);
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   cursor: pointer;
   transition:
     color var(--dd-motion-fast) var(--dd-ease-standard),
@@ -1375,14 +1478,14 @@ onUnmounted(() => {
   /* 图标按钮 → control 档；这里的 !important 是为了压住 el-button 自己的圆角，
      不是为了压 --dd-radius-*，令牌值仍随外观开关切换 */
   border-radius: var(--dd-radius-control) !important;
-  color: var(--el-color-danger) !important;
+  color: var(--dd-err-ink) !important;
   border: 1px solid var(--profile-border) !important;
   background: var(--profile-surface) !important;
 
   &:hover {
-    color: #fff !important;
-    background: var(--el-color-danger) !important;
-    border-color: var(--el-color-danger) !important;
+    color: var(--dd-on-status) !important;
+    background: var(--dd-err-solid) !important;
+    border-color: var(--dd-err-solid) !important;
   }
 }
 
@@ -1397,7 +1500,7 @@ onUnmounted(() => {
   inset: -4px;
   /* 头像外圈环，与头像同心，必须跟随头像走白名单圆形，否则方环套圆头像会露出四角 */
   border-radius: 50%;
-  border: 2.5px solid rgba(34, 197, 94, 0.25);
+  border: 2.5px solid var(--dd-accent-ring);
   z-index: 0;
 }
 
@@ -1414,7 +1517,8 @@ onUnmounted(() => {
   font-size: 24px;
   font-weight: 700;
   letter-spacing: 0.2px;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
+  font-family: var(--dd-font-head, inherit);
   line-height: 1.2;
 }
 
@@ -1436,28 +1540,29 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.2px;
-  /* 基础 chip 底色改用填充令牌，暗色不串色（实际 chip 均带 --green/--2fa 修饰覆盖此值） */
-  background: var(--el-fill-color-light);
+  /* 基础 chip 底色（实际 chip 均带 --green/--2fa 修饰覆盖此值） */
+  background: var(--profile-surface-muted);
   border: 1px solid var(--profile-border);
-  color: var(--el-text-color-regular);
+  color: var(--dd-text-2);
 }
 
+/* 角色 chip（类名沿用旧的 --green）：角色不是状态，v4.0 起跟主色走；文字用墨色令牌保证对比度 */
 .hero-chip--green {
-  color: #16a34a;
-  background: rgba(34, 197, 94, 0.08);
-  border-color: rgba(34, 197, 94, 0.22);
+  color: var(--dd-accent-ink);
+  background: var(--dd-accent-soft);
+  border-color: var(--dd-accent-ring);
 }
 
 .hero-chip--2fa {
-  background: rgba(245, 108, 108, 0.06);
-  border-color: rgba(245, 108, 108, 0.18);
-  color: var(--el-color-danger);
+  background: color-mix(in srgb, var(--dd-err) 8%, transparent);
+  border-color: color-mix(in srgb, var(--dd-err) 22%, transparent);
+  color: var(--dd-err-ink);
 }
 
 .hero-chip--2fa-on {
-  background: rgba(34, 197, 94, 0.08);
-  border-color: rgba(34, 197, 94, 0.22);
-  color: #16a34a;
+  background: color-mix(in srgb, var(--dd-ok) 10%, transparent);
+  border-color: color-mix(in srgb, var(--dd-ok) 26%, transparent);
+  color: var(--dd-ok-ink);
 }
 
 /* 2FA 状态点：去掉外圈光晕。
@@ -1467,11 +1572,11 @@ onUnmounted(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--el-color-danger);
+  background: var(--dd-err);
 }
 
 .hero-chip-dot--on {
-  background: var(--profile-accent);
+  background: var(--dd-ok);
 }
 
 .profile-hero-login {
@@ -1480,7 +1585,7 @@ onUnmounted(() => {
   gap: 5px;
   margin-top: 2px;
   font-size: 12.5px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 /* ================= Hero Badge (shield) ================= */
@@ -1508,9 +1613,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  background: var(--profile-surface);
-  /* 1px 边框，与卡片外壳风格统一（不再用阴影浮起）。侧边栏是容器类表面 → surface 档 */
-  border: 1px solid var(--profile-border);
+  /* 底色由模板上的 .dd-glass 给。描边与卡片外壳统一。侧边栏是容器类表面 → surface 档 */
+  border: var(--dd-border-width) solid var(--profile-border);
   border-radius: var(--dd-radius-surface);
   padding: 12px;
   align-self: flex-start;
@@ -1525,7 +1629,7 @@ onUnmounted(() => {
   border-radius: var(--dd-radius-control);
   border: none;
   background: transparent;
-  color: var(--el-text-color-regular);
+  color: var(--dd-text-2);
   font-size: 13.5px;
   font-weight: 500;
   cursor: pointer;
@@ -1540,12 +1644,13 @@ onUnmounted(() => {
 
   &:hover {
     background: var(--profile-surface-muted);
-    color: var(--el-text-color-primary);
+    color: var(--dd-text);
   }
 
+  /* 选中项与侧栏导航同一组排版级令牌（素白是灰色药丸，其余主题是主色淡底） */
   &.active {
-    background: rgba(34, 197, 94, 0.08);
-    color: #16a34a;
+    background: var(--dd-nav-active-bg);
+    color: var(--dd-nav-active-fg);
     font-weight: 600;
   }
 }
@@ -1571,9 +1676,8 @@ onUnmounted(() => {
 /* ================= Cards ================= */
 .profile-card {
   position: relative;
-  background: var(--profile-surface);
-  /* 1px 边框划分层次，不再用阴影浮起。卡片本体是容器类表面 → surface 档 */
-  border: 1px solid var(--profile-border);
+  /* 底色由模板上的 .dd-glass 给；描边划分层次。卡片本体是容器类表面 → surface 档 */
+  border: var(--dd-border-width) solid var(--profile-border);
   border-radius: var(--dd-radius-surface);
   padding: 20px 24px;
   overflow: hidden;
@@ -1591,16 +1695,16 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
+  font-size: var(--dd-card-title-size, 15px);
+  font-weight: var(--dd-card-title-weight, 700);
+  color: var(--dd-text);
 }
 
 /* 偏好卡片（界面主题 / 界面动效 / 日志查看）共用：标题右侧的作用范围说明 + 分段控件下方的说明文字。
    v3.3.2（issue #145）加主题卡时从 .motion-pref-* 改成通用命名，几张卡共用一份样式 */
 .pref-scope {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   /* 日志查看卡（#147）的范围说明较长，窄屏会折成两行：靠右对齐，别让第二行缩回左边贴着标题 */
   text-align: right;
 }
@@ -1620,12 +1724,54 @@ onUnmounted(() => {
   margin: 12px 0 0;
   font-size: 12.5px;
   line-height: 1.7;
-  color: var(--el-text-color-regular);
+  color: var(--dd-text-2);
 }
 
 .pref-desc--muted {
   margin-top: 4px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-3);
+}
+
+/* 授权被拒 / 浏览器不支持：用警告墨色，提醒用户这不是正常状态 */
+.pref-desc--warn {
+  color: var(--dd-warn-ink);
+}
+
+/* 界面外观卡（v4.0）：一行一个「标签 + 分段控件」 */
+.pref-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* 第二行（动效）与上一行的说明文字之间拉开距离 */
+.pref-desc + .pref-row {
+  margin-top: 16px;
+}
+
+.pref-row-label {
+  flex-shrink: 0;
+  min-width: 36px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dd-text-2);
+}
+
+.pref-studio-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--profile-border);
+}
+
+.pref-desc--inline {
+  margin: 0;
+  flex: 1;
+  min-width: 200px;
 }
 
 /* Info grid */
@@ -1655,14 +1801,14 @@ onUnmounted(() => {
 }
 
 .info-label {
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   font-size: 13px;
   letter-spacing: 0.2px;
 }
 
 .info-value {
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
   text-align: right;
   word-break: break-all;
   font-size: 13px;
@@ -1687,7 +1833,7 @@ onUnmounted(() => {
     border: 1px solid var(--profile-border);
     font-size: 12.5px;
     line-height: 1.6;
-    color: var(--el-text-color-regular);
+    color: var(--dd-text-2);
   }
 }
 
@@ -1703,8 +1849,8 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 700;
   font-family: var(--dd-font-mono);
-  color: var(--profile-accent);
-  background: rgba(34, 197, 94, 0.12);
+  color: var(--dd-accent-ink);
+  background: var(--dd-accent-soft);
 }
 
 /* Password */
@@ -1712,7 +1858,7 @@ onUnmounted(() => {
   margin: 0 0 14px;
   font-size: 13px;
   line-height: 1.7;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .security-form {
@@ -1723,7 +1869,7 @@ onUnmounted(() => {
   :deep(.el-form-item__label) {
     font-size: 13px;
     font-weight: 600;
-    color: var(--el-text-color-secondary);
+    color: var(--dd-text-2);
   }
 
   :deep(.el-input__wrapper) {
@@ -1732,31 +1878,20 @@ onUnmounted(() => {
   }
 }
 
-/* 主行动按钮：纯绿色底，去掉渐变与辉光，hover 只加深底色 */
+/* 主行动按钮：v4.0 起不再写死绿色，底色 / 文字色交给主按钮令牌（--dd-btn-primary-*，已接到 .el-button--primary），
+   圆角交给 --dd-btn-radius（素白是胶囊），这里只管尺寸 */
 .primary-cta {
-  /* 按钮属控件类表面 → control 档 */
-  border-radius: var(--dd-radius-control);
   height: 38px;
   padding: 0 20px;
   font-weight: 600;
-  background: #22c55e;
-  border: none;
-
-  &:hover,
-  &:focus {
-    background: #16a34a;
-    border: none;
-  }
 }
 
 /* Two-factor card：纯色底，状态差异只体现在描边颜色上 */
 .profile-card--twofa {
-  border-color: rgba(245, 108, 108, 0.18);
-  background: var(--profile-surface);
+  border-color: color-mix(in srgb, var(--dd-err) 26%, var(--profile-border));
 
   &.is-on {
-    border-color: rgba(34, 197, 94, 0.22);
-    background: var(--profile-surface);
+    border-color: color-mix(in srgb, var(--dd-ok) 30%, var(--profile-border));
   }
 }
 
@@ -1777,12 +1912,12 @@ onUnmounted(() => {
   font-weight: 700;
   font-family: var(--dd-font-mono);
   letter-spacing: 0.5px;
-  background: rgba(245, 108, 108, 0.08);
-  color: var(--el-color-danger);
+  background: color-mix(in srgb, var(--dd-err) 8%, transparent);
+  color: var(--dd-err-ink);
 
   &--on {
-    background: rgba(34, 197, 94, 0.1);
-    color: #16a34a;
+    background: color-mix(in srgb, var(--dd-ok) 10%, transparent);
+    color: var(--dd-ok-ink);
   }
 }
 
@@ -1799,7 +1934,7 @@ onUnmounted(() => {
   margin: 0 0 16px;
   font-size: 13px;
   line-height: 1.7;
-  color: var(--el-text-color-regular);
+  color: var(--dd-text-2);
 }
 
 .twofa-actions {
@@ -1816,29 +1951,29 @@ onUnmounted(() => {
   gap: 6px;
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
+  border-top: 1px solid var(--profile-border);
   font-size: 13px;
-  color: var(--el-text-color-regular);
+  color: var(--dd-text-2);
 }
 
 .passkey-row__sep {
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
 }
 
 .danger-outline-btn {
-  /* 按钮属控件类表面 → control 档 */
-  border-radius: var(--dd-radius-control);
+  /* 按钮圆角与全站按钮同一个令牌（素白是胶囊） */
+  border-radius: var(--dd-btn-radius, var(--dd-radius-control));
   height: 38px;
   padding: 0 18px;
   font-weight: 600;
-  color: var(--el-color-danger);
+  color: var(--dd-err-ink);
   background: transparent;
-  border: 1px solid rgba(245, 108, 108, 0.4);
+  border: 1px solid color-mix(in srgb, var(--dd-err) 40%, transparent);
 
   &:hover {
-    color: #fff;
-    background: var(--el-color-danger);
-    border-color: var(--el-color-danger);
+    color: var(--dd-on-status);
+    background: var(--dd-err-solid);
+    border-color: var(--dd-err-solid);
   }
 }
 
@@ -1856,10 +1991,9 @@ onUnmounted(() => {
   gap: 14px;
   flex-wrap: wrap;
   padding: 18px 22px;
-  /* 纯色底：去掉琥珀渐变与阴影，只保留琥珀描边点题。工具条是容器类表面 → surface 档 */
+  /* 底色由模板上的 .dd-glass 给，琥珀（警告色）描边点题。工具条是容器类表面 → surface 档 */
   border-radius: var(--dd-radius-surface);
-  border: 1px solid rgba(245, 158, 11, 0.16);
-  background: var(--profile-surface);
+  border: var(--dd-border-width) solid color-mix(in srgb, var(--dd-warn) 24%, var(--profile-border));
 }
 
 .sponsor-toolbar-copy {
@@ -1877,20 +2011,20 @@ onUnmounted(() => {
     margin: 0;
     font-size: 17px;
     font-weight: 700;
-    color: #b45309;
+    color: var(--dd-warn-ink);
   }
 }
 
 .sponsor-toolbar-hint {
   font-size: 11.5px;
-  color: #a16207;
+  color: var(--dd-warn-ink);
 }
 
 .sponsor-toolbar-intro {
   margin: 6px 0 0;
   font-size: 12.5px;
   line-height: 1.6;
-  color: #78350f;
+  color: var(--dd-text-2);
   max-width: 680px;
 }
 
@@ -1936,19 +2070,19 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  background: var(--el-color-primary);
+  color: var(--dd-on-accent);
+  background: var(--dd-accent);
 }
 
 .setup-dialog-title {
   font-size: 15px;
   font-weight: 700;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
 }
 
 .setup-dialog-sub {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   margin-top: 2px;
 }
 
@@ -1981,19 +2115,19 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 700;
   font-family: var(--dd-font-mono);
-  color: #fff;
-  background: #16a34a;
+  color: var(--dd-on-accent);
+  background: var(--dd-accent);
 }
 
 .step-title {
   font-size: 13.5px;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
 }
 
 .step-hint {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   line-height: 1.6;
 }
 
@@ -2009,6 +2143,7 @@ onUnmounted(() => {
   padding: 10px;
   /* 二维码图片容器属容器类表面 → surface 档 */
   border-radius: var(--dd-radius-surface);
+  /* 唯一保留的写死颜色：二维码必须是白底深码，扫码软件才认得出（暗色主题下也一样），不跟主题走 */
   background: #fff;
   border: 1px solid var(--profile-border);
 }
@@ -2027,7 +2162,7 @@ onUnmounted(() => {
     font-weight: 700;
     letter-spacing: 0.18em;
     user-select: all;
-    color: var(--el-text-color-primary);
+    color: var(--dd-text);
     word-break: break-all;
   }
 }
@@ -2103,23 +2238,6 @@ onUnmounted(() => {
   .shield-icon {
     width: 48px;
     height: 58px;
-  }
-}
-
-/* ================= 暗色修补 =================
-   赞助卡的琥珀文字（深棕）在暗色底上对比过低，仅在暗色下提亮，
-   不影响明色下的品牌色观感 */
-html.dark {
-  .sponsor-toolbar-title-row h3 {
-    color: #fbbf24;
-  }
-
-  .sponsor-toolbar-hint {
-    color: #d6a85f;
-  }
-
-  .sponsor-toolbar-intro {
-    color: var(--el-text-color-regular);
   }
 }
 </style>

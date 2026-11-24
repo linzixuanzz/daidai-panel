@@ -550,7 +550,7 @@ defineExpose({ loadViews, loadGroups, openCreateDialog, openManagementDialog, ca
   // 透明描边占位，选中时只换 border-color，避免出现 1px 的尺寸跳动
   border: 1px solid transparent;
   background: transparent;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -562,22 +562,22 @@ defineExpose({ loadViews, loadGroups, openCreateDialog, openManagementDialog, ca
   white-space: nowrap;
 
   &:hover {
-    color: var(--el-text-color-primary);
+    color: var(--dd-text);
   }
 
   // 从 el-button 换成原生 button 后丢了 EP 的焦点环，键盘走查会看不出焦点落在哪一项。
   // offset 取负值让焦点环画在按钮内侧：槽内 gap 只有 2px，正向外扩会压到相邻项上。
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--el-color-primary) 45%, transparent);
+    outline: 2px solid var(--dd-accent-ring);
     outline-offset: -1px;
     // 焦点环沿 border-radius 描边，要跟分段项本身同档，否则圆角模式下环是方的、项是圆的
     border-radius: var(--dd-radius-control);
   }
 
   &.active {
-    background: var(--el-bg-color);
-    color: var(--el-color-primary);
-    border-color: var(--el-border-color-lighter);
+    background: var(--dd-surface-solid);
+    color: var(--dd-accent-ink);
+    border-color: var(--dd-border);
     font-weight: 600;
   }
 }
@@ -602,7 +602,7 @@ defineExpose({ loadViews, loadGroups, openCreateDialog, openManagementDialog, ca
     top: calc(50% - 8px);
     width: 1px;
     height: 16px;
-    background: var(--el-border-color);
+    background: var(--dd-border-strong);
     pointer-events: none;
   }
 }

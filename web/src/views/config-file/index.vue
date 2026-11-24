@@ -259,7 +259,7 @@ async function copyConfigScript() {
     </div>
 
     <div class="config-layout">
-      <el-card class="editor-card" shadow="never" v-loading="loading">
+      <el-card class="editor-card dd-rise" style="--dd-i: 0" shadow="never" v-loading="loading">
         <template #header>
           <div class="editor-card__header">
             <div class="editor-card__intro">
@@ -450,7 +450,7 @@ async function copyConfigScript() {
       </el-card>
 
       <aside class="side-panel">
-        <el-card class="info-card" shadow="never">
+        <el-card class="info-card dd-spot dd-rise" style="--dd-i: 1" shadow="never">
           <template #header>
             <span>文件说明</span>
           </template>
@@ -470,7 +470,7 @@ async function copyConfigScript() {
           </div>
         </el-card>
 
-        <el-card class="tips-card" shadow="never">
+        <el-card class="tips-card dd-spot dd-rise" style="--dd-i: 2" shadow="never">
           <template #header>
             <span>写法提示</span>
           </template>
@@ -566,9 +566,10 @@ async function copyConfigScript() {
   flex-wrap: wrap;
 }
 
+// 卡片标题字号 / 字重读排版级令牌（素白等主题会覆盖），不按主题名分支
 .editor-card__title {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--dd-card-title-size);
+  font-weight: var(--dd-card-title-weight);
   color: var(--el-text-color-primary);
 }
 
@@ -658,7 +659,7 @@ async function copyConfigScript() {
     color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &.is-on {
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     background: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
   }
 }
@@ -683,7 +684,8 @@ async function copyConfigScript() {
 .tips-card {
   :deep(.el-card__header) {
     padding: 14px 16px;
-    font-weight: 700;
+    font-size: var(--dd-card-title-size);
+    font-weight: var(--dd-card-title-weight);
   }
 
   :deep(.el-card__body) {
@@ -860,30 +862,6 @@ code {
 // backwards 只在 delay 期间铺 from 帧，动画结束后回到自然样式（opacity 1、无 transform），
 // 末态与 to 帧完全一致，视觉上没有区别。
 // 只动 opacity + translateY、不碰 height：容器高度全程稳定，编辑器的首次布局不受影响。
-@keyframes dd-configfile-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.editor-card,
-.info-card,
-.tips-card {
-  animation: dd-configfile-rise-in var(--dd-motion-page)
-    var(--dd-ease-decelerate) backwards;
-}
-
-// 轻微错落：编辑器卡先入，右侧说明卡依次略晚
-.info-card {
-  animation-delay: 30ms;
-}
-
-.tips-card {
-  animation-delay: 60ms;
-}
+// v4.0 起改用全局 .dd-rise（同样是 backwards 填充，满足上面的约束）：模板里三张卡挂类，
+// 内联 --dd-i 控制错落（编辑器卡 0、说明卡 1、提示卡 2）。
 </style>

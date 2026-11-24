@@ -82,9 +82,8 @@
 html,
 body {
   height: 100%;
-  font-family:
-    "Inter", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial,
-    sans-serif;
+  // v4.0：字体走 --dd-font-ui（:root 里的默认值与原来这串完全相同），终端主题把它换成等宽
+  font-family: var(--dd-font-ui);
   font-size: 14px;
   line-height: 1.6;
   letter-spacing: 0.2px;
@@ -94,6 +93,11 @@ body {
   // body 铺页面底色：布局外壳已全屏铺满，正常情况下看不到 body，
   // 但 100dvh 在移动端地址栏收放时会短暂露出底部，用页面底色兜底避免闪白。
   background: var(--el-bg-color-page);
+}
+
+// 界面密度（v4.0）只改 body 的字号；<html> 保持 14px，项目里的 rem 都按 14px 写的（见 themes/_switches.scss）
+body {
+  font-size: var(--dd-font-size);
 }
 
 @media screen and (min-width: 769px) {
@@ -155,12 +159,19 @@ body {
 }
 
 :root {
+  // v4.0 起 EP 的颜色由 styles/themes/_ep-map.scss 按主题令牌映射（html[data-dd-theme]，特异性更高）。
+  // 下面这组只是「<html> 上没有 data-dd-theme」时的兜底，正常情况下（index.html 首屏脚本必写）不生效。
   --el-color-primary: #409eff;
   --el-color-primary-light-3: #79bbff;
   --el-color-primary-light-5: #a0cfff;
   --el-color-primary-light-7: #c6e2ff;
   --el-color-primary-light-9: #ecf5ff;
   --el-color-primary-dark-2: #337ecc;
+  // 界面密度（v4.0，主题工坊「密度」）：这里是默认的 cozy 档，另外两档见 themes/_switches.scss。
+  // --dd-pad / --dd-gap 给第二波的卡片内边距与栅格间距用；--dd-font-size 是 body 与 EP 组件的正文字号。
+  --dd-pad: 20px;
+  --dd-gap: 16px;
+  --dd-font-size: 14px;
   // ===== 形状契约：三档圆角刻度（v3.1.0 起可配置）=====
   // v3.0.0 ~ v3.0.10 是「全站硬直角」；v3.1.0 起改成可切换：系统配置 panel_shape_style
   // 取 square（默认，直角）或 rounded（圆角），由 utils/panelAppearance.ts 在运行时
@@ -244,8 +255,9 @@ body {
   --dd-page-gutter-x: 20px;
   --dd-transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   // ===== 表面质感令牌 =====
-  // 阴影刻度：纯扁平方案下不再用阴影制造悬浮层次，一律 none；
-  // 需要区分层级的地方改用 1px 边框（--el-border-color-lighter）。
+  // 阴影刻度：这里的 none 只是「没有 data-dd-theme」时的兜底。
+  // v4.0 起每个主题都会给出真实阴影（styles/themes/*.scss），优先级高于这里与下面 html.dark 那份。
+  // 🔴 多值 box-shadow 列表里不要混用它们：兜底值 none 不是合法的列表成员，整条声明会被丢弃（spec 关键踩坑）。
   --dd-shadow-card: none;
   --dd-shadow-card-hover: none;
   --dd-shadow-shell: none;
@@ -316,7 +328,8 @@ a {
 .el-button {
   // 与 --el-border-radius-base 同值（它也派生自 control 档），写在这里只是让意图显式；
   // size="small" 仍走 EP 自己的 calc(base - 1px)，不在这条规则的管辖范围内。
-  border-radius: var(--dd-radius-control);
+  // v4.0：读排版级令牌 --dd-btn-radius（默认就是 control 档；素白取 pill 档，见 themes/_layout.scss / clean.scss）
+  border-radius: var(--dd-btn-radius);
   font-weight: 500;
   // 纯扁平：按钮只做颜色过渡，不再有按下缩放与浮起阴影
   transition:
@@ -961,8 +974,8 @@ a {
   border-right: none !important;
 
   .el-menu-item {
-    // 侧栏菜单项属控件类表面（与下拉菜单项同档）
-    border-radius: var(--dd-radius-control);
+    // 侧栏菜单项属控件类表面（与下拉菜单项同档）。v4.0：读排版级令牌（默认 = control 档，素白 14px）
+    border-radius: var(--dd-nav-item-radius);
     margin: 2px 8px;
     height: 44px;
     line-height: 44px;
@@ -976,9 +989,10 @@ a {
     overflow: hidden;
 
     &.is-active {
-      // 纯扁平：选中态用单一浅底色，不再叠品牌色渐变与图标辉光
-      background: var(--el-color-primary-light-9);
-      color: var(--el-color-primary);
+      // 纯扁平：选中态用单一浅底色，不再叠品牌色渐变与图标辉光。
+      // v4.0：底色 / 字色 / 竖条宽度读排版级令牌（默认与改前一致；素白是灰色药丸、竖条宽 0 即不显示）
+      background: var(--dd-nav-active-bg);
+      color: var(--dd-nav-active-fg);
       font-weight: 600;
 
       &::before {
@@ -987,7 +1001,7 @@ a {
         left: 0;
         top: 20%;
         height: 60%;
-        width: 3px;
+        width: var(--dd-nav-indicator-width);
         background: var(--el-color-primary);
         // 选中竖条从中点向上下两端长出来（#132）。伪元素随 .is-active 生成、随它消失，
         // 所以每次切到新菜单都会重放，不需要任何 JS；只动 transform / opacity，不触发重排。
@@ -1471,33 +1485,30 @@ html.dark {
     border-color: var(--el-border-color-darker);
   }
 
+  // 滚动条滑块取正文色的一小份（v4.0 前写死白色 15% / 25%，终端、纸墨暗色下色相不对）
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
+    background: color-mix(in srgb, var(--el-text-color-primary) 16%, transparent);
     &:hover {
-      background: rgba(255, 255, 255, 0.25);
+      background: color-mix(in srgb, var(--el-text-color-primary) 26%, transparent);
     }
   }
 
   // ===== 全局深色模式补丁：覆盖各页面 hardcoded 浅色，避免文字与浅色背景冲突 =====
-  // 表头兜底：各列表页的 :header-cell-style 已统一改用这对令牌；这条留着，防以后又有表头内联样式写死浅色（内联只有 !important 压得住）
-  .el-table th.el-table__cell,
-  .el-table th.el-table__cell.is-leaf {
-    background-color: var(--el-fill-color-light) !important;
-    color: var(--el-text-color-regular) !important;
-  }
-
-  // Profile 页面顶部 hero：去装饰渐变，改纯色底 + 深一档描边
-  .profile-hero {
-    background: #1e293b !important;
-    border-color: var(--el-border-color-darker) !important;
-  }
-
-  // 通用 stat-card：dark 下统一边框/底色，避免出现亮白卡片
-  .dd-stat-card,
-  .stat-card,
-  .stat-cards .stat-card {
-    background: var(--el-bg-color-overlay);
-    border-color: var(--el-border-color-darker);
+  // v4.0 验收返工：这一段原来有一批带 !important 的页面级覆盖，第二波各组只能改自己的 SFC、改不了本文件，
+  // 带着它们页面就没法覆盖。现在的处理（逐条核过页面里的基础样式）：
+  //   - 页面基础样式已经读令牌的（profile-hero、stat-card、侧栏 logo 两块、仪表盘 .panel）→ 整条删掉，
+  //     暗色下由令牌自己变深（底色从 overlay 变回 bg-color、描边从 darker 变回 lighter，色差很小）；
+  //   - 页面自己已经写了 :global(html.dark) 同名块的（更新 / 还原进度、赞助墙）→ 删掉。页面那份是 (0,3,1)，
+  //     这里不带 !important 本来就压不过它，留着只是死代码；那两个页面暗色块里还有写死的色值，见交接说明，由第二波令牌化；
+  //   - 全仓没人用的（.quick-action-card）→ 删掉；
+  //   - 表头与悬停行 → 改成 EP 的表格令牌，页面写普通样式或改同名令牌就能覆盖；
+  //   - 侧栏版本号 → 去掉 !important，保留选择器（理由见各自注释）。
+  // 表头与悬停行：原来是 `th { background-color/color ... !important }` 与 `tr:hover > td {... !important}`，
+  // 现在改设 EP 自己的表格令牌，取值不变。各列表页 :header-cell-style 里内联的也是这对令牌，结果一致。
+  .el-table {
+    --el-table-header-bg-color: var(--el-fill-color-light);
+    --el-table-header-text-color: var(--el-text-color-regular);
+    --el-table-row-hover-bg-color: var(--el-fill-color);
   }
 
   // page-header 副标题在浅色页面色差较大，统一弱化
@@ -1512,141 +1523,16 @@ html.dark {
     border-color: var(--el-border-color-darker);
   }
 
-  // 更新 / 还原进度头图：去光晕渐变与投影，改纯色底 + 1px 描边
-  .update-progress-hero,
-  .restore-progress-hero {
-    background: var(--el-bg-color-overlay) !important;
-    border: 1px solid var(--el-border-color-darker) !important;
-    box-shadow: none !important;
-  }
-
-  .update-progress-core,
-  .restore-progress-core,
-  .update-progress-bar,
-  .restore-progress-bar,
-  .update-target-chip,
-  .restore-progress-tag,
-  .update-step,
-  .restore-step,
-  .update-progress-meta span,
-  .restore-progress-meta span {
-    background: color-mix(
-      in srgb,
-      var(--el-bg-color-overlay) 92%,
-      black
-    ) !important;
-    border-color: var(--el-border-color-darker) !important;
-    box-shadow: none !important;
-  }
-
-  // 「当前步骤」必须比上面那条基础 !important 更强，否则暗色下所有步骤长得一模一样、
-  // 进度指示完全丢失（亮色的 .is-active 是「主色边框 + 浅色底」，无 !important，压不过基础规则）。
-  // 与 .is-done 的区分：is-active 用 26% 主色底 + 主色边框（更亮、边框被点亮），
-  // is-done 用 12% 主色底 + 中性深色描边（更暗、边框不点亮），两者在暗色下可清晰区分。
-  .update-step.is-active,
-  .restore-step.is-active {
-    background: color-mix(
-      in srgb,
-      var(--el-color-primary) 26%,
-      var(--el-bg-color-overlay)
-    ) !important;
-    border-color: var(--el-color-primary) !important;
-  }
-
-  .update-step.is-done,
-  .restore-step.is-done {
-    background: color-mix(
-      in srgb,
-      var(--el-color-primary) 12%,
-      var(--el-bg-color-overlay)
-    ) !important;
-  }
-
-  .update-step.is-failed,
-  .restore-step.is-failed,
-  .update-progress-error,
-  .restore-progress-error {
-    background: color-mix(
-      in srgb,
-      #7f1d1d 35%,
-      var(--el-bg-color-overlay)
-    ) !important;
-    border-color: rgba(220, 38, 38, 0.3) !important;
-    color: #fecaca !important;
-  }
-
-  .update-progress-error p,
-  .restore-progress-error p {
-    color: #fecaca !important;
-  }
-
-  // 侧边栏 logo 区域：暗色下用纯色底，避免 color-mix(..., white) 偏亮
-  .sidebar-logo {
-    background: var(--el-bg-color) !important;
-  }
-  .logo-inner {
-    background: var(--el-bg-color) !important;
-    border-color: var(--el-border-color-darker) !important;
-  }
+  // 侧栏版本号：MainLayout 的基础样式写死了 color-mix(主色 10%, white) 的浅底，暗色下必须改。
+  // 文字用主色墨色（原来的 primary-light-3 在极光暗色只有 2.3:1）。
+  // 不带 !important：(0,2,1) 压过页面的 (0,2,0)；G1 改 MainLayout 时在自己的暗色块里写同名选择器即可覆盖。
   .logo-version {
     background: color-mix(
       in srgb,
       var(--el-color-primary) 15%,
       var(--el-bg-color-overlay)
-    ) !important;
-    color: var(--el-color-primary-light-3) !important;
-  }
-
-  // 仪表盘面板容器：深色下加深边框对比度（去阴影后层级完全由边框承担）
-  .panel,
-  .log-panel {
-    border-color: var(--el-border-color-darker) !important;
-    box-shadow: none !important;
-  }
-
-  // 快捷操作区域
-  .quick-action-card {
-    background: var(--el-bg-color-overlay) !important;
-    border-color: var(--el-border-color-darker) !important;
-  }
-
-  // 仪表盘任务表格 hover 行
-  .el-table__body tr:hover > td {
-    background-color: var(--el-fill-color) !important;
-  }
-
-  // 赞助墙：去掉两层光晕 + 底色渐变，改纯色底，仅保留橙色描边点题
-  .sponsor-wall {
-    background: #1e293b !important;
-    border-color: rgba(249, 115, 22, 0.18) !important;
-  }
-
-  .sponsor-wall .title-text,
-  .sponsor-wall .sponsor-wall__summary,
-  .sponsor-wall .sponsor-empty h4,
-  .sponsor-wall .sponsor-empty p,
-  .sponsor-wall .podium-card__name,
-  .sponsor-wall .sponsor-card__name {
-    color: #f8fafc !important;
-  }
-
-  .sponsor-wall .summary-pill,
-  .sponsor-wall .sponsor-loading__card,
-  .sponsor-wall .sponsor-empty,
-  .sponsor-wall .podium-card,
-  .sponsor-wall .sponsor-card,
-  .sponsor-wall .podium-card__rank {
-    background: color-mix(
-      in srgb,
-      var(--el-bg-color-overlay) 92%,
-      black
-    ) !important;
-    border-color: rgba(249, 115, 22, 0.18) !important;
-  }
-
-  .sponsor-wall .podium-base {
-    background: #334155 !important;
-    border-color: rgba(249, 115, 22, 0.16) !important;
+    );
+    color: var(--dd-accent-ink, var(--el-color-primary-light-3));
   }
 }
 
@@ -1687,23 +1573,26 @@ html.dark {
 // 特异性：这里的根节点选择器是 (0,3,0)，高于 EP 那几条底色规则的 (0,2,0)
 // （`.el-popper.is-light` / `.el-dropdown__popper.el-popper` / `.el-picker__popper.el-popper` /
 // `.el-popover.el-popper`），与注入顺序无关，所以整段都不需要 !important。
+//
+// v4.0 改名：这两条原名 --dd-glass-bg / --dd-glass-blur。--dd-glass-blur 现在是主题令牌
+// （卡片玻璃的模糊半径，一个长度值，见 styles/themes/*.scss），值的形状不同，只能给下拉浮层换个名字。
 // ============================================================================
 :root {
-  --dd-glass-bg: color-mix(in srgb, var(--el-bg-color-overlay) 82%, transparent);
-  --dd-glass-blur: blur(12px) saturate(1.2);
+  --dd-popper-glass-bg: color-mix(in srgb, var(--el-bg-color-overlay) 82%, transparent);
+  --dd-popper-glass-filter: blur(12px) saturate(1.2);
 }
 
 html.dark {
-  --dd-glass-bg: color-mix(in srgb, var(--el-bg-color-overlay) 86%, transparent);
-  --dd-glass-blur: blur(14px) saturate(1.1);
+  --dd-popper-glass-bg: color-mix(in srgb, var(--el-bg-color-overlay) 86%, transparent);
+  --dd-popper-glass-filter: blur(14px) saturate(1.1);
 }
 
 // 两个选择器都要写：html.dark (0,1,1) 比 :root (0,1,0) 高，只写 :root 的话暗色下关不掉。
 @media (prefers-reduced-transparency: reduce) {
   :root,
   html.dark {
-    --dd-glass-bg: var(--el-bg-color-overlay);
-    --dd-glass-blur: none;
+    --dd-popper-glass-bg: var(--el-bg-color-overlay);
+    --dd-popper-glass-filter: none;
   }
 }
 
@@ -1713,14 +1602,14 @@ $dd-glass-poppers: ":is(.el-select__popper, .el-dropdown__popper, .el-picker__po
 
 // 门槛是 backdrop-filter 与 color-mix() 【都】支持。color-mix 那一半不能省：
 // Vite 7 默认构建目标（chrome107 / edge107 / firefox104 / safari16）里，Chrome/Edge 107~110、
-// Safari 16.0~16.1、Firefox 104~112 认 backdrop-filter 却不认 color-mix()。--dd-glass-bg 在那里是
+// Safari 16.0~16.1、Firefox 104~112 认 backdrop-filter 却不认 color-mix()。--dd-popper-glass-bg 在那里是
 // 「计算期无效值」，background 会退成 transparent，下面又把内层清成透明 —— 面板只剩一层模糊，文字直接压在页面上。
 // 检测值刻意写 currentColor 而不是 var(...)：@supports 里只要带 var() 就一律判为支持，测不出 color-mix。
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) and (background-color: color-mix(in srgb, currentColor 50%, transparent)) {
   #{$dd-glass-poppers} {
-    background: var(--dd-glass-bg);
-    -webkit-backdrop-filter: var(--dd-glass-blur);
-    backdrop-filter: var(--dd-glass-blur);
+    background: var(--dd-popper-glass-bg);
+    -webkit-backdrop-filter: var(--dd-popper-glass-filter);
+    backdrop-filter: var(--dd-popper-glass-filter);
   }
 
   // 直属内层清成透明（理由见上方「只能有一层半透明」）。日期面板只动根节点的直接子级：
@@ -1734,7 +1623,7 @@ $dd-glass-poppers: ":is(.el-select__popper, .el-dropdown__popper, .el-picker__po
   // 箭头底色同步。箭头是一个旋转 45° 的 10×10 小方块，一半探出面板、一半压在面板里
   // （EP 用 z-index:-1 把它垫在内容下面、面板底色上面）。
   #{$dd-glass-poppers} > .el-popper__arrow::before {
-    background: var(--dd-glass-bg);
+    background: var(--dd-popper-glass-bg);
   }
 
   // 面板变半透明后，压在面板里的那一半会和面板自己的底色叠成一块更实的小三角。
@@ -1917,7 +1806,8 @@ pre.dd-log-surface {
 
 // 统一 Element Plus v-loading 动效：方案 A 里的全局主 Loading 使用 Infinity 风格。
 :root {
-  --dd-loading-surface-color: rgba(255, 255, 255, 0.76);
+  // v4.0：从卡片底色派生（原写死白 76% / 石板蓝 62%），跟随主题
+  --dd-loading-surface-color: color-mix(in srgb, var(--el-bg-color) 76%, transparent);
   --dd-loading-surface-backdrop: blur(8px);
   --dd-loading-primary: var(--el-color-primary);
   --dd-loading-secondary: color-mix(
@@ -1928,7 +1818,7 @@ pre.dd-log-surface {
 }
 
 html.dark {
-  --dd-loading-surface-color: rgba(15, 23, 42, 0.62);
+  --dd-loading-surface-color: color-mix(in srgb, var(--el-bg-color) 62%, transparent);
   --dd-loading-primary: color-mix(
     in srgb,
     var(--el-color-primary-light-3) 92%,
@@ -2032,8 +1922,10 @@ html.dark {
 
 .dd-page-header__title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 700;
+  // v4.0：字号 / 字重 / 字距读排版级令牌（默认 22px / 700，素白 34px / 800）
+  font-size: var(--dd-page-title-size);
+  font-weight: var(--dd-page-title-weight);
+  letter-spacing: var(--dd-page-title-tracking);
   color: var(--el-text-color-primary);
   line-height: 1.3;
 }
@@ -2119,6 +2011,11 @@ html.dark {
   flex-wrap: wrap;
 }
 
+// v4.0：下面几组状态色（涨跌、图标底、状态 chip、环境标记、危险图标按钮）原来写死 Tailwind 色值，
+// 换主题后不跟色。改成读主题令牌（--dd-ok / --dd-err / --dd-warn / --dd-info / --dd-accent-2 / --dd-text-3），
+// var() 第二个参数保留原色值，<html> 上没有主题属性时观感与改前完全一致。
+// 验收返工：文字 / 图标色用墨色（--dd-*-ink，themes/_layout.scss），浅底仍用状态色本身 ——
+// 状态色直接当文字压在自己 10%~12% 的浅底上，素白、经典、呆呆亮色只有 2~3.6:1。
 .dd-stat-card__delta {
   display: inline-flex;
   align-items: center;
@@ -2131,13 +2028,13 @@ html.dark {
   font-size: 11.5px;
 
   &.is-up {
-    color: #10b981;
-    background: rgba(16, 185, 129, 0.1);
+    color: var(--dd-ok-ink, #10b981);
+    background: color-mix(in srgb, var(--dd-ok, #10b981) 10%, transparent);
   }
 
   &.is-down {
-    color: #ef4444;
-    background: rgba(239, 68, 68, 0.1);
+    color: var(--dd-err-ink, #ef4444);
+    background: color-mix(in srgb, var(--dd-err, #ef4444) 10%, transparent);
   }
 
   &.is-flat {
@@ -2157,40 +2054,41 @@ html.dark {
   flex-shrink: 0;
 
   &.is-blue {
-    background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
+    background: color-mix(in srgb, var(--dd-info, #3b82f6) 12%, transparent);
+    color: var(--dd-info-ink, #3b82f6);
   }
   &.is-green {
-    background: rgba(16, 185, 129, 0.12);
-    color: #10b981;
+    background: color-mix(in srgb, var(--dd-ok, #10b981) 12%, transparent);
+    color: var(--dd-ok-ink, #10b981);
   }
   &.is-orange {
-    background: rgba(245, 158, 11, 0.12);
-    color: #f59e0b;
+    background: color-mix(in srgb, var(--dd-warn, #f59e0b) 12%, transparent);
+    color: var(--dd-warn-ink, #f59e0b);
   }
   &.is-red {
-    background: rgba(239, 68, 68, 0.12);
-    color: #ef4444;
+    background: color-mix(in srgb, var(--dd-err, #ef4444) 12%, transparent);
+    color: var(--dd-err-ink, #ef4444);
   }
   &.is-purple {
-    background: rgba(6, 182, 212, 0.12);
-    color: #06b6d4;
+    background: color-mix(in srgb, var(--dd-accent-2, #06b6d4) 12%, transparent);
+    color: var(--dd-accent-2-ink, #06b6d4);
   }
   &.is-cyan {
-    background: rgba(6, 182, 212, 0.12);
-    color: #06b6d4;
+    background: color-mix(in srgb, var(--dd-accent-2, #06b6d4) 12%, transparent);
+    color: var(--dd-accent-2-ink, #06b6d4);
   }
   &.is-pink {
-    background: rgba(16, 185, 129, 0.12);
-    color: #10b981;
+    background: color-mix(in srgb, var(--dd-ok, #10b981) 12%, transparent);
+    color: var(--dd-ok-ink, #10b981);
   }
 }
 
 .dd-seg-group {
   display: inline-flex;
-  background: var(--el-fill-color-light);
+  // v4.0：底槽颜色与圆角读排版级令牌（默认 = fill-light + control 档；素白是胶囊）
+  background: var(--dd-seg-bg);
   // 分段控件的灰底槽 → control 档（与槽内的项同档，两者圆角一致才不会露出内外错位的角）
-  border-radius: var(--dd-radius-control);
+  border-radius: var(--dd-seg-radius);
   padding: 3px;
   gap: 2px;
 }
@@ -2201,10 +2099,11 @@ html.dark {
   background: transparent;
   padding: 6px 14px;
   font-size: 13px;
-  // 分段项属控件类表面 → control 档
-  border-radius: var(--dd-radius-control);
+  // 分段项属控件类表面 → control 档（v4.0 读 --dd-seg-radius，与底槽同一个来源）
+  border-radius: var(--dd-seg-radius);
   cursor: pointer;
-  color: var(--el-text-color-secondary);
+  // v4.0：读排版级令牌（默认 = 次要文字色）
+  color: var(--dd-seg-fg);
   // 按属性列而不是 all：扁平方案下这里只会变颜色，用 all 会把将来任何新增属性
   // （尺寸、间距）也一起过渡，出现意料外的位移。时长走令牌才吃得到 reduced-motion 降级。
   transition:
@@ -2219,9 +2118,12 @@ html.dark {
 
   // 去掉选中态微阴影，改用描边把选中项从灰底分组里托出来
   &.is-active {
-    background: var(--el-bg-color);
+    // v4.0：滑块底色与阴影读排版级令牌（默认 = 卡片底色、无阴影；素白是白色胶囊 + 柔和投影）
+    background: var(--dd-seg-thumb-bg);
+    box-shadow: var(--dd-seg-thumb-shadow);
     border-color: var(--el-border-color-lighter);
-    color: var(--el-color-primary);
+    // v4.0：读排版级令牌（默认 = 主色墨色；素白是正文色，与参考图的白色滑块黑字一致）
+    color: var(--dd-seg-active-fg);
     font-weight: 600;
   }
 }
@@ -2238,30 +2140,30 @@ html.dark {
   line-height: 1.5;
 
   &.is-success {
-    background: rgba(16, 185, 129, 0.12);
-    color: #10b981;
+    background: color-mix(in srgb, var(--dd-ok, #10b981) 12%, transparent);
+    color: var(--dd-ok-ink, #10b981);
   }
   &.is-failed,
   &.is-danger {
-    background: rgba(239, 68, 68, 0.12);
-    color: #ef4444;
+    background: color-mix(in srgb, var(--dd-err, #ef4444) 12%, transparent);
+    color: var(--dd-err-ink, #ef4444);
   }
   &.is-running,
   &.is-primary {
-    background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
+    background: color-mix(in srgb, var(--dd-info, #3b82f6) 12%, transparent);
+    color: var(--dd-info-ink, #3b82f6);
   }
   &.is-warning {
-    background: rgba(245, 158, 11, 0.12);
-    color: #f59e0b;
+    background: color-mix(in srgb, var(--dd-warn, #f59e0b) 12%, transparent);
+    color: var(--dd-warn-ink, #f59e0b);
   }
   &.is-info {
     background: var(--el-fill-color);
     color: var(--el-text-color-secondary);
   }
   &.is-purple {
-    background: rgba(6, 182, 212, 0.12);
-    color: #06b6d4;
+    background: color-mix(in srgb, var(--dd-accent-2, #06b6d4) 12%, transparent);
+    color: var(--dd-accent-2-ink, #06b6d4);
   }
 }
 
@@ -2276,24 +2178,24 @@ html.dark {
 
   &.is-prod,
   &.is-production {
-    background: rgba(16, 185, 129, 0.1);
-    color: #10b981;
+    background: color-mix(in srgb, var(--dd-ok, #10b981) 10%, transparent);
+    color: var(--dd-ok-ink, #10b981);
   }
   &.is-staging {
-    background: rgba(245, 158, 11, 0.1);
-    color: #f59e0b;
+    background: color-mix(in srgb, var(--dd-warn, #f59e0b) 10%, transparent);
+    color: var(--dd-warn-ink, #f59e0b);
   }
   &.is-test {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    background: color-mix(in srgb, var(--dd-info, #3b82f6) 10%, transparent);
+    color: var(--dd-info-ink, #3b82f6);
   }
   &.is-local {
-    background: rgba(148, 163, 184, 0.15);
-    color: #64748b;
+    background: color-mix(in srgb, var(--dd-text-3, #94a3b8) 15%, transparent);
+    color: var(--dd-text-2, #64748b);
   }
   &.is-default {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    background: color-mix(in srgb, var(--dd-info, #3b82f6) 10%, transparent);
+    color: var(--dd-info-ink, #3b82f6);
   }
 }
 
@@ -2367,8 +2269,8 @@ html.dark {
   }
 
   &.is-danger:hover {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+    background: color-mix(in srgb, var(--dd-err, #ef4444) 10%, transparent);
+    color: var(--dd-err-ink, #ef4444);
   }
 }
 
@@ -2842,7 +2744,7 @@ html.dark {
   }
 
   .dd-page-header__title {
-    font-size: 18px;
+    font-size: var(--dd-page-title-size-mobile);
   }
 
   .dd-toolbar,
@@ -3024,6 +2926,59 @@ html.dark {
 
 
 // ============================================================================
+// 头像占位（侧栏用户卡、顶栏用户名前的首字母圆）（v4.0 验收返工）
+// MainLayout 写死「主色底 + #fff 字」，纸墨暗色等主题下只有 3.4:1。改成与实心主按钮同一对颜色
+// （--dd-btn-primary-bg / -fg，14 套配色都 ≥ 4.5:1）。
+// 选择器 (0,2,1) 压过 MainLayout scoped 的 (0,2,0)；G1 改外壳时让这两个类直接读同一对令牌，这条就成了等值的冗余。
+// ============================================================================
+html[data-dd-theme] .user-avatar--placeholder,
+html[data-dd-theme] .header-user-avatar--placeholder {
+  background: var(--dd-btn-primary-bg);
+  color: var(--dd-btn-primary-fg);
+}
+
+// ============================================================================
+// 主题引擎接入（v4.0）
+// ----------------------------------------------------------------------------
+// 1) 让 AppBackdrop（App.vue 里的全屏背景层，z-index:-1）透出来。
+//    它是 position:fixed + z-index:-1，画在根层叠上下文的「负层」：在 <html> 的底色之上、所有普通流内容之下。
+//    但 body 与 #app 的底色属于「普通流块级背景」，排在负层之后，会把背景层整个盖住 ——
+//    所以有主题时把这两层清成透明，底色只留在 <html> 上（它就是画布底色，仍是 --el-bg-color-page = --dd-bg）。
+//    移动端地址栏收放露底时看到的也是 <html> 的这层底色，不会闪白。
+// ============================================================================
+html[data-dd-theme] body,
+html[data-dd-theme] #app {
+  background: transparent;
+}
+
+// 玻璃表面 .dd-glass（opt-in）：半透明 surface + backdrop-filter。
+// EP 的 --el-bg-color 刻意保持实色（见 themes/_ep-map.scss），想要玻璃观感的卡片、外壳自己加这个类。
+// ⚠️ backdrop-filter（任何非 none 值，包括 blur(0)）都会让元素成为 position:fixed 后代的包含块：
+//    里面有【原地渲染】的弹窗（没 append-to-body 的 el-dialog）、编辑器浮层的容器不要加，弹窗会被关在卡片里错位。
+//    表格行、列表项、标签这类小而多的元素也不要加（design §2.2：只给外壳与卡片级容器）。
+// 生效模糊为 0 时（用户设 0、或低端设备跟随系统）<html> 上是 data-dd-glass="off"：
+//    _switches.scss 已把 --dd-surface 换成实色，这里再把模糊关掉。
+.dd-glass {
+  background: var(--dd-surface);
+  -webkit-backdrop-filter: blur(var(--dd-glass-blur, 0px)) saturate(150%);
+  backdrop-filter: blur(var(--dd-glass-blur, 0px)) saturate(150%);
+}
+
+html[data-dd-glass="off"] .dd-glass {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+// 系统「降低透明度」：退回实色，不模糊（与下拉浮层毛玻璃那段同一口径）
+@media (prefers-reduced-transparency: reduce) {
+  .dd-glass {
+    background: var(--dd-surface-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+// ============================================================================
 // 减少动效：系统偏好 + 个人设置页「界面动效」三档（v3.2.8 起）
 // ----------------------------------------------------------------------------
 // 三档由 utils/panelAppearance.ts 的 applyMotionPreference() 在 createApp 之前同步挂到 <html> 上
@@ -3034,6 +2989,12 @@ html.dark {
 //            这类用户原来在面板里看不到任何动效，也没有任何办法打开；
 //   reduce → html.dd-motion-off：不看系统，直接走同一套压缩。
 // 两处的压缩内容用同一对 mixin 生成，保证逐条一致；要改压缩内容只改 mixin。
+//
+// v4.0 起档位扩成四档 system / rich / subtle / off（旧值 always → rich、reduce → off，只读兼容不回写），
+// 解析结果另写到 <html data-dd-motion>（styles/motion.scss 按它分档）。两个类的挂法相应变成：
+//   dd-motion-force：用户【显式】选了 rich 或 subtle —— 显式选择不看系统，下面的媒体查询不能再把它压掉；
+//   dd-motion-off：解析结果是 off（显式关闭，或跟随系统且系统开着减少动态效果）。
+// 所以本段两套压缩的触发条件与 v3.x 等价，下面的选择器一条都不用改。
 //
 // 🔴 通配那一半必须包在 :where() 里，让整条选择器的特异性保持 (0,0,0)，与改版前的裸 `*` 相同：
 //    写成 `:root:not(.dd-motion-force) *` 会变成 (0,2,0)，而 !important 之间照样比特异性，
@@ -3051,6 +3012,14 @@ html.dark {
 // 例外（issue #178）：两处生效路径的通配之后各有一条 .cm-scroller 的 transition-duration: 0s，
 // 让 CodeMirror 滚动区不吃 1ms 过渡，原因见那两条规则上的注释。
 // ============================================================================
+// 加载指示器（v4.0 验收返工）：转圈是「正在进行」的唯一信号，冻住会被当成卡死。
+// 下面的 1ms 压缩与 styles/motion.scss 里「关闭档 animation: none」都把它们排除在外。两处名单必须一致：
+//   .is-loading           EP 图标的转圈（el-icon is-loading，按钮里那个已被本文件改成 SVG 背景，不吃 CSS 动画）；
+//   .el-loading-spinner   v-loading 遮罩里的指示器（本项目画的是 SVG 背景自带的 SMIL 动画，CSS 管不到，列进来是兜底）；
+//   .dd-loading-motion    components/LoadingMotion.vue 的根类。它在减少动效 / 关闭档下有自己的静态画法
+//                          （那份 animation: none !important 写在组件里），这里排除只是为了不和它抢。
+$dd-motion-essential: ".is-loading, .is-loading *, .el-loading-spinner, .el-loading-spinner *, .dd-loading-motion, .dd-loading-motion *";
+
 @mixin dd-reduced-motion-tokens {
   // 把动效压缩到几乎不可见；新增 --dd-motion-* 令牌时必须同步加进来
   --dd-motion-fast: 1ms;
@@ -3091,9 +3060,9 @@ html.dark {
   :where(:root:not(.dd-motion-force)),
   :where(:root:not(.dd-motion-force))::before,
   :where(:root:not(.dd-motion-force))::after,
-  :where(:root:not(.dd-motion-force)) *,
-  :where(:root:not(.dd-motion-force)) *::before,
-  :where(:root:not(.dd-motion-force)) *::after {
+  :where(:root:not(.dd-motion-force)) :where(:not(#{$dd-motion-essential})),
+  :where(:root:not(.dd-motion-force)) :where(:not(#{$dd-motion-essential}))::before,
+  :where(:root:not(.dd-motion-force)) :where(:not(#{$dd-motion-essential}))::after {
     @include dd-reduced-motion-universal;
   }
 
@@ -3115,9 +3084,9 @@ html.dd-motion-off {
 :where(html.dd-motion-off),
 :where(html.dd-motion-off)::before,
 :where(html.dd-motion-off)::after,
-:where(html.dd-motion-off) *,
-:where(html.dd-motion-off) *::before,
-:where(html.dd-motion-off) *::after {
+:where(html.dd-motion-off) :where(:not(#{$dd-motion-essential})),
+:where(html.dd-motion-off) :where(:not(#{$dd-motion-essential}))::before,
+:where(html.dd-motion-off) :where(:not(#{$dd-motion-essential}))::after {
   @include dd-reduced-motion-universal;
 }
 

@@ -267,7 +267,7 @@ function handleKeyDown(event: KeyboardEvent) {
 
 .stop-schedule-hint {
   font-size: 11px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   line-height: 1.5;
 }
 
@@ -277,10 +277,11 @@ function handleKeyDown(event: KeyboardEvent) {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  background: var(--el-color-success);
+  // 实心状态底读 *-solid（亮色主题压深过一档），文字配 --dd-on-status
+  background: var(--dd-ok-solid);
   // 与 .error-badge 是同一槽位互斥的两态，统一走 control 档，避免有效/错误之间形状跳变
   border-radius: var(--dd-radius-control);
-  color: #fff;
+  color: var(--dd-on-status);
   font-weight: 500;
 
   .badge-icon {
@@ -298,10 +299,10 @@ function handleKeyDown(event: KeyboardEvent) {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  background: var(--el-color-danger);
+  background: var(--dd-err-solid);
   // 校验错误提示块 → control 档（与 CronInput 的同名元素保持一致）
   border-radius: var(--dd-radius-control);
-  color: #fff;
+  color: var(--dd-on-status);
   font-weight: 500;
 
   .badge-icon {
@@ -318,12 +319,12 @@ function handleKeyDown(event: KeyboardEvent) {
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  background: var(--el-color-warning-light-9);
+  background: color-mix(in srgb, var(--dd-warn) 10%, var(--dd-surface-solid));
   // 「下次停止」信息小块 → control 档
   border-radius: var(--dd-radius-control);
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
   font-weight: 500;
-  border: 1px solid var(--el-color-warning-light-7);
+  border: 1px solid color-mix(in srgb, var(--dd-warn) 30%, var(--dd-surface-solid));
 
   .time-icon {
     font-size: 13px;

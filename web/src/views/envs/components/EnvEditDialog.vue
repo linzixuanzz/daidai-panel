@@ -320,7 +320,7 @@ watch(
 }
 
 .env-edit-dialog__name-hint.is-error {
-  color: var(--el-color-danger);
+  color: var(--dd-err-ink);
 }
 
 .env-edit-dialog__value-item :deep(.el-form-item__label) {

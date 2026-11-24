@@ -102,6 +102,6 @@ defineProps<{
 }
 
 .form-hint--warning {
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
 }
 </style>

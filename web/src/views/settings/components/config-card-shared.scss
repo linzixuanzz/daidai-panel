@@ -5,13 +5,18 @@
   gap: 12px;
 }
 
+// 字号 / 字重 / 是否显示图标都读排版级令牌，由主题决定（素白主题是大号粗体、不带图标）
 .card-title {
-  font-weight: 700;
-  font-size: 16px;
+  font-weight: var(--dd-card-title-weight);
+  font-size: var(--dd-card-title-size);
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--el-text-color-primary);
+
+  > .el-icon {
+    display: var(--dd-card-title-icon-display);
+  }
 }
 
 .config-section {

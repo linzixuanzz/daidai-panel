@@ -92,8 +92,9 @@ const ariaLabel = computed(() => {
   font-weight: 600;
   line-height: 1;
   font-variant-numeric: tabular-nums; // 等宽数字，跳字时宽度不抖
-  color: #fff;
-  background-color: var(--el-color-danger);
+  // 实心危险底 + 状态文字色令牌（各主题都 ≥ 4.5:1）
+  color: var(--dd-on-status);
+  background-color: var(--dd-err-solid);
   // 数字翻牌时超出的那半行必须裁掉，否则会露在角标外面
   overflow: hidden;
 }

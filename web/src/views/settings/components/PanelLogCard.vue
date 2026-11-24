@@ -189,7 +189,7 @@ watch(() => [props.keyword, props.level, props.lines], () => {
   border-radius: var(--dd-radius-pill);
   font-size: 11px;
   font-weight: 600;
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   background: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
 }
 

@@ -1,0 +1,87 @@
+// ============================================================================
+// 排版级令牌（v4.0 Q4 追加，design §1.2 末尾）
+// ----------------------------------------------------------------------------
+// 主按钮、按钮圆角、页面大标题、侧栏玻璃、导航选中样式、分段控件、总览卡背景、卡片标题。
+// 这里给的是【所有主题共用的默认值】，必须和 v4.0 之前的观感一致（6 套老主题的排版不变）；
+// 只有素白（clean.scss）覆盖它们。第二波的外壳组、仪表板组只读这些令牌，不要按主题名写分支。
+//
+// 写在 :root（就是 <html>）上：里面引用的 --dd-accent、--el-color-primary-light-3 等都在 <html> 上代换，
+// 主题工坊写进内联样式的自定义主色同样吃得到。主题块是 (0,1,1) / (0,2,1)，覆盖这里的 (0,1,0) 不需要 !important。
+// global.scss 里已经接好线的消费方：.el-button 圆角、.dd-seg-group / .dd-seg-btn、侧栏 el-menu 选中态、.dd-page-header__title；
+// EP 主按钮的颜色在 _ep-map.scss 里接线。其余（侧栏、总览卡、卡片标题）由第二波各组自己读。
+// ============================================================================
+:root {
+  // —— 主按钮（EP 的 .el-button--primary 实色款已接线）——
+  // 默认值与改动前逐项相同：底色 = 主色，悬停 / 按下 / 禁用沿用 EP 的 light-3 / dark-2 / light-5
+  --dd-btn-primary-bg: var(--dd-accent);
+  --dd-btn-primary-fg: var(--dd-on-accent);
+  --dd-btn-primary-hover-bg: var(--el-color-primary-light-3);
+  --dd-btn-primary-active-bg: var(--el-color-primary-dark-2);
+  --dd-btn-primary-disabled-bg: var(--el-color-primary-light-5);
+  // 按钮圆角：默认就是控件档；素白取 pill 档（跟着全站圆角风格走，选了直角仍是直角）
+  --dd-btn-radius: var(--dd-radius-control);
+
+  // —— 页面大标题（.dd-page-header__title 已接线）——
+  --dd-page-title-size: 22px;
+  --dd-page-title-size-mobile: 18px;
+  --dd-page-title-weight: 700;
+  --dd-page-title-tracking: normal;
+
+  // —— 侧栏（第二波 G1 浮岛化侧栏读）——
+  // 默认：主题表面色 + 主题玻璃模糊（经典 / 纸墨 / 呆呆的 surface 是实色、模糊 0，观感就是现在的实色侧栏）
+  --dd-sidebar-bg: var(--dd-surface);
+  --dd-sidebar-blur: var(--dd-glass-blur);
+  --dd-sidebar-radius: var(--dd-radius-surface);
+  --dd-sidebar-shadow: var(--dd-shadow-shell);
+
+  // —— 导航选中态（global.scss 的 .el-menu-item.is-active 已接线）——
+  // 竖条宽度给 0 即不显示左侧竖条
+  --dd-nav-active-bg: var(--el-color-primary-light-9);
+  // 选中项文字用主色墨色（见本文件末尾「墨色」一段）：主色直接压在 10% 主色浅底上，呆呆亮色只有 3.5:1
+  --dd-nav-active-fg: var(--dd-accent-ink);
+  --dd-nav-indicator-width: 3px;
+  --dd-nav-item-radius: var(--dd-radius-control);
+
+  // —— 分段控件（.dd-seg-group / .dd-seg-btn 已接线；素白另给 el-segmented 接了线）——
+  --dd-seg-radius: var(--dd-radius-control);
+  --dd-seg-bg: var(--el-fill-color-light);
+  --dd-seg-thumb-bg: var(--el-bg-color);
+  // 单值 none 是安全的；不要把它拼进多值 box-shadow 列表（spec 关键踩坑）
+  --dd-seg-thumb-shadow: none;
+  // 未选中项 / 选中项的文字色。选中项默认用主色墨色（主色直接压在滑块上部分配色不到 4.5）
+  --dd-seg-fg: var(--el-text-color-secondary);
+  --dd-seg-active-fg: var(--dd-accent-ink);
+
+  // —— 仪表板总览卡（Hero）背景（第二波 G3 读）——
+  --dd-hero-bg: linear-gradient(135deg, color-mix(in srgb, var(--dd-accent) 12%, var(--dd-surface-solid)), var(--dd-surface-solid) 65%);
+
+  // —— 卡片标题（第二波各页卡片头读）——
+  --dd-card-title-size: 15px;
+  --dd-card-title-weight: 600;
+  // 标题前的小图标：inline-flex 显示 / none 隐藏
+  --dd-card-title-icon-display: inline-flex;
+
+  // —— 下拉 / 气泡这类浮层的阴影（_ep-map.scss 里 --el-box-shadow-light 读它）——
+  // 默认跟卡片阴影；素白卡片无阴影，但浮层必须有阴影才能从白底上浮出来，所以单独给
+  --dd-shadow-popper: var(--dd-shadow-card);
+
+  // —— 墨色（v4.0 验收返工）：专门给「浅色状态底上的文字」用 ——
+  // 状态色本身是为「实心填充 / 图标 / 图表」挑的，直接当文字压在同色 10%~15% 浅底上，好几套配色只有 2~4:1。
+  // 墨色 = 状态色 55% + 正文色 45%：亮色主题里往黑加深、暗色主题里往白提亮，明暗两面自动成立。
+  // 14 套配色实算：墨色对 color-mix(状态色 10% / 15%, --dd-surface-solid) 全部 ≥ 4.85:1（最低是呆呆亮色的副色墨色；scratchpad 的 check_theme_contrast.py）。
+  // 用在：el-tag（light / plain）文字、el-link、text / link / plain 按钮、侧栏选中项、global.scss 里的状态 chip 与涨跌。
+  // 个别配色想单独调，在主题块里直接覆盖同名令牌即可（主题块特异性高于这里）。
+  --dd-accent-ink: color-mix(in srgb, var(--dd-accent) 55%, var(--dd-text));
+  --dd-accent-2-ink: color-mix(in srgb, var(--dd-accent-2) 55%, var(--dd-text));
+  --dd-ok-ink: color-mix(in srgb, var(--dd-ok) 55%, var(--dd-text));
+  --dd-warn-ink: color-mix(in srgb, var(--dd-warn) 55%, var(--dd-text));
+  --dd-err-ink: color-mix(in srgb, var(--dd-err) 55%, var(--dd-text));
+  --dd-info-ink: color-mix(in srgb, var(--dd-info) 55%, var(--dd-text));
+
+  // —— 实心状态色：成功 / 警告 / 危险的实心按钮与 dark 效果标签的底色（上面压 --dd-on-status）——
+  // 默认就是状态色本身；亮色主题里白字对比度不够的，在主题块里覆盖成往正文色方向压深的一档（≥ 4.6:1）。
+  // 状态色本身（--dd-ok 等）不改：图表、图标、开关、进度条仍用原来的亮色。
+  --dd-ok-solid: var(--dd-ok);
+  --dd-warn-solid: var(--dd-warn);
+  --dd-err-solid: var(--dd-err);
+}

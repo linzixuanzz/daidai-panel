@@ -325,11 +325,11 @@ function handleApply() {
 .visual-warning {
   margin-bottom: 14px;
   padding: 8px 12px;
-  border: 1px solid var(--el-color-warning-light-7);
-  background: var(--el-color-warning-light-9);
+  border: 1px solid color-mix(in srgb, var(--dd-warn) 30%, var(--dd-surface-solid));
+  background: color-mix(in srgb, var(--dd-warn) 10%, var(--dd-surface-solid));
   // 弹窗顶部的整块提示条 → surface 档
   border-radius: var(--dd-radius-surface);
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
   font-size: 12px;
   line-height: 1.7;
 
@@ -369,7 +369,7 @@ function handleApply() {
 
 .visual-field-hint {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   line-height: 1.7;
 
   code {
@@ -380,11 +380,11 @@ function handleApply() {
   }
 
   &.is-warning {
-    color: var(--el-color-warning);
+    color: var(--dd-warn-ink);
   }
 
   &.is-error {
-    color: var(--el-color-danger);
+    color: var(--dd-err-ink);
   }
 }
 
@@ -395,7 +395,7 @@ function handleApply() {
   flex-wrap: wrap;
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--dd-border);
   // 预览卡片 → surface 档
   border-radius: var(--dd-radius-surface);
   background: var(--el-fill-color-lighter);
@@ -403,19 +403,19 @@ function handleApply() {
 
 .visual-preview-empty {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .preview-expr {
   font-family: var(--dd-font-mono);
   font-size: 13px;
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   word-break: break-all;
 }
 
 .preview-desc {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .visual-footer {

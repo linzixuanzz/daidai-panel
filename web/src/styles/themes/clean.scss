@@ -1,0 +1,220 @@
+// ============================================================================
+// 主题：素白（clean，v4.0 Q4 追加）
+// ----------------------------------------------------------------------------
+// 参考 iOS 26：亮色 #f2f2f7 底白卡、暗色纯黑底 #1c1c1e 卡；系统蓝强调；无边框、无阴影；主按钮亮黑暗白。
+// 与其他 6 套不同，素白还覆盖了一组「排版级令牌」（默认值在 _layout.scss）：
+// 黑色胶囊主按钮、胶囊按钮与分段、34px 大标题、悬浮玻璃侧栏、灰色药丸选中（无左侧竖条）、淡紫渐变总览卡。
+// 写法约定见 classic.scss 文件头。
+//
+// 对比度：用户给的弱化文字 #8a8a8e 在白卡上只有约 3.4:1，过不了 4.5:1 的门槛，
+// 所以弱化改成 #6e6e73（白卡 5.1、#f2f2f7 底 4.6），次要相应压深到 #5c5c61，三档仍拉得开。暗色面三档按原值都达标。
+// ============================================================================
+
+html[data-dd-theme="clean"] {
+  color-scheme: light;
+  --dd-bg: #f2f2f7;
+  --dd-surface: #ffffff;
+  --dd-surface-solid: #ffffff;
+  --dd-surface-2: #f7f7fa;
+  --dd-surface-3: rgba(118, 118, 128, 0.12);
+  --dd-overlay: #ffffff;
+  // 卡片无描边；输入框等「base」描边仍要看得见，用很淡的灰
+  --dd-border: transparent;
+  --dd-border-strong: rgba(60, 60, 67, 0.14);
+  --dd-border-width: 1px;
+  --dd-text: #000000;
+  --dd-text-2: #5c5c61;
+  --dd-text-3: #6e6e73;
+  --dd-accent: #007aff;
+  --dd-accent-2: #5856d6;
+  --dd-on-accent: #ffffff;
+  --dd-on-status: #ffffff;
+  --dd-ok: #34c759;
+  --dd-warn: #ff9500;
+  --dd-err: #ff3b30;
+  --dd-info: #007aff;
+  --dd-chart-ok: var(--dd-accent);
+  // 实心填充色覆盖（v4.0 验收返工）：上面的文字色（--dd-on-status / --dd-on-accent）在原色上不到 4.5:1
+  --dd-ok-solid: #23853c;
+  --dd-warn-solid: #c93400;
+  --dd-err-solid: #d70015;
+  --dd-glass-blur: 0px;
+  --dd-shadow-card: none;
+  --dd-shadow-card-hover: none;
+  // 抽屉、浮岛侧栏还是要一点阴影，否则白底上分不出层次
+  --dd-shadow-shell: 0 12px 34px -16px rgba(0, 0, 0, 0.2);
+  --dd-text-glow: none;
+  // 控件档不用胶囊：控件档也管输入框、多行文本框、复选框缩放，999px 会把高文本框切成椭圆。
+  // 胶囊只给按钮与分段（--dd-btn-radius / --dd-seg-radius 取 pill 档）。
+  --dd-theme-radius-control: 12px;
+  --dd-theme-radius-surface: 26px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 12px;
+  --dd-theme-radius-surface-mobile: 22px;
+  --dd-bg-blob-1: #d9d0f6;
+  --dd-bg-blob-2: #cfe0ff;
+  --dd-bg-blob-3: #f1ecfb;
+  --dd-bg-blob-4: #e5e5ea;
+  // 背景层全关：素白就是纯底色
+  --dd-bg-blob-opacity: 0;
+  --dd-bg-grid-opacity: 0;
+  --dd-bg-grid-line: rgba(0, 0, 0, 0.04);
+  --dd-bg-noise-opacity: 0;
+  --dd-bg-noise-blend: multiply;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: var(--dd-font-ui);
+
+  // ===== 排版级令牌覆盖（默认值见 _layout.scss）=====
+  --dd-btn-primary-bg: #000000;
+  --dd-btn-primary-fg: #ffffff;
+  --dd-btn-primary-hover-bg: #2c2c2e;
+  --dd-btn-primary-active-bg: #3a3a3c;
+  --dd-btn-primary-disabled-bg: #8e8e93;
+  --dd-btn-radius: var(--dd-radius-pill);
+  --dd-page-title-size: 34px;
+  --dd-page-title-size-mobile: 28px;
+  --dd-page-title-weight: 800;
+  --dd-page-title-tracking: -0.7px;
+  --dd-sidebar-bg: rgba(255, 255, 255, 0.75);
+  --dd-sidebar-blur: 24px;
+  --dd-sidebar-radius: 30px;
+  --dd-sidebar-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05), 0 12px 34px -16px rgba(0, 0, 0, 0.2);
+  --dd-nav-active-bg: rgba(118, 118, 128, 0.14);
+  --dd-nav-active-fg: var(--dd-text);
+  --dd-nav-indicator-width: 0px;
+  --dd-nav-item-radius: 14px;
+  --dd-seg-radius: var(--dd-radius-pill);
+  --dd-seg-bg: rgba(118, 118, 128, 0.12);
+  --dd-seg-thumb-bg: #ffffff;
+  --dd-seg-thumb-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  --dd-seg-active-fg: var(--dd-text);
+  --dd-hero-bg:
+    radial-gradient(120% 90% at 0% 0%, #8b74e6 0%, rgba(139, 116, 230, 0.5) 30%, transparent 65%),
+    radial-gradient(80% 70% at 100% 0%, rgba(126, 160, 255, 0.45), transparent 70%),
+    linear-gradient(170deg, #d9d0f6, #f1ecfb 60%, #fbfaff);
+  --dd-card-title-size: 19px;
+  --dd-card-title-weight: 800;
+  --dd-card-title-icon-display: none;
+  --dd-shadow-popper: 0 10px 30px -12px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+
+html.dark[data-dd-theme="clean"] {
+  color-scheme: dark;
+  --dd-bg: #000000;
+  --dd-surface: #1c1c1e;
+  --dd-surface-solid: #1c1c1e;
+  --dd-surface-2: #2c2c2e;
+  --dd-surface-3: rgba(118, 118, 128, 0.24);
+  // 浮层与卡片同色：iOS 的抬升色 #2c2c2e 上弱化文字只有 4.3:1，过不了门槛；浮层靠阴影与纯黑底区分
+  --dd-overlay: #1c1c1e;
+  --dd-border: transparent;
+  --dd-border-strong: rgba(235, 235, 245, 0.16);
+  --dd-border-width: 1px;
+  --dd-text: #ffffff;
+  --dd-text-2: #98989f;
+  --dd-text-3: #8d8d93;
+  --dd-accent: #0a84ff;
+  --dd-accent-2: #5e5ce6;
+  --dd-on-accent: #ffffff;
+  --dd-on-status: #000000;
+  --dd-ok: #30d158;
+  --dd-warn: #ff9f0a;
+  --dd-err: #ff453a;
+  --dd-info: #0a84ff;
+  --dd-chart-ok: var(--dd-accent);
+  // 复位亮色块里的实心色覆盖（亮色块在暗色下同样匹配，这里不写就会漏过来；暗色下状态色本身就够亮）
+  --dd-ok-solid: var(--dd-ok);
+  --dd-warn-solid: var(--dd-warn);
+  --dd-err-solid: var(--dd-err);
+  --dd-glass-blur: 0px;
+  --dd-shadow-card: none;
+  --dd-shadow-card-hover: none;
+  --dd-shadow-shell: 0 12px 34px -16px rgba(0, 0, 0, 0.7);
+  --dd-text-glow: none;
+  --dd-theme-radius-control: 12px;
+  --dd-theme-radius-surface: 26px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 12px;
+  --dd-theme-radius-surface-mobile: 22px;
+  --dd-bg-blob-1: #2a2440;
+  --dd-bg-blob-2: #1c2440;
+  --dd-bg-blob-3: #2c2c2e;
+  --dd-bg-blob-4: #1c1c1e;
+  --dd-bg-blob-opacity: 0;
+  --dd-bg-grid-opacity: 0;
+  --dd-bg-grid-line: rgba(255, 255, 255, 0.04);
+  --dd-bg-noise-opacity: 0;
+  --dd-bg-noise-blend: screen;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: var(--dd-font-ui);
+
+  // ===== 排版级令牌覆盖：暗色主按钮白底黑字 =====
+  --dd-btn-primary-bg: #ffffff;
+  --dd-btn-primary-fg: #000000;
+  --dd-btn-primary-hover-bg: #e5e5ea;
+  --dd-btn-primary-active-bg: #d1d1d6;
+  --dd-btn-primary-disabled-bg: #8e8e93;
+  --dd-btn-radius: var(--dd-radius-pill);
+  --dd-page-title-size: 34px;
+  --dd-page-title-size-mobile: 28px;
+  --dd-page-title-weight: 800;
+  --dd-page-title-tracking: -0.7px;
+  --dd-sidebar-bg: rgba(28, 28, 30, 0.72);
+  --dd-sidebar-blur: 24px;
+  --dd-sidebar-radius: 30px;
+  --dd-sidebar-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 34px -16px rgba(0, 0, 0, 0.7);
+  --dd-nav-active-bg: rgba(118, 118, 128, 0.24);
+  --dd-nav-active-fg: var(--dd-text);
+  --dd-nav-indicator-width: 0px;
+  --dd-nav-item-radius: 14px;
+  --dd-seg-radius: var(--dd-radius-pill);
+  // 底槽用不透明色：半透明的 rgba(118,118,128,.24) 叠在卡片 / 二级底上，未选中的次要文字只有 4.0~4.4:1
+  --dd-seg-bg: #2c2c2e;
+  --dd-seg-thumb-bg: #636366;
+  --dd-seg-thumb-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --dd-seg-active-fg: var(--dd-text);
+  --dd-hero-bg:
+    radial-gradient(120% 90% at 0% 0%, rgba(139, 116, 230, 0.55) 0%, rgba(139, 116, 230, 0.22) 30%, transparent 65%),
+    radial-gradient(80% 70% at 100% 0%, rgba(94, 92, 230, 0.3), transparent 70%),
+    linear-gradient(170deg, #2a2440, #1c1c1e 60%);
+  --dd-card-title-size: 19px;
+  --dd-card-title-weight: 800;
+  --dd-card-title-icon-display: none;
+  --dd-shadow-popper: 0 10px 30px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+// ----------------------------------------------------------------------------
+// 素白专属的组件级覆盖：令牌表达不了、必须改组件样式的部分。全部限定在 html[data-dd-theme="clean"] 下。
+// ----------------------------------------------------------------------------
+html[data-dd-theme="clean"] {
+  // 按钮一律胶囊：global.scss 的 .el-button 已读 --dd-btn-radius，但 EP 的 .el-button--small（calc(base - 1px)）
+  // 和 .is-round / .is-circle 是同级或更高特异性、且懒注入排在后面，只能在这里以 (0,2,1) 压一次。
+  // 按钮组（.el-button-group）里首尾按钮的内侧直角由 EP 的 (0,3,0) 规则保持，不受影响。
+  .el-button {
+    border-radius: var(--dd-btn-radius);
+  }
+
+  // 次要按钮（没有 type 的默认款）：灰色填充、无描边，与参考图一致。
+  // 排除所有带类型的按钮与文字 / 链接按钮，它们保持 EP 原有观感（主按钮的黑底已经由令牌接好）
+  .el-button:not(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger, .el-button--info, .is-text, .is-link) {
+    --el-button-bg-color: var(--dd-surface-3);
+    --el-button-border-color: transparent;
+    --el-button-hover-bg-color: rgba(118, 118, 128, 0.2);
+    --el-button-hover-border-color: transparent;
+    --el-button-active-bg-color: rgba(118, 118, 128, 0.26);
+    --el-button-active-border-color: transparent;
+  }
+
+  // EP 分段控件（目前项目里没用，先接好线，给第二波新组件用）：胶囊底槽 + 白色胶囊滑块
+  .el-segmented {
+    --el-border-radius-base: var(--dd-seg-radius);
+    --el-segmented-bg-color: var(--dd-seg-bg);
+    --el-segmented-item-selected-bg-color: var(--dd-seg-thumb-bg);
+    --el-segmented-item-selected-color: var(--dd-text);
+  }
+
+  // 光斑描边与参考图的极简风格冲突，只保留底面那层淡光
+  .dd-spot::before {
+    display: none;
+  }
+}

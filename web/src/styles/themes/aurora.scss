@@ -1,0 +1,106 @@
+// ============================================================================
+// 主题：极光（aurora，全站默认）
+// ----------------------------------------------------------------------------
+// 暗色取自效果演示第 2 节；亮色是新设计：白底 + 高饱和紫青极光（比晨雾浓），玻璃白卡。
+// 写法约定见 classic.scss 文件头。
+// ============================================================================
+
+html[data-dd-theme="aurora"] {
+  color-scheme: light;
+  --dd-bg: #f5f3ff;
+  --dd-surface: rgba(255, 255, 255, 0.62);
+  --dd-surface-solid: #fcfbff;
+  --dd-surface-2: rgba(255, 255, 255, 0.55);
+  --dd-surface-3: rgba(76, 29, 149, 0.06);
+  --dd-overlay: rgba(255, 255, 255, 0.97);
+  --dd-border: rgba(91, 33, 182, 0.12);
+  --dd-border-strong: rgba(91, 33, 182, 0.24);
+  --dd-border-width: 1px;
+  --dd-text: #1a1433;
+  --dd-text-2: #4b4470;
+  --dd-text-3: #5f5885;
+  --dd-accent: #7c3aed;
+  --dd-accent-2: #0891b2;
+  --dd-on-accent: #ffffff;
+  --dd-on-status: #ffffff;
+  --dd-ok: #059669;
+  --dd-warn: #b45309;
+  --dd-err: #e11d48;
+  --dd-info: #2563eb;
+  --dd-chart-ok: var(--dd-accent);
+  // 实心填充色覆盖（v4.0 验收返工）：上面的文字色（--dd-on-status / --dd-on-accent）在原色上不到 4.5:1
+  --dd-ok-solid: #088562;
+  --dd-glass-blur: 22px;
+  --dd-shadow-card: 0 12px 40px -18px rgba(91, 33, 182, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --dd-shadow-card-hover: 0 18px 48px -18px rgba(91, 33, 182, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --dd-shadow-shell: 0 18px 50px -24px rgba(91, 33, 182, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --dd-text-glow: 0 0 20px rgba(124, 58, 237, 0.25);
+  --dd-theme-radius-control: 11px;
+  --dd-theme-radius-surface: 18px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 14px;
+  --dd-theme-radius-surface-mobile: 20px;
+  --dd-bg-blob-1: #a78bfa;
+  --dd-bg-blob-2: #22d3ee;
+  --dd-bg-blob-3: #f472b6;
+  --dd-bg-blob-4: #818cf8;
+  --dd-bg-blob-opacity: 0.62;
+  --dd-bg-grid-opacity: 0.2;
+  --dd-bg-grid-line: rgba(76, 29, 149, 0.07);
+  --dd-bg-noise-opacity: 0.04;
+  --dd-bg-noise-blend: multiply;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: var(--dd-font-ui);
+}
+
+html.dark[data-dd-theme="aurora"] {
+  color-scheme: dark;
+  --dd-bg: #060814;
+  --dd-surface: rgba(16, 20, 38, 0.52);
+  --dd-surface-solid: #0e1122;
+  --dd-surface-2: rgba(255, 255, 255, 0.04);
+  --dd-surface-3: rgba(255, 255, 255, 0.075);
+  --dd-overlay: rgba(17, 21, 40, 0.97);
+  --dd-border: rgba(255, 255, 255, 0.085);
+  --dd-border-strong: rgba(255, 255, 255, 0.18);
+  --dd-border-width: 1px;
+  --dd-text: #eef1ff;
+  --dd-text-2: #aab2d8;
+  --dd-text-3: #8c95bd;
+  --dd-accent: #8b5cf6;
+  --dd-accent-2: #22d3ee;
+  --dd-on-accent: #ffffff;
+  --dd-on-status: #060814;
+  --dd-ok: #34d399;
+  --dd-warn: #fbbf24;
+  --dd-err: #fb7185;
+  --dd-info: #60a5fa;
+  --dd-chart-ok: var(--dd-accent);
+  // 复位亮色块里的实心色覆盖（亮色块在暗色下同样匹配，这里不写就会漏过来；暗色下状态色本身就够亮）
+  --dd-ok-solid: var(--dd-ok);
+  --dd-warn-solid: var(--dd-warn);
+  --dd-err-solid: var(--dd-err);
+  // 实心填充色覆盖（v4.0 验收返工）：上面的文字色（--dd-on-status / --dd-on-accent）在原色上不到 4.5:1
+  --dd-btn-primary-bg: #8457ea;
+  --dd-glass-blur: 22px;
+  --dd-shadow-card: 0 18px 50px -20px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --dd-shadow-card-hover: 0 24px 60px -20px rgba(0, 0, 0, 0.78), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --dd-shadow-shell: 0 18px 50px -20px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --dd-text-glow: 0 0 24px rgba(139, 92, 246, 0.45);
+  --dd-theme-radius-control: 11px;
+  --dd-theme-radius-surface: 18px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 14px;
+  --dd-theme-radius-surface-mobile: 20px;
+  --dd-bg-blob-1: #7c3aed;
+  --dd-bg-blob-2: #0891b2;
+  --dd-bg-blob-3: #be185d;
+  --dd-bg-blob-4: #1d4ed8;
+  --dd-bg-blob-opacity: 0.55;
+  --dd-bg-grid-opacity: 0.32;
+  --dd-bg-grid-line: rgba(255, 255, 255, 0.06);
+  --dd-bg-noise-opacity: 0.07;
+  --dd-bg-noise-blend: screen;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: var(--dd-font-ui);
+}

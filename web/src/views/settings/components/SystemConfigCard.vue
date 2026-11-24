@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Document, Setting, Upload } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Document, MagicStick, Setting, Upload } from '@element-plus/icons-vue'
 import type { SettingsConfigForm } from '../types'
 import { resolveConfigOptions, type ParsedSystemConfigItem } from '../systemConfigSchema'
+import { compressLogBackgroundImage, logBackgroundImageMaxBytes } from '../useSettingsConfig'
+import { useUiStore } from '@/stores/ui'
 
 const timezoneOptions = [
   { value: 'Asia/Shanghai', label: '中国时间 Asia/Shanghai' },
@@ -29,6 +32,35 @@ const props = defineProps<{
 // 界面圆角 v3.2.9 从「其它配置项」兜底区挪进本卡：值走 form，
 // 标题、说明、下拉选项仍取服务端 schema，不在 Web 另抄一份；schema 还没加载到时整项不渲染（卡片此时在 loading）
 const shapeStyleItem = computed(() => props.configSchema.panel_shape_style)
+// v4.0 的页面背景两项同样只认服务端 schema 的标题、说明、选项
+const backgroundEffectItem = computed(() => props.configSchema.panel_background_effect)
+const backgroundImageItem = computed(() => props.configSchema.panel_background_image)
+
+const ui = useUiStore()
+
+// 页面背景图上传：与日志背景图同一套格式、10MB 上限与自动压缩（compressLogBackgroundImage）。
+// 只填进表单，点「保存配置」后才生效 —— 与圆角一样不做即时预览，预览要改主题引擎的全站值，没保存也会进首屏快照。
+// 放在卡片里处理而不是经 props 回调：settings/index.vue 不归本组改，form 是父组件传进来的响应式对象，模板里本来就直接改它的字段
+function handlePanelBackgroundUpload(file: File) {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('仅支持图片格式背景')
+    return false
+  }
+  if (file.size > logBackgroundImageMaxBytes) {
+    ElMessage.warning('背景图片不能超过 10MB')
+    return false
+  }
+  void (async () => {
+    try {
+      const result = await compressLogBackgroundImage(file)
+      props.form.panel_background_image = result.dataUrl
+      ElMessage.success(result.compressed ? '背景图片已自动压缩，请保存配置后生效' : '背景图片已载入，请保存配置后生效')
+    } catch {
+      ElMessage.error('背景图片压缩失败，请换一张尺寸更小的图片')
+    }
+  })()
+  return false
+}
 </script>
 
 <template>
@@ -44,6 +76,11 @@ const shapeStyleItem = computed(() => props.configSchema.panel_shape_style)
 
     <div class="config-section">
       <h4 class="section-title">面板设置</h4>
+      <!-- v4.0：风格、主色、玻璃模糊、密度、自定义 CSS 都在主题工坊里（管理员可「设为全站默认」），这里只留一句入口 -->
+      <button type="button" class="studio-hint" @click="ui.openStudio()">
+        <el-icon><MagicStick /></el-icon>
+        <span>更多外观（风格、主色、玻璃模糊、密度、自定义 CSS）在主题工坊，点这里打开</span>
+      </button>
       <div class="form-field">
         <label>面板标题</label>
         <el-input v-model="form.panel_title" placeholder="呆呆面板" />
@@ -101,6 +138,49 @@ const shapeStyleItem = computed(() => props.configSchema.panel_shape_style)
           />
         </el-select>
         <span v-if="shapeStyleItem.description" class="form-hint">{{ shapeStyleItem.description }}</span>
+      </div>
+      <!-- 页面背景效果（v4.0）：与圆角一样保存后生效，选项取服务端 schema -->
+      <div v-if="backgroundEffectItem" class="form-field">
+        <label>{{ backgroundEffectItem.label }}</label>
+        <el-select v-model="form.panel_background_effect" class="shape-style-select">
+          <el-option
+            v-for="option in resolveConfigOptions(backgroundEffectItem, form.panel_background_effect)"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+        <span v-if="backgroundEffectItem.description" class="form-hint">{{ backgroundEffectItem.description }}</span>
+      </div>
+      <div v-if="backgroundImageItem" class="form-field">
+        <label>{{ backgroundImageItem.label }}</label>
+        <div class="log-bg-upload">
+          <el-upload
+            :show-file-list="false"
+            :before-upload="handlePanelBackgroundUpload"
+            accept="image/*"
+          >
+            <el-button size="small"><el-icon><Upload /></el-icon>上传背景图</el-button>
+          </el-upload>
+          <el-button
+            v-if="form.panel_background_image"
+            size="small"
+            text
+            type="danger"
+            @click="form.panel_background_image = ''"
+          >
+            移除背景图
+          </el-button>
+        </div>
+        <div
+          v-if="form.panel_background_image"
+          class="page-bg-preview"
+          :style="{ backgroundImage: `url('${form.panel_background_image}')` }"
+        ></div>
+        <span class="form-hint">
+          背景效果选「{{ backgroundEffectItem?.options.find((option) => option.value === 'image')?.label || '图片' }}」时铺满页面背景；
+          支持常见图片格式，单张最大 10MB，较大的图片会自动压缩后保存
+        </span>
       </div>
       <div class="form-field">
         <label>编辑器背景颜色</label>
@@ -190,6 +270,37 @@ const shapeStyleItem = computed(() => props.configSchema.panel_shape_style)
 // 与兜底区的下拉同宽（ExtraConfigCard 的 .extra-config-select），挪过来看起来不变
 .shape-style-select {
   width: 100%;
+}
+
+.studio-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  // 主色当文字用墨色令牌，保证各主题下对比度
+  color: var(--dd-accent-ink);
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.page-bg-preview {
+  height: 96px;
+  max-width: 400px;
+  margin-bottom: 4px;
+  border-radius: var(--dd-radius-surface);
+  border: 1px solid var(--dd-border);
+  background-color: var(--dd-surface-2);
+  background-size: cover;
+  background-position: center;
 }
 
 .log-bg-upload {

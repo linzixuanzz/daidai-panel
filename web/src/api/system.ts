@@ -104,12 +104,47 @@ export interface SystemBadges {
   deps_installing: number
 }
 
+// ---- v4.0「需要关注」（GET /system/attention，design §4.1，F2）----
+// 响应体【没有】外层 data 包装：服务端直接返回 { items }（与 design §4 的 JSON 一致，badges 那种 {data} 是另一套写法）。
+// 角色裁剪与 /system/badges 一致；最多 20 条，已按 err → warn → info、同级按 at 倒序排好。
+// 下面的字面量联合只是清单，外加 string 兜底：服务端以后新增类型时照样能显示。
+
+export type AttentionType =
+  | 'task_failing' // 启用中的任务最近 3 条已结束日志全部失败或超时
+  | 'subscription_failed'
+  | 'dependency_failed'
+  | 'update_available' // 服务端【不会】下发（后端没有新版本缓存）：前端复用 checkUpdate 结果自行合并进列表（同 stores/badges.ts 的做法）
+  | 'backup_failed' // 服务端目前【不会】下发（定时备份没有持久化的失败状态），保留类型供以后扩展
+  | 'disk_high' // 数据盘使用率 ≥ 85%
+
+export type AttentionLevel = 'err' | 'warn' | 'info'
+
+export interface AttentionItem {
+  /** 稳定键，例如 task_failing:12；用作 v-for key 与「已处理」动画 */
+  key: string
+  type: AttentionType | (string & {})
+  level: AttentionLevel | (string & {})
+  title: string
+  /** 最近一次日志末尾第一条非空错误行等，≤120 字；可能为空串 */
+  detail: string
+  /** 一键处理的目标：kind 为 task / subscription / dependency / update / backup / disk 等，id 没有时为 0 */
+  target: { kind: string; id: number }
+  /** RFC3339 时间 */
+  at: string
+}
+
+export interface SystemAttention {
+  items: AttentionItem[]
+}
+
 export const systemApi = {
   info: () => request.get('/system/info'),
   machineCode: () => request.get('/system/machine-code'),
   dashboard: (range?: number) => request.get('/system/dashboard', { params: range ? { range } : undefined }),
   stats: () => request.get('/system/stats'),
   badges: () => request.get('/system/badges') as Promise<{ data: SystemBadges }>,
+  /** v4.0 F2：需要关注的条目（viewer+）。响应没有 data 包装，见 SystemAttention 上方说明 */
+  attention: () => request.get('/system/attention') as Promise<SystemAttention>,
   version: () => request.get('/system/version'),
   publicVersion: () => request.get('/system/public-version'),
   panelSettings: () => request.get('/system/panel-settings'),

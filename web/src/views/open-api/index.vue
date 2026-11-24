@@ -1,6 +1,6 @@
 <template>
   <div ref="pageRootRef" class="open-api-page dd-scroll-page dd-page-hide-heading">
-    <div class="page-header">
+    <div class="page-header dd-rise" style="--dd-i: 0">
       <div>
         <h2 class="page-title-with-icon"><el-icon><Key /></el-icon><span>Open API 管理</span></h2>
         <p class="page-subtitle">
@@ -14,7 +14,7 @@
       </div>
     </div>
 
-    <div class="toolbar">
+    <div class="toolbar dd-rise" style="--dd-i: 1">
       <div class="toolbar__left">
         <!-- 状态分段控件带计数：不用切过去也知道各状态下有几个应用。
              计数是「统计型」而非「提醒型」，所以开 show-zero ——「已禁用 0」是有信息量的
@@ -91,7 +91,7 @@
       </div>
     </div>
 
-    <div v-if="isMobile" class="dd-mobile-list">
+    <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 2">
       <div v-for="row in pagedApps" :key="row.id" class="dd-mobile-card">
         <div class="dd-mobile-card__header">
           <div class="dd-mobile-card__title-wrap">
@@ -205,7 +205,7 @@
       />
     </div>
 
-    <div v-else class="table-card">
+    <div v-else class="table-card dd-spot dd-rise" style="--dd-i: 2">
       <el-table
         :data="pagedApps"
         v-loading="loading"
@@ -222,7 +222,7 @@
             <div class="app-name-cell">
               <span
                 class="app-avatar"
-                :style="{ background: getAvatarColor(row.name) }"
+                :style="{ '--dd-avatar': getAvatarColor(row.name) }"
                 >{{ getInitial(row.name) }}</span
               >
               <div class="app-name-info">
@@ -347,7 +347,7 @@
       </el-table>
     </div>
 
-    <div class="pagination-bar">
+    <div class="pagination-bar dd-rise" style="--dd-i: 3">
       <span class="pagination-total">共 {{ filteredApps.length }} 条</span>
       <el-pagination
         v-if="filteredApps.length > apiPageSize"
@@ -360,7 +360,7 @@
       />
     </div>
 
-    <div class="info-cards">
+    <div class="info-cards dd-rise" style="--dd-i: 4">
       <div class="info-card">
         <div class="info-card__header">
           <div class="info-card__icon info-card__icon--blue">
@@ -755,15 +755,16 @@ const formatRateLimit = (value: number | null | undefined) => {
   return Number(value || 0) > 0 ? `${value} / 小时` : "无限制";
 };
 
+// 名称哈希 → 主题色令牌（作为 --dd-avatar 内联给 .app-avatar），跟随主题切换
 const avatarColors = [
-  "#409eff",
-  "#67c23a",
-  "#e6a23c",
-  "#f56c6c",
-  "#909399",
-  "#06b6d4",
-  "#14b8a6",
-  "#10b981",
+  "var(--dd-info)",
+  "var(--dd-ok)",
+  "var(--dd-warn)",
+  "var(--dd-err)",
+  "var(--dd-text-3)",
+  "var(--dd-accent-2)",
+  "var(--dd-accent-2)",
+  "var(--dd-ok)",
 ];
 
 const getAvatarColor = (name: string): string => {
@@ -1217,7 +1218,7 @@ onMounted(loadApps);
   }
   &.active {
     background: var(--el-bg-color);
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     font-weight: 600;
   }
 }
@@ -1245,7 +1246,9 @@ onMounted(loadApps);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  // 浅色底 + 墨色字（与 --dd-*-ink 同一公式）；原来的实色底白字在青色上对比度不足
+  background: color-mix(in srgb, var(--dd-avatar) 14%, transparent);
+  color: color-mix(in srgb, var(--dd-avatar) 55%, var(--dd-text));
   font-weight: 700;
   font-size: 14px;
   flex-shrink: 0;
@@ -1315,7 +1318,7 @@ onMounted(loadApps);
   border: 1px solid var(--el-border-color);
   background: var(--el-fill-color-blank);
   &:hover {
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     border-color: var(--el-color-primary-light-5);
     background: var(--el-color-primary-light-9);
   }
@@ -1384,7 +1387,8 @@ onMounted(loadApps);
     height: 40px;
     // 40×40 图标色底属控件类表面 → control 档（不做成正圆，避免与头像混淆）
     border-radius: var(--dd-radius-control);
-    display: flex;
+    // 标题图标块是否显示由主题决定（素白主题隐藏）
+    display: var(--dd-card-title-icon-display);
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
@@ -1400,8 +1404,9 @@ onMounted(loadApps);
 
   &__title {
     margin: 0;
-    font-size: 15px;
-    font-weight: 600;
+    // 卡片标题读排版级令牌
+    font-size: var(--dd-card-title-size);
+    font-weight: var(--dd-card-title-weight);
     color: var(--el-text-color-primary);
   }
 

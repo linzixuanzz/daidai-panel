@@ -712,7 +712,7 @@ watch(
                 </el-dropdown-item>
                 <el-dropdown-item divided @click="onDelete">
                   <el-icon><Delete /></el-icon>
-                  <span style="color: var(--el-color-danger)">删除</span>
+                  <span style="color: var(--dd-err-ink)">删除</span>
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -898,8 +898,8 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  background: var(--el-color-primary);
+  color: var(--dd-on-accent);
+  background: var(--dd-accent);
 }
 
 .empty-title {
@@ -976,7 +976,7 @@ watch(
     border-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     border-color: color-mix(
       in srgb,
       var(--el-color-primary) 40%,
@@ -1000,8 +1000,8 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--el-color-primary);
-  background: rgba(64, 158, 255, 0.1);
+  color: var(--dd-accent);
+  background: color-mix(in srgb, var(--dd-accent) 10%, transparent);
   flex-shrink: 0;
 }
 
@@ -1071,8 +1071,8 @@ watch(
 }
 
 .file-pill--lang {
-  background: rgba(64, 158, 255, 0.1);
-  color: var(--el-color-primary);
+  background: color-mix(in srgb, var(--dd-accent) 10%, transparent);
+  color: var(--dd-accent-ink);
 }
 
 .file-pill--muted {
@@ -1081,8 +1081,8 @@ watch(
 }
 
 .file-pill--binary {
-  background: rgba(230, 162, 60, 0.12);
-  color: #e6a23c;
+  background: color-mix(in srgb, var(--dd-warn) 12%, transparent);
+  color: var(--dd-warn-ink);
 }
 
 .unsaved-pulse {
@@ -1094,8 +1094,8 @@ watch(
   // 「未保存」是状态 chip，天然胶囊 → pill 档（与 .dd-status-chip 同档）
   border-radius: var(--dd-radius-pill);
   font-size: 11px;
-  color: #e6a23c;
-  background: rgba(230, 162, 60, 0.1);
+  color: var(--dd-warn-ink);
+  background: color-mix(in srgb, var(--dd-warn) 10%, transparent);
 
   /* 未保存标记：呼吸点 + 明暗渐变（不做缩放形变） */
   .unsaved-dot {
@@ -1105,7 +1105,7 @@ watch(
     // 方化后和旁边的文字糊成一小块色斑，认不出是状态指示。
     // 两种 shape 模式下都固定圆形，不吃 --dd-radius-* 刻度（同 global.scss 的 .pulse-dot）。
     border-radius: 50%;
-    background: #e6a23c;
+    background: var(--dd-warn);
     animation: unsaved-pulse 1.6s ease-in-out infinite;
   }
 
@@ -1240,7 +1240,7 @@ watch(
     color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &.is-on {
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     background: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
   }
 }
@@ -1249,7 +1249,7 @@ watch(
   color: var(--el-text-color-regular);
 
   &:hover:not(.is-disabled) {
-    color: var(--el-color-danger);
+    color: var(--dd-err-ink);
     border-color: color-mix(
       in srgb,
       var(--el-color-danger) 40%,
@@ -1260,21 +1260,22 @@ watch(
 }
 
 .action-btn--run {
-  --el-button-bg-color: rgba(103, 194, 58, 0.12);
-  --el-button-border-color: rgba(103, 194, 58, 0.35);
-  --el-button-hover-bg-color: rgba(103, 194, 58, 0.2);
-  --el-button-hover-border-color: #67c23a;
-  --el-button-hover-text-color: #67c23a;
-  --el-button-text-color: #67c23a;
+  // 浅色成功底 + 墨色字（实色 --dd-ok 只给描边）
+  --el-button-bg-color: color-mix(in srgb, var(--dd-ok) 12%, transparent);
+  --el-button-border-color: color-mix(in srgb, var(--dd-ok) 35%, transparent);
+  --el-button-hover-bg-color: color-mix(in srgb, var(--dd-ok) 20%, transparent);
+  --el-button-hover-border-color: var(--dd-ok);
+  --el-button-hover-text-color: var(--dd-ok-ink);
+  --el-button-text-color: var(--dd-ok-ink);
 }
 
 .action-btn--task {
-  --el-button-bg-color: rgba(37, 99, 235, 0.1);
-  --el-button-border-color: rgba(37, 99, 235, 0.28);
-  --el-button-hover-bg-color: rgba(37, 99, 235, 0.16);
-  --el-button-hover-border-color: rgba(37, 99, 235, 0.55);
-  --el-button-hover-text-color: #2563eb;
-  --el-button-text-color: #2563eb;
+  --el-button-bg-color: color-mix(in srgb, var(--dd-accent) 10%, transparent);
+  --el-button-border-color: color-mix(in srgb, var(--dd-accent) 28%, transparent);
+  --el-button-hover-bg-color: color-mix(in srgb, var(--dd-accent) 16%, transparent);
+  --el-button-hover-border-color: color-mix(in srgb, var(--dd-accent) 55%, transparent);
+  --el-button-hover-text-color: var(--dd-accent-ink);
+  --el-button-text-color: var(--dd-accent-ink);
 
   &.is-disabled {
     opacity: 0.72;
@@ -1442,12 +1443,12 @@ watch(
 }
 
 .status-item--lang {
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   font-weight: 600;
 }
 
 .status-item--accent {
-  color: #67c23a;
+  color: var(--dd-ok-ink);
   font-weight: 600;
 }
 

@@ -437,9 +437,13 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .restore-progress-shell {
-  --dd-restore-accent: #2563eb;
-  --dd-restore-accent-soft: rgba(37, 99, 235, 0.16);
-  --dd-restore-accent-strong: rgba(37, 99, 235, 0.28);
+  // 进度主色跟随主题：恢复中 = 信息色，成功 / 失败 / 重启中 = 对应状态色。
+  // -ink 是当文字用的墨色；soft / strong 由 --dd-restore-accent 派生（在同一元素上计算，
+  // 下面几个状态类只改 accent / accent-ink，soft / strong 会自动跟着变）。
+  --dd-restore-accent: var(--dd-info);
+  --dd-restore-accent-ink: var(--dd-info-ink);
+  --dd-restore-accent-soft: color-mix(in srgb, var(--dd-restore-accent) 16%, transparent);
+  --dd-restore-accent-strong: color-mix(in srgb, var(--dd-restore-accent) 28%, transparent);
   // 扁平化：头图底色改纯色，不再用光晕渐变堆质感
   --dd-restore-surface: var(--el-fill-color-light);
   display: flex;
@@ -448,21 +452,18 @@ onBeforeUnmount(() => {
   padding: 6px 2px 2px;
 
   &.is-success {
-    --dd-restore-accent: #0f9f6e;
-    --dd-restore-accent-soft: rgba(15, 159, 110, 0.16);
-    --dd-restore-accent-strong: rgba(15, 159, 110, 0.28);
+    --dd-restore-accent: var(--dd-ok);
+    --dd-restore-accent-ink: var(--dd-ok-ink);
   }
 
   &.is-danger {
-    --dd-restore-accent: #dc2626;
-    --dd-restore-accent-soft: rgba(220, 38, 38, 0.14);
-    --dd-restore-accent-strong: rgba(220, 38, 38, 0.24);
+    --dd-restore-accent: var(--dd-err);
+    --dd-restore-accent-ink: var(--dd-err-ink);
   }
 
   &.is-restarting {
-    --dd-restore-accent: #d97706;
-    --dd-restore-accent-soft: rgba(217, 119, 6, 0.16);
-    --dd-restore-accent-strong: rgba(217, 119, 6, 0.26);
+    --dd-restore-accent: var(--dd-warn);
+    --dd-restore-accent-ink: var(--dd-warn-ink);
   }
 }
 
@@ -534,7 +535,7 @@ onBeforeUnmount(() => {
   strong {
     font-size: 30px;
     line-height: 1;
-    color: var(--dd-restore-accent);
+    color: var(--dd-restore-accent-ink);
   }
 
   span {
@@ -575,7 +576,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--dd-restore-accent);
+  color: var(--dd-restore-accent-ink);
   background: var(--dd-restore-accent-soft);
 }
 
@@ -613,7 +614,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   // 进度条轨道是天然胶囊 → pill 档
   border-radius: var(--dd-radius-pill);
-  background: rgba(148, 163, 184, 0.16);
+  background: var(--dd-surface-3);
 }
 
 .restore-progress-bar__fill {
@@ -644,7 +645,7 @@ onBeforeUnmount(() => {
 
   strong {
     font-size: 15px;
-    color: var(--dd-restore-accent);
+    color: var(--dd-restore-accent-ink);
   }
 }
 
@@ -700,13 +701,13 @@ onBeforeUnmount(() => {
   }
 
   &.is-done {
-    border-color: color-mix(in srgb, var(--dd-restore-accent) 36%, white);
+    border-color: color-mix(in srgb, var(--dd-restore-accent) 36%, var(--dd-surface-solid));
     background: color-mix(in srgb, var(--dd-restore-accent) 8%, var(--el-bg-color));
   }
 
   &.is-failed {
-    border-color: rgba(220, 38, 38, 0.3);
-    background: rgba(254, 242, 242, 0.88);
+    border-color: color-mix(in srgb, var(--dd-err) 30%, transparent);
+    background: color-mix(in srgb, var(--dd-err) 8%, var(--el-bg-color));
   }
 }
 
@@ -727,13 +728,13 @@ onBeforeUnmount(() => {
 
 .restore-step.is-active .restore-step__badge,
 .restore-step.is-done .restore-step__badge {
-  color: var(--dd-restore-accent);
+  color: var(--dd-restore-accent-ink);
   border-color: var(--dd-restore-accent);
 }
 
 .restore-step.is-failed .restore-step__badge {
-  color: #dc2626;
-  border-color: rgba(220, 38, 38, 0.18);
+  color: var(--dd-err-ink);
+  border-color: color-mix(in srgb, var(--dd-err) 30%, transparent);
 }
 
 .restore-step__content {
@@ -760,9 +761,10 @@ onBeforeUnmount(() => {
   padding: 16px 18px;
   // 错误提示是弹窗内的独立区块 → surface 档
   border-radius: var(--dd-radius-surface);
-  background: rgba(254, 242, 242, 0.92);
-  border: 1px solid rgba(220, 38, 38, 0.18);
-  color: #b42318;
+  // 错误框：错误色浅底 + 墨色标题，正文比标题更靠近正文色（明暗两档都成立，不再需要暗色补丁）
+  background: color-mix(in srgb, var(--dd-err) 8%, var(--el-bg-color));
+  border: 1px solid color-mix(in srgb, var(--dd-err) 24%, transparent);
+  color: var(--dd-err-ink);
 
   strong {
     display: block;
@@ -773,7 +775,7 @@ onBeforeUnmount(() => {
   p {
     margin: 0;
     line-height: 1.7;
-    color: #7f1d1d;
+    color: color-mix(in srgb, var(--dd-err) 30%, var(--dd-text));
     // 与 UpdateProgressDialog 的错误区块对齐：errorMessage 直接透传后端文案，
     // 后端诊断类提示是分行的，不保留换行的话 \n 会被 HTML 折叠成空格，逐条步骤会全挤成一行。
     // 与下面的 word-break 不冲突：pre-wrap 管「保留换行 + 允许软换行」，
@@ -828,38 +830,6 @@ onBeforeUnmount(() => {
 
   .restore-progress-steps {
     grid-template-columns: 1fr;
-  }
-}
-
-:global(html.dark) {
-  .restore-progress-hero {
-    background: var(--el-bg-color-overlay);
-    border-color: var(--el-border-color-darker);
-  }
-
-  .restore-progress-core,
-  .restore-progress-bar,
-  .restore-progress-tag,
-  .restore-step,
-  .restore-progress-meta span {
-    background: color-mix(in srgb, var(--el-bg-color-overlay) 92%, black);
-    border-color: var(--el-border-color-darker);
-    box-shadow: none;
-  }
-
-  .restore-step.is-done {
-    background: color-mix(in srgb, var(--el-color-primary) 12%, var(--el-bg-color-overlay));
-  }
-
-  .restore-step.is-failed,
-  .restore-progress-error {
-    background: color-mix(in srgb, #7f1d1d 35%, var(--el-bg-color-overlay));
-    border-color: rgba(220, 38, 38, 0.3);
-    color: #fecaca;
-  }
-
-  .restore-progress-error p {
-    color: #fecaca;
   }
 }
 </style>

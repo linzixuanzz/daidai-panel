@@ -1,0 +1,314 @@
+// ============================================================================
+// 动效系统 2.0（v4.0，design §2）
+// ----------------------------------------------------------------------------
+// 档位落在 <html data-dd-motion="rich|subtle|off">，由 utils/panelAppearance.ts 的 applyMotionPreference() 写入
+// （首屏由 index.html 内联脚本先写一遍）。本文件里所有效果都按这个属性分档：
+//   rich   全部效果；
+//   subtle 只保留必要过渡：交错入场只淡入、切页只淡入淡出、弹簧换成减速曲线、背景静止、没有光斑 / 烟花 / 磁吸；
+//   off    什么都不动。全局压缩仍由 global.scss 末尾的 dd-motion-off 段负责（1ms 通配），
+//          本文件里的循环动画（流光、背景流动）在非 rich 档一律 animation: none，
+//          保证「关闭」时 document.getAnimations() 里没有它们。
+//
+// 约定：动画只动 transform / opacity / filter / clip-path；backdrop-filter 只给外壳与卡片级容器（见 global.scss 的 .dd-glass）。
+// ============================================================================
+
+// 运行中流光转动的角度。@property 不认识时（Firefox 128 之前）conic-gradient 的起始角不能插值，流光就停在原地，
+// 不影响「运行中」这个状态本身的展示。
+@property --dd-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+:root {
+  // 弹簧缓动：--dd-spring 有明显过冲（指示条、分段滑块、磁吸回弹），--dd-spring-soft 过冲很小（展开收起）。
+  // 不支持 linear() 的浏览器用下面的 cubic-bezier 近似。
+  // 注意：不要用在抽屉、侧栏这种「滑到屏幕边缘」的动画上，过冲会越过边缘露出空隙（同 --dd-ease-spring 的说明）。
+  --dd-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dd-spring-soft: cubic-bezier(0.22, 1.2, 0.36, 1);
+  // 背景极光块往返漂移用的对称缓动
+  --dd-ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+
+  // 由主色派生的几条辅助色。写在 :root（就是 <html>）上，var(--dd-accent) 在 <html> 上代换，
+  // 所以主题工坊写进 <html> 内联的自定义主色也会被它们吃到。
+  --dd-accent-soft: color-mix(in oklab, var(--dd-accent) 14%, transparent);
+  --dd-accent-ring: color-mix(in oklab, var(--dd-accent) 42%, transparent);
+  --dd-spot-border: color-mix(in oklab, var(--dd-accent) 85%, var(--dd-accent-2));
+  --dd-spot-fill: color-mix(in oklab, var(--dd-accent) 9%, transparent);
+}
+
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --dd-spring: linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1);
+    --dd-spring-soft: linear(0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849 31.5%, 0.937 38.1%, 0.968 41.8%, 0.991 45.7%, 1.006 50.1%, 1.015 55%, 1.017 63.9%, 1.001 85.9%, 1);
+  }
+}
+
+// 克制档：弹簧一律换成减速曲线（不过冲）。(0,1,1) 压过上面 :root 的 (0,1,0)，@supports 里那份同理。
+html[data-dd-motion="subtle"] {
+  --dd-spring: var(--dd-ease-decelerate);
+  --dd-spring-soft: var(--dd-ease-decelerate);
+}
+
+@keyframes dd-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dd-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 关闭档：一律不挂动画（v4.0 验收返工，验收第 7 条「关闭时 document.getAnimations() 为空」）
+// ---------------------------------------------------------------------------
+// global.scss 末尾那套压缩只把时长压到 1ms：动画仍然会被创建、跑完。写了 both / forwards 的入场动画
+// （fadeInUp、dd-tasks-rise-in、dd-logs-rise-in…）跑完后处于「填充」状态，一直留在 getAnimations() 里。
+// 这里在关闭档直接把 animation 置为 none，动画对象根本不会被创建。
+//
+// 为什么不用 animation-fill-mode: none 去掉填充：离场动画靠 forwards 停在终点帧（opacity 0），
+// 去掉的话 Vue 摘掉节点前会闪回完全不透明一帧（MainLayout 切页离场那条注释说的就是这个）；
+// 而 animation: none 下 Vue 的 <transition> 量到的动画时长是 0，会在下一帧直接结束进出场、摘掉节点，
+// 既不卡住也不闪。改不到的只有 CSS 过渡（transition），它们仍由 global.scss 压成 1ms。
+//
+// 排除加载指示器（名单见 global.scss 的 $dd-motion-essential，两处要一致）：冻住的转圈会让人以为卡死了。
+// 特异性刻意抬到 ID 级：:is() 取参数里最高的那个，#dd-motion-off-anchor 永远匹配不到（页面上没有这个 id），
+// 只用来把整条规则抬到 (1,1,1)。原因是 global.scss 里弹窗、消息框的进出场写的是 `animation: ... !important`，
+// 选择器到 (0,3,0)；只用 (0,1,1) 的话它们在关闭档照样完整播放（1ms 压缩同样压不住它们，这是 v3.x 就有的漏洞）。
+// 关闭档是用户明确选的「什么都不要动」，不存在需要被页面覆盖的场景，所以这里压过一切是对的。
+// :not() 包在 :where() 里，不再额外抬高特异性。
+:is(html.dd-motion-off, #dd-motion-off-anchor) :where(:not(.is-loading, .is-loading *, .el-loading-spinner, .el-loading-spinner *, .dd-loading-motion, .dd-loading-motion *)),
+:is(html.dd-motion-off, #dd-motion-off-anchor) :where(:not(.is-loading, .is-loading *, .el-loading-spinner, .el-loading-spinner *, .dd-loading-motion, .dd-loading-motion *))::before,
+:is(html.dd-motion-off, #dd-motion-off-anchor) :where(:not(.is-loading, .is-loading *, .el-loading-spinner, .el-loading-spinner *, .dd-loading-motion, .dd-loading-motion *))::after {
+  animation: none !important;
+}
+
+// ---------------------------------------------------------------------------
+// 交错入场 .dd-rise：父级给子项写内联 --dd-i（0,1,2…），每项延迟 65ms。
+// 只在元素【首次创建】时播一次；keep-alive 页面切回来不会重播，这是刻意的。
+// 填充模式用 backwards 而不是 both：结束后动画不再「生效」，不会残留在 getAnimations() 里，
+// 也不会在元素上留一份 transform 把页内 position:fixed 的弹窗包住（同 MainLayout 切页那条约束）。
+// ---------------------------------------------------------------------------
+@keyframes dd-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.dd-rise {
+  animation: dd-rise 0.85s var(--dd-ease-emphasized) backwards;
+  animation-delay: calc(var(--dd-i, 0) * 65ms);
+}
+
+html[data-dd-motion="subtle"] .dd-rise {
+  animation-name: dd-fade-in;
+  animation-duration: 0.4s;
+}
+
+html[data-dd-motion="off"] .dd-rise {
+  animation: none;
+}
+
+// ---------------------------------------------------------------------------
+// 光斑描边 .dd-spot：鼠标在元素上移动时，边框与底面跟着亮一圈。
+// 坐标 --dd-mx / --dd-my 由 directives/pointerEffects.ts 的 installSpotlight()（全局一个 rAF 节流的 pointermove）写入。
+// ⚠️ 占用了 ::before / ::after 两个伪元素，元素自己不能再用它们（也不要和 .dd-running-flow 叠在同一个元素上）。
+// ⚠️ 不设 z-index、不设 isolation：那会让卡片自成层叠上下文，卡片里原地渲染的弹窗会被关进去（见 spec 的 iOS 弹窗那条）。
+//    代价是底面那层光（::after）画在内容上面，所以它的透明度很低（--dd-spot-fill 只有 9%）。
+// inset 用 0 而不是 -1px：el-card 等容器带 overflow:hidden，探出去的那 1px 会被裁掉。
+// ---------------------------------------------------------------------------
+:where(.dd-spot) {
+  position: relative;
+}
+
+.dd-spot::before,
+.dd-spot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s var(--dd-ease-standard);
+}
+
+.dd-spot::before {
+  padding: 1.5px;
+  background: radial-gradient(380px circle at var(--dd-mx, 50%) var(--dd-my, 50%), var(--dd-spot-border), transparent 42%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.dd-spot::after {
+  background: radial-gradient(520px circle at var(--dd-mx, 50%) var(--dd-my, 50%), var(--dd-spot-fill), transparent 40%);
+}
+
+.dd-spot:hover::before,
+.dd-spot:hover::after {
+  opacity: 1;
+}
+
+// 只有 rich 档才有光斑；触屏（没有悬停能力）的设备也不启用
+html:not([data-dd-motion="rich"]) .dd-spot::before,
+html:not([data-dd-motion="rich"]) .dd-spot::after {
+  display: none;
+}
+
+@media (hover: none) {
+  .dd-spot::before,
+  .dd-spot::after {
+    display: none;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 运行中流光 .dd-running-flow：一圈主色光沿边框转。rich 档转动，其余档位是一圈静止的主色描边。
+// ⚠️ 占用 ::before，元素自己不能再用。表格行（tr）上 position 不可靠，请挂在行内的块级容器上。
+// ---------------------------------------------------------------------------
+@keyframes dd-flow-spin {
+  to {
+    --dd-angle: 360deg;
+  }
+}
+
+:where(.dd-running-flow) {
+  position: relative;
+}
+
+.dd-running-flow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--dd-angle), transparent 0 62%, var(--dd-accent) 80%, var(--dd-accent-2) 92%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: dd-flow-spin 2.8s linear infinite;
+}
+
+html:not([data-dd-motion="rich"]) .dd-running-flow::before {
+  animation: none;
+  background: color-mix(in srgb, var(--dd-accent) 70%, transparent);
+}
+
+// ---------------------------------------------------------------------------
+// 磁吸 v-magnetic：指令往元素上加 .dd-magnetic 并写内联 transform。
+// 这里只负责「回弹」的过渡；颜色类过渡照抄 global.scss 的 .el-button，否则会被这条 transition 整个顶掉。
+// .el-button.dd-magnetic 是 (0,2,0)，压过 EP 与 global.scss 里 .el-button 的 (0,1,0)。
+// ---------------------------------------------------------------------------
+.dd-magnetic,
+.el-button.dd-magnetic {
+  transition:
+    transform 0.5s var(--dd-spring),
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    color var(--dd-motion-fast) var(--dd-ease-standard),
+    border-color var(--dd-motion-fast) var(--dd-ease-standard),
+    box-shadow var(--dd-motion-fast) var(--dd-ease-standard);
+}
+
+// ---------------------------------------------------------------------------
+// 结果烟花 burst(x, y)（utils/motion.ts）：14 个小圆点向四周散开。只在 rich 档由 JS 创建。
+// 粒子是圆形：属于「形状承载语义」的白名单（同状态灯），不吃圆角令牌。
+// ---------------------------------------------------------------------------
+@keyframes dd-burst {
+  from {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate(var(--dd-burst-x), var(--dd-burst-y)) scale(0);
+    opacity: 0;
+  }
+}
+
+.dd-burst {
+  position: fixed;
+  z-index: 3000;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.dd-burst > i {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: var(--dd-burst-color);
+  animation: dd-burst 0.8s var(--dd-ease-emphasized) both;
+}
+
+// ---------------------------------------------------------------------------
+// View Transitions：切页（router/index.ts）与切主题 / 主色（utils/motion.ts 的 withThemeTransition）。
+// 不支持 document.startViewTransition 的浏览器两个类都不会出现，这一段整体不生效。
+// ---------------------------------------------------------------------------
+
+// 切页：内容区只在过渡期间命名。常驻的 view-transition-name 会让 .route-shell 自成层叠上下文，
+// 移动端原地渲染的弹窗会被关进去（spec 里 iOS 弹窗那条坑），所以由路由钩子在过渡前后加删 dd-vt-page。
+html.dd-vt-page .route-shell {
+  view-transition-name: dd-main;
+}
+
+@keyframes dd-vt-out {
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.985);
+    filter: blur(6px);
+  }
+}
+
+@keyframes dd-vt-in {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.985);
+    filter: blur(8px);
+  }
+}
+
+html.dd-vt-page::view-transition-old(dd-main) {
+  animation: dd-vt-out 0.26s var(--dd-ease-emphasized) both;
+}
+
+html.dd-vt-page::view-transition-new(dd-main) {
+  animation: dd-vt-in 0.6s var(--dd-ease-emphasized) both;
+}
+
+// 克制档：只淡入淡出
+html.dd-vt-page[data-dd-motion="subtle"]::view-transition-old(dd-main) {
+  animation: dd-fade-out 0.18s var(--dd-ease-standard) both;
+}
+
+html.dd-vt-page[data-dd-motion="subtle"]::view-transition-new(dd-main) {
+  animation: dd-fade-in 0.3s var(--dd-ease-standard) both;
+}
+
+// 切主题：新旧两张整页快照都不做默认的交叉淡化，由 withThemeTransition 在新快照上做圆形 clip-path 扩散
+html.dd-vt-theme::view-transition-old(root),
+html.dd-vt-theme::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+// View Transitions 可用且档位不是 off 时，<html> 上常驻 dd-vt 类（applyMotionPreference 维护）：
+// 这时切页动画交给 View Transitions，MainLayout 自带的 page-shell 进出场必须关掉，否则两套切页动画叠在一起。
+// MainLayout 那两条是 scoped 的 `.page-shell-*-active[data-v-x]`（0,2,0），这里 (0,2,1) 压过它，不需要 !important。
+// 去掉 animation 后 Vue 的 <transition> 量不到时长，离场节点会在下一帧直接摘掉，不会和新页面叠着。
+html.dd-vt .page-shell-enter-active,
+html.dd-vt .page-shell-leave-active {
+  animation: none;
+}

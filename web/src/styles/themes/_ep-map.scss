@@ -1,0 +1,255 @@
+// ============================================================================
+// Element Plus 映射：把 EP 的 --el-* 全部指向主题语义令牌（--dd-*）。只写这一次，7 套主题 × 明暗共用。
+// ----------------------------------------------------------------------------
+// 选择器同时写 html[data-dd-theme]（0,1,1）和 html.dark[data-dd-theme]（0,2,1）：
+//   - 亮色下压过 EP 的 :root 与 global.scss 的 :root（都是 0,1,0），与注入顺序无关；
+//   - 暗色下压过 EP 的 html.dark（theme-chalk/dark/css-vars.css，0,1,1）——
+//     只写前一个的话两者打平，结果取决于 CSS 注入顺序，懒加载组件一来就可能翻车。
+// 没有 data-dd-theme 时（理论上不会出现：index.html 首屏脚本一定会写）这里全部不生效，
+// global.scss :root 里那组 --el-color-primary: #409eff 作为兜底。
+//
+// 🔴 这里的 --el-* 都【不带 !important】：它们靠特异性赢，不需要；带了反而会挡住将来想在组件上就地覆盖的人。
+//    唯一例外是 global.scss :root 里的三条 --el-border-radius-*，那是另一条链（圆角），本文件不碰。
+//
+// 混色基准 --dd-surface-solid：EP 的 light-N 在亮色下与白混、暗色下与深底混。
+// 各主题的 surface-solid 正好是「亮色近白 / 暗色深卡」的不透明色，用它统一当混色底。
+// ============================================================================
+
+$dd-ep-status: (
+  primary: var(--dd-accent),
+  success: var(--dd-ok),
+  warning: var(--dd-warn),
+  danger: var(--dd-err),
+  error: var(--dd-err),
+  // EP 的 info 在本项目里一直表示「中性灰」（type="info" 的标签 / 按钮），不是蓝色提示色，
+  // 所以映射到弱化文字色而不是 --dd-info；--dd-info 留给我们自己的提示类组件用。
+  info: var(--dd-text-3),
+);
+
+html[data-dd-theme],
+html.dark[data-dd-theme] {
+  @each $name, $color in $dd-ep-status {
+    --el-color-#{$name}: #{$color};
+    --el-color-#{$name}-light-3: color-mix(in srgb, #{$color} 70%, var(--dd-surface-solid));
+    --el-color-#{$name}-light-5: color-mix(in srgb, #{$color} 50%, var(--dd-surface-solid));
+    --el-color-#{$name}-light-7: color-mix(in srgb, #{$color} 30%, var(--dd-surface-solid));
+    --el-color-#{$name}-light-8: color-mix(in srgb, #{$color} 20%, var(--dd-surface-solid));
+    --el-color-#{$name}-light-9: color-mix(in srgb, #{$color} 10%, var(--dd-surface-solid));
+    // 亮色 dark-2 = 混黑（按下更深）；暗色在下面那块改成混白（EP 暗色包也是这个方向）
+    --el-color-#{$name}-dark-2: color-mix(in srgb, #{$color} 80%, black);
+  }
+
+  // —— 底色 ——
+  // --el-bg-color 是实色（surface-solid）而不是半透明的 surface：它被 EP 的弹窗、抽屉、消息框、
+  // 表头和项目里大量卡片当「不透明底」用，半透明了会透出下面的内容（表格固定列横滚时文字叠在一起）。
+  // 想要玻璃卡片的地方用 global.scss 里的 .dd-glass 类（opt-in），不要改这里。
+  --el-bg-color-page: var(--dd-bg);
+  --el-bg-color: var(--dd-surface-solid);
+  --el-bg-color-overlay: var(--dd-overlay);
+
+  // —— 文字 ——
+  // regular 是 EP 组件正文（表格单元格、输入框、弹窗正文）的颜色，取正文与次要之间偏正文的一档；
+  // 两端都 ≥ 4.5:1，中间混出来的也不会低于它们中较低的那个。
+  --el-text-color-primary: var(--dd-text);
+  --el-text-color-regular: color-mix(in srgb, var(--dd-text) 72%, var(--dd-text-2));
+  --el-text-color-secondary: var(--dd-text-2);
+  --el-text-color-placeholder: var(--dd-text-3);
+  --el-text-color-disabled: color-mix(in srgb, var(--dd-text-3) 55%, var(--dd-surface-solid));
+
+  // —— 描边：lighter（卡片 / 分隔线）= border，base（输入框）= border-strong，其余在两者之间插值 ——
+  --el-border-color: var(--dd-border-strong);
+  --el-border-color-light: color-mix(in srgb, var(--dd-border) 50%, var(--dd-border-strong));
+  --el-border-color-lighter: var(--dd-border);
+  --el-border-color-extra-light: color-mix(in srgb, var(--dd-border) 60%, transparent);
+  --el-border-color-dark: color-mix(in srgb, var(--dd-border-strong), var(--dd-text) 12%);
+  --el-border-color-darker: color-mix(in srgb, var(--dd-border-strong), var(--dd-text) 24%);
+
+  // —— 填充：全部从不透明的 surface-solid 往正文色方向推几个百分点，结果都是实色 ——
+  // 刻意不用半透明的 surface-2 / surface-3：表头、悬停行、固定列都吃这一组，半透明会透出横滚到下面的文字。
+  --el-fill-color-blank: var(--dd-surface-solid);
+  --el-fill-color-extra-light: color-mix(in srgb, var(--dd-surface-solid), var(--dd-text) 2%);
+  --el-fill-color-lighter: color-mix(in srgb, var(--dd-surface-solid), var(--dd-text) 3%);
+  --el-fill-color-light: color-mix(in srgb, var(--dd-surface-solid), var(--dd-text) 5%);
+  --el-fill-color: color-mix(in srgb, var(--dd-surface-solid), var(--dd-text) 8%);
+  --el-fill-color-dark: color-mix(in srgb, var(--dd-surface-solid), var(--dd-text) 11%);
+  --el-fill-color-darker: color-mix(in srgb, var(--dd-surface-solid), var(--dd-text) 14%);
+
+  // —— 遮罩与阴影 ——
+  --el-mask-color: color-mix(in srgb, var(--dd-bg) 80%, transparent);
+  --el-mask-color-extra-light: color-mix(in srgb, var(--dd-bg) 30%, transparent);
+  --el-box-shadow: var(--dd-shadow-card-hover);
+  // 下拉 / 气泡 / 表格固定列阴影吃 light 这一档：读 --dd-shadow-popper（默认等于卡片阴影，见 _layout.scss），
+  // 素白卡片无阴影，但浮层不能没有
+  --el-box-shadow-light: var(--dd-shadow-popper);
+  --el-box-shadow-lighter: var(--dd-shadow-card);
+  --el-box-shadow-dark: var(--dd-shadow-shell);
+
+  // —— 字体与字号（字号随密度走，见 _switches.scss）——
+  --el-font-family: var(--dd-font-ui);
+  --el-font-size-base: var(--dd-font-size);
+}
+
+html.dark[data-dd-theme] {
+  @each $name, $color in $dd-ep-status {
+    --el-color-#{$name}-dark-2: color-mix(in srgb, #{$color} 80%, white);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 组件私有令牌：EP 把它们声明在组件根元素上（0,1,0），:root 级映射改不到，只能就地覆盖。
+// 这里的选择器都是 (0,2,1) 起步，压过 EP 的组件声明，不需要 !important。
+// ----------------------------------------------------------------------------
+html[data-dd-theme] {
+  // 浮层类表面一律用 overlay（接近不透明），不吃半透明的 surface
+  .el-dialog {
+    --el-dialog-bg-color: var(--dd-overlay);
+  }
+
+  .el-drawer {
+    --el-drawer-bg-color: var(--dd-overlay);
+  }
+
+  .el-message-box {
+    background-color: var(--dd-overlay);
+  }
+
+  // 表格内部分隔线：呆呆主题的 border 是 1.5px 黑描边、晨雾是白描边，直接给表格网格线会太重 / 看不见，
+  // 改用「悬停 / 分隔」那一档 surface-3。卡片外框仍是 border。
+  .el-table {
+    --el-table-border-color: var(--dd-surface-3);
+  }
+
+  // 主色 / 成功 / 警告 / 危险的实色按钮：EP 写死白字（--el-color-white），终端暗色的荧光绿底上白字看不清。
+  // 主色按钮读排版级令牌 --dd-btn-primary-*（默认 = 主色底 + --dd-on-accent 字、悬停 / 按下 / 禁用沿用 EP 的
+  // light-3 / dark-2 / light-5，与改动前一致；素白改成亮黑暗白），三种状态色用 --dd-on-status。
+  // :not() 排除 plain / text / link 三种变体：它们静置时文字是彩色的，只有悬停填满后才换成「底上文字色」。
+  .el-button--primary:not(.is-plain, .is-text, .is-link) {
+    --el-button-bg-color: var(--dd-btn-primary-bg);
+    --el-button-border-color: var(--dd-btn-primary-bg);
+    --el-button-hover-bg-color: var(--dd-btn-primary-hover-bg);
+    --el-button-hover-border-color: var(--dd-btn-primary-hover-bg);
+    --el-button-active-bg-color: var(--dd-btn-primary-active-bg);
+    --el-button-active-border-color: var(--dd-btn-primary-active-bg);
+    --el-button-disabled-bg-color: var(--dd-btn-primary-disabled-bg);
+    --el-button-disabled-border-color: var(--dd-btn-primary-disabled-bg);
+    --el-button-text-color: var(--dd-btn-primary-fg);
+    --el-button-hover-text-color: var(--dd-btn-primary-fg);
+    --el-button-active-text-color: var(--dd-btn-primary-fg);
+    --el-button-disabled-text-color: var(--dd-btn-primary-fg);
+  }
+
+  .el-button--primary.is-plain {
+    --el-button-hover-text-color: var(--dd-on-accent);
+    --el-button-active-text-color: var(--dd-on-accent);
+  }
+
+  // 成功 / 警告 / 危险：实心款底色读 --dd-*-solid（亮色主题里压深过一档，白字 ≥ 4.6:1），文字 --dd-on-status。
+  // 悬停 / 按下往正文色方向再推一点：亮色更深、暗色更亮，两种方向都让文字对比度只升不降
+  // （EP 默认的 light-3 是往白里混，亮色主题里悬停时白字对比度会掉到 3 以下）。
+  @each $type, $key in (success: ok, warning: warn, danger: err) {
+    .el-button--#{$type}:not(.is-plain, .is-text, .is-link) {
+      --el-button-bg-color: var(--dd-#{$key}-solid);
+      --el-button-border-color: var(--dd-#{$key}-solid);
+      --el-button-hover-bg-color: color-mix(in srgb, var(--dd-#{$key}-solid) 85%, var(--dd-text));
+      --el-button-hover-border-color: color-mix(in srgb, var(--dd-#{$key}-solid) 85%, var(--dd-text));
+      --el-button-active-bg-color: color-mix(in srgb, var(--dd-#{$key}-solid) 72%, var(--dd-text));
+      --el-button-active-border-color: color-mix(in srgb, var(--dd-#{$key}-solid) 72%, var(--dd-text));
+      --el-button-text-color: var(--dd-on-status);
+      --el-button-hover-text-color: var(--dd-on-status);
+      --el-button-active-text-color: var(--dd-on-status);
+      --el-button-disabled-text-color: var(--dd-on-status);
+    }
+
+    // plain 款悬停时会被填满成实心：底色同样用实心色
+    .el-button--#{$type}.is-plain {
+      --el-button-hover-bg-color: var(--dd-#{$key}-solid);
+      --el-button-hover-border-color: var(--dd-#{$key}-solid);
+      --el-button-active-bg-color: color-mix(in srgb, var(--dd-#{$key}-solid) 85%, var(--dd-text));
+      --el-button-active-border-color: color-mix(in srgb, var(--dd-#{$key}-solid) 85%, var(--dd-text));
+      --el-button-hover-text-color: var(--dd-on-status);
+      --el-button-active-text-color: var(--dd-on-status);
+    }
+
+    // dark 效果的标签：实心底 + --dd-on-status
+    .el-tag--dark.el-tag--#{$type} {
+      --el-tag-bg-color: var(--dd-#{$key}-solid);
+      --el-tag-border-color: var(--dd-#{$key}-solid);
+      --el-tag-text-color: var(--dd-on-status);
+    }
+  }
+
+  .el-tag--dark.el-tag--danger.el-tag--error,
+  .el-tag--dark.el-tag--error {
+    --el-tag-bg-color: var(--dd-err-solid);
+    --el-tag-border-color: var(--dd-err-solid);
+    --el-tag-text-color: var(--dd-on-status);
+  }
+
+  // dark 效果的主色标签：与实心主按钮同一对颜色
+  .el-tag--dark.el-tag--primary {
+    --el-tag-bg-color: var(--dd-btn-primary-bg);
+    --el-tag-border-color: var(--dd-btn-primary-bg);
+    --el-tag-text-color: var(--dd-btn-primary-fg);
+  }
+
+  // info 在本项目里是中性灰（底色 = --dd-text-3）。暗色主题里 text-3 是浅灰，EP 写死的白字压上去不到 3:1；
+  // 改用卡片底色当文字色 —— text-3 对卡片底色本来就保证 ≥ 4.5:1，反过来同样成立
+  .el-tag--dark.el-tag--info,
+  .el-button--info:not(.is-plain, .is-text, .is-link) {
+    --el-tag-text-color: var(--dd-surface-solid);
+    --el-button-text-color: var(--dd-surface-solid);
+    --el-button-hover-text-color: var(--dd-surface-solid);
+    --el-button-active-text-color: var(--dd-surface-solid);
+    --el-button-disabled-text-color: var(--dd-surface-solid);
+  }
+
+  // —— 浅底上的状态文字一律用墨色（_layout.scss）——
+  // light / plain 效果的标签、彩色文字链接、text / link / plain 三种按钮的静置文字。
+  // 选择器 (0,3,1) 起，压过 EP 在组件根上的 (0,2,0) 声明。悬停色不动（悬停是瞬时态，plain 悬停后已是实心底）。
+  @each $type, $key in (primary: accent, success: ok, warning: warn, danger: err, error: err) {
+    .el-tag.el-tag--#{$type}:not(.el-tag--dark) {
+      --el-tag-text-color: var(--dd-#{$key}-ink);
+    }
+
+    .el-link.el-link--#{$type} {
+      --el-link-text-color: var(--dd-#{$key}-ink);
+    }
+
+    .el-button--#{$type}:is(.is-plain, .is-text, .is-link) {
+      --el-button-text-color: var(--dd-#{$key}-ink);
+    }
+  }
+
+  // 标签页（el-tabs）选中项与悬停项的文字：EP 用主色，经典亮色只有 4.1:1，改用主色墨色。
+  // 选中下划线 .el-tabs__active-bar 是图形不是文字，仍用主色；禁用项不参与悬停变色。
+  .el-tabs__item.is-active,
+  .el-tabs__item:hover:not(.is-disabled) {
+    color: var(--dd-accent-ink);
+  }
+
+  // 分页器：当前页码与悬停项的文字用主色墨色（EP 用主色，呆呆亮 / 素白亮 / 极光暗 / 经典亮只有 3.9~4.5:1）。
+  // EP 的 li.is-active、li:hover、btn-prev/next 的悬停都读 --el-pagination-hover-color，改这一个令牌就全覆盖到了。
+  .el-pagination {
+    --el-pagination-hover-color: var(--dd-accent-ink);
+  }
+
+  // 带背景的分页（background 属性）：当前页是实心底，EP 写死「主色底 + 白字」。
+  // 改成与实心主按钮同一对令牌（--dd-btn-primary-bg / -fg，14 套都 ≥ 4.6:1；素白是黑底白字 / 白底黑字）。
+  // EP 的选择器是 (0,4,0)，这里加上 html[data-dd-theme] 前缀是 (0,5,1)。
+  .el-pagination.is-background .el-pager li.is-active,
+  .el-pagination.is-background .btn-prev.is-active,
+  .el-pagination.is-background .btn-next.is-active {
+    background-color: var(--dd-btn-primary-bg);
+    color: var(--dd-btn-primary-fg);
+  }
+
+  // info 浅色标签：弱化文字压在自己 10% 的浅底上会略低于 4.5，提一档到次要文字
+  .el-tag.el-tag--info:not(.el-tag--dark) {
+    --el-tag-text-color: var(--dd-text-2);
+  }
+
+  // 复选框勾选后的对勾：同上，跟主色上的文字色走
+  .el-checkbox {
+    --el-checkbox-checked-icon-color: var(--dd-on-accent);
+  }
+}

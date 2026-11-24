@@ -1150,7 +1150,7 @@ function handleClose() {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 18px;
-  background: var(--el-bg-color);
+  background: var(--dd-surface-solid);
   flex-wrap: wrap;
 }
 
@@ -1173,7 +1173,7 @@ function handleClose() {
 .viewer-hero-title {
   font-size: 16px;
   font-weight: 700;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
   margin: 0;
   letter-spacing: 0.2px;
   font-family: var(--dd-font-ui);
@@ -1186,7 +1186,7 @@ function handleClose() {
 .viewer-hero-id {
   font-family: var(--dd-font-mono);
   font-size: 11.5px;
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
   letter-spacing: 0.3px;
 }
 
@@ -1205,23 +1205,23 @@ function handleClose() {
   // #133：运行中标签改用 success 绿，与任务页 getStatusType 的「运行中 success」保持一致。
   // 等待日志态共用这一档（也是「进行中」），一并转绿。
   &--running {
-    background: color-mix(in srgb, var(--el-color-success) 14%, transparent);
-    color: var(--el-color-success);
+    background: color-mix(in srgb, var(--dd-ok) 14%, transparent);
+    color: var(--dd-ok-ink);
   }
 
   &--done {
-    background: color-mix(in srgb, #22c55e 14%, transparent);
-    color: color-mix(in srgb, #22c55e 80%, var(--el-text-color-primary));
+    background: color-mix(in srgb, var(--dd-ok) 14%, transparent);
+    color: var(--dd-ok-ink);
   }
 
   &--error {
-    background: color-mix(in srgb, var(--el-color-danger) 14%, transparent);
-    color: var(--el-color-danger);
+    background: color-mix(in srgb, var(--dd-err) 14%, transparent);
+    color: var(--dd-err-ink);
   }
 
   &--empty {
-    background: color-mix(in srgb, var(--el-color-info) 18%, transparent);
-    color: var(--el-color-info);
+    background: color-mix(in srgb, var(--dd-text-3) 18%, transparent);
+    color: var(--dd-text-3);
   }
 }
 
@@ -1230,7 +1230,7 @@ function handleClose() {
   gap: 14px;
   flex-wrap: wrap;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .viewer-hero-meta-item {
@@ -1238,7 +1238,7 @@ function handleClose() {
 
   // 「已暂停跟随」弱提示：比其它元信息更淡一点，不抢注意力
   &--paused {
-    color: var(--el-text-color-placeholder);
+    color: var(--dd-text-3);
   }
 }
 
@@ -1257,22 +1257,22 @@ function handleClose() {
 
 .status-orb--running {
   // 与头部「运行中」标签一致转为 success 绿（#133）
-  background: color-mix(in srgb, var(--el-color-success) 14%, transparent);
+  background: color-mix(in srgb, var(--dd-ok) 14%, transparent);
 }
 
 .status-orb--done {
-  background: color-mix(in srgb, #22c55e 14%, transparent);
-  color: color-mix(in srgb, #22c55e 80%, var(--el-text-color-primary));
+  background: color-mix(in srgb, var(--dd-ok) 14%, transparent);
+  color: var(--dd-ok-ink);
 }
 
 .status-orb--error {
-  background: color-mix(in srgb, var(--el-color-danger) 14%, transparent);
-  color: var(--el-color-danger);
+  background: color-mix(in srgb, var(--dd-err) 14%, transparent);
+  color: var(--dd-err-ink);
 }
 
 .status-orb--empty {
-  background: color-mix(in srgb, var(--el-color-info) 18%, transparent);
-  color: var(--el-color-info);
+  background: color-mix(in srgb, var(--dd-text-3) 18%, transparent);
+  color: var(--dd-text-3);
 }
 
 .status-orb-core {
@@ -1282,7 +1282,7 @@ function handleClose() {
   // 方化后就是一小块色斑、看不出是状态灯。两种 shape 模式下都固定圆形，不吃 --dd-radius-* 刻度。
   border-radius: 50%;
   // 与头部「运行中」标签一致转为 success 绿（#133）
-  background: var(--el-color-success);
+  background: var(--dd-ok);
   animation: orb-core 1.4s ease-in-out infinite;
 }
 
@@ -1291,7 +1291,7 @@ function handleClose() {
   inset: 0;
   // 涟漪是从 .status-orb 里放大出来的一层，形状必须跟底块同档，否则放大过程中会露出错位的角
   border-radius: var(--dd-radius-control);
-  background: color-mix(in srgb, var(--el-color-success) 40%, transparent);
+  background: color-mix(in srgb, var(--dd-ok) 40%, transparent);
   animation: orb-ripple 1.8s ease-out infinite;
 }
 
@@ -1321,7 +1321,7 @@ function handleClose() {
   height: 30px;
   padding: 0 10px;
   border: 1px solid var(--viewer-border-soft, var(--el-border-color-light));
-  background: var(--el-bg-color);
+  background: var(--dd-surface-solid);
   color: var(--el-text-color-regular);
   // 工具栏按钮 → control 档
   border-radius: var(--dd-radius-control);
@@ -1331,9 +1331,9 @@ function handleClose() {
   transition: color 0.15s, background 0.15s, border-color 0.15s;
 
   &:hover:not(:disabled):not(.tool-btn--close) {
-    color: var(--el-color-primary);
-    border-color: color-mix(in srgb, var(--el-color-primary) 40%, var(--el-border-color-light));
-    background: color-mix(in srgb, var(--el-color-primary) 6%, transparent);
+    color: var(--dd-accent-ink);
+    border-color: color-mix(in srgb, var(--dd-accent) 40%, var(--el-border-color-light));
+    background: color-mix(in srgb, var(--dd-accent) 6%, transparent);
   }
 
   &:disabled {
@@ -1342,9 +1342,9 @@ function handleClose() {
   }
 
   &--active {
-    background: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
-    color: var(--el-color-primary);
-    border-color: color-mix(in srgb, var(--el-color-primary) 40%, transparent);
+    background: color-mix(in srgb, var(--dd-accent) 10%, transparent);
+    color: var(--dd-accent-ink);
+    border-color: color-mix(in srgb, var(--dd-accent) 40%, transparent);
   }
 
   &--close {
@@ -1354,7 +1354,7 @@ function handleClose() {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--el-text-color-secondary);
+    color: var(--dd-text-2);
     border-color: transparent;
     // 34×34 的图标按钮，与 .tool-btn 同档
     border-radius: var(--dd-radius-control);
@@ -1375,13 +1375,13 @@ function handleClose() {
       inset: 0;
       // hover 铺满的红底盖在按钮上，圆角必须跟按钮同档，否则圆角模式下四角会溢出按钮轮廓
       border-radius: var(--dd-radius-control);
-      background: var(--el-color-danger);
+      background: var(--dd-err-solid);
       opacity: 0;
       transition: opacity 0.2s ease;
     }
 
     &:hover:not(:disabled) {
-      color: #fff;
+      color: var(--dd-on-status);
       border-color: transparent;
       background: transparent;
 
@@ -1391,7 +1391,7 @@ function handleClose() {
     }
 
     &:focus-visible {
-      outline: 2px solid color-mix(in srgb, #ef4444 60%, transparent);
+      outline: 2px solid color-mix(in srgb, var(--dd-err) 60%, transparent);
       outline-offset: 2px;
     }
   }
@@ -1454,7 +1454,7 @@ function handleClose() {
   font-family: var(--dd-font-mono);
   font-size: var(--viewer-log-font-size, 13.5px);
   line-height: 1.65;
-  color: var(--dd-log-text-color, #e2e8f0);
+  color: var(--dd-log-text-color);
   // 🔴 保持 0，不吃令牌 —— 必须写回来压掉 global.scss 里 .dd-log-surface 的 surface 档。
   // 这块深色日志区是【贴边内嵌】的：本文件下方把 .log-viewer-dialog .el-dialog__body 的
   // padding 设成了 0，.viewer-body 也没有内边距，所以它从 header 分隔线正下方一路铺满到
@@ -1486,11 +1486,11 @@ function handleClose() {
   width: 100%;
   margin: 0 0 10px;
   padding: 6px 10px;
-  border: 1px dashed color-mix(in srgb, var(--dd-log-text-color, #e2e8f0) 32%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--dd-log-text-color) 32%, transparent);
   // 可点击的提示小块（点一下展开更多日志）→ control 档
   border-radius: var(--dd-radius-control);
-  background: color-mix(in srgb, var(--dd-log-text-color, #e2e8f0) 8%, transparent);
-  color: color-mix(in srgb, var(--dd-log-text-color, #e2e8f0) 70%, transparent);
+  background: color-mix(in srgb, var(--dd-log-text-color) 8%, transparent);
+  color: color-mix(in srgb, var(--dd-log-text-color) 70%, transparent);
   font-family: var(--dd-font-mono);
   font-size: 11.5px;
   letter-spacing: 0.3px;
@@ -1501,9 +1501,9 @@ function handleClose() {
   transition: color 0.15s, background 0.15s, border-color 0.15s;
 
   &:hover {
-    color: var(--dd-log-text-color, #e2e8f0);
-    border-color: color-mix(in srgb, var(--dd-log-text-color, #e2e8f0) 52%, transparent);
-    background: color-mix(in srgb, var(--dd-log-text-color, #e2e8f0) 14%, transparent);
+    color: var(--dd-log-text-color);
+    border-color: color-mix(in srgb, var(--dd-log-text-color) 52%, transparent);
+    background: color-mix(in srgb, var(--dd-log-text-color) 14%, transparent);
   }
 }
 
@@ -1514,21 +1514,21 @@ function handleClose() {
   justify-content: center;
   height: 100%;
   gap: 10px;
-  color: color-mix(in srgb, var(--dd-log-text-color, #e2e8f0) 55%, transparent);
+  color: color-mix(in srgb, var(--dd-log-text-color) 55%, transparent);
   font-size: 13px;
 
   &--error {
-    color: color-mix(in srgb, var(--el-color-warning) 90%, transparent);
+    color: color-mix(in srgb, var(--dd-warn) 90%, transparent);
   }
 
   &--empty {
-    color: color-mix(in srgb, var(--dd-log-text-color, #e2e8f0) 70%, transparent);
+    color: color-mix(in srgb, var(--dd-log-text-color) 70%, transparent);
   }
 }
 
 .viewer-message-hint {
   font-size: 11.5px;
-  color: color-mix(in srgb, var(--dd-log-text-color, #e2e8f0) 40%, transparent);
+  color: color-mix(in srgb, var(--dd-log-text-color) 40%, transparent);
   letter-spacing: 0.2px;
 }
 
@@ -1539,7 +1539,7 @@ function handleClose() {
   padding: 6px 22px;
   font-family: var(--dd-font-mono);
   font-size: 11px;
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
   border-top: 1px solid var(--viewer-border-soft, var(--el-border-color-light));
   background: color-mix(in srgb, var(--el-fill-color-lighter) 60%, transparent);
   flex-shrink: 0;
@@ -1556,7 +1556,7 @@ function handleClose() {
   &--live {
     // #133：与头部「运行中」标签一致用 success 绿（原为 warning 橙：头部改绿之后一橙一绿，两处对不上）。
     // 「等待日志中」共用这一档，与头部等待态同样走 success。
-    color: var(--el-color-success);
+    color: var(--dd-ok-ink);
     font-weight: 600;
 
     &::before {
@@ -1566,11 +1566,11 @@ function handleClose() {
   }
 
   &--error {
-    color: var(--el-color-danger);
+    color: var(--dd-err-ink);
   }
 
   &--empty {
-    color: var(--el-color-info);
+    color: var(--dd-text-3);
   }
 }
 

@@ -1,0 +1,107 @@
+// ============================================================================
+// 主题：纸墨（paper）
+// ----------------------------------------------------------------------------
+// 亮色取自效果演示第 2 节；暗色「墨夜」是新设计：深褐黑底、米色字、朱砂点缀，保留纸纹。
+// 标题用宋体栈（--dd-font-head）；图表成功色用副色（--dd-chart-ok），主色朱砂红会和失败红撞色。
+// 写法约定见 classic.scss 文件头。
+// ============================================================================
+
+html[data-dd-theme="paper"] {
+  color-scheme: light;
+  --dd-bg: #f1eadd;
+  --dd-surface: #fbf8f1;
+  --dd-surface-solid: #fbf8f1;
+  --dd-surface-2: #f6f1e7;
+  --dd-surface-3: #eee6d6;
+  --dd-overlay: #fdfbf6;
+  --dd-border: rgba(43, 37, 32, 0.14);
+  --dd-border-strong: rgba(43, 37, 32, 0.32);
+  --dd-border-width: 1px;
+  --dd-text: #2b2520;
+  --dd-text-2: #5c5249;
+  --dd-text-3: #6b6157;
+  --dd-accent: #b4441c;
+  --dd-accent-2: #2f5d50;
+  --dd-on-accent: #ffffff;
+  --dd-on-status: #ffffff;
+  --dd-ok: #3f7d4e;
+  --dd-warn: #a86b12;
+  --dd-err: #a8322d;
+  --dd-info: #2f5d7c;
+  --dd-chart-ok: var(--dd-accent-2);
+  // 实心填充色覆盖（v4.0 验收返工）：上面的文字色（--dd-on-status / --dd-on-accent）在原色上不到 4.5:1
+  --dd-warn-solid: #a36813;
+  --dd-glass-blur: 0px;
+  --dd-shadow-card: 0 1px 0 rgba(43, 37, 32, 0.06);
+  --dd-shadow-card-hover: 0 1px 0 rgba(43, 37, 32, 0.08), 0 8px 20px -14px rgba(43, 37, 32, 0.25);
+  --dd-shadow-shell: 0 1px 0 rgba(43, 37, 32, 0.06);
+  --dd-text-glow: none;
+  --dd-theme-radius-control: 4px;
+  --dd-theme-radius-surface: 6px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 6px;
+  --dd-theme-radius-surface-mobile: 8px;
+  --dd-bg-blob-1: #e7d8bd;
+  --dd-bg-blob-2: #efe3cc;
+  --dd-bg-blob-3: #e2cfae;
+  --dd-bg-blob-4: #f3e9d6;
+  --dd-bg-blob-opacity: 0;
+  --dd-bg-grid-opacity: 0;
+  --dd-bg-grid-line: rgba(43, 37, 32, 0.05);
+  --dd-bg-noise-opacity: 0.22;
+  --dd-bg-noise-blend: multiply;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif;
+}
+
+html.dark[data-dd-theme="paper"] {
+  color-scheme: dark;
+  --dd-bg: #16120e;
+  --dd-surface: #1f1a15;
+  --dd-surface-solid: #1f1a15;
+  --dd-surface-2: #251f19;
+  --dd-surface-3: #2e271f;
+  --dd-overlay: #241e18;
+  --dd-border: rgba(232, 220, 200, 0.12);
+  --dd-border-strong: rgba(232, 220, 200, 0.26);
+  --dd-border-width: 1px;
+  --dd-text: #ece3d3;
+  --dd-text-2: #c3b6a1;
+  --dd-text-3: #a59784;
+  --dd-accent: #e0653a;
+  --dd-accent-2: #6fae98;
+  --dd-on-accent: #1a0d06;
+  --dd-on-status: #16120e;
+  --dd-ok: #7fb98a;
+  --dd-warn: #d9a441;
+  --dd-err: #e5675f;
+  --dd-info: #7fa7c4;
+  --dd-chart-ok: var(--dd-accent-2);
+  // 复位亮色块里的实心色覆盖（亮色块在暗色下同样匹配，这里不写就会漏过来；暗色下状态色本身就够亮）
+  --dd-ok-solid: var(--dd-ok);
+  --dd-warn-solid: var(--dd-warn);
+  --dd-err-solid: var(--dd-err);
+  --dd-btn-primary-bg: var(--dd-accent);
+  --dd-glass-blur: 0px;
+  --dd-shadow-card: 0 1px 0 rgba(0, 0, 0, 0.35);
+  --dd-shadow-card-hover: 0 1px 0 rgba(0, 0, 0, 0.4), 0 10px 24px -14px rgba(0, 0, 0, 0.6);
+  --dd-shadow-shell: 0 1px 0 rgba(0, 0, 0, 0.35);
+  --dd-text-glow: none;
+  --dd-theme-radius-control: 4px;
+  --dd-theme-radius-surface: 6px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 6px;
+  --dd-theme-radius-surface-mobile: 8px;
+  --dd-bg-blob-1: #3b2a1c;
+  --dd-bg-blob-2: #2e2418;
+  --dd-bg-blob-3: #4a2a1b;
+  --dd-bg-blob-4: #2b2a1e;
+  --dd-bg-blob-opacity: 0;
+  --dd-bg-grid-opacity: 0;
+  --dd-bg-grid-line: rgba(232, 220, 200, 0.04);
+  // 纸纹在暗底上改用 screen 混合，透明度也要压低：multiply 叠在深色上什么都看不见
+  --dd-bg-noise-opacity: 0.12;
+  --dd-bg-noise-blend: screen;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif;
+}

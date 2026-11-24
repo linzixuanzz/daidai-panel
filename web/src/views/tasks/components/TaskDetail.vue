@@ -7,6 +7,7 @@ import { useResponsive } from '@/composables/useResponsive'
 import { formatDuration } from '@/utils/duration'
 import { formatDateTime } from '@/utils/datetime'
 import TaskCronList from './TaskCronList.vue'
+import TaskHealthPanel from '@/components/TaskHealthPanel.vue'
 
 const props = defineProps<{
   visible: boolean
@@ -16,7 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:visible': [value: boolean]
 }>()
-const { dialogFullscreen } = useResponsive()
+const { dialogFullscreen, isMobile } = useResponsive()
 
 // 与列表页（index.vue 的 getStatusType）同一套配色（issue #133）：禁用灰、排队橙、运行中绿、空闲蓝。
 // 排队 / 运行中先判运行态；其余两档（已启用 / 已禁用）按开关位判，口径同列表页的 isTaskSwitchOn。
@@ -96,7 +97,7 @@ function handleClose() {
     <el-descriptions v-if="task" :column="dialogFullscreen ? 1 : 2" border>
       <el-descriptions-item label="任务名称" :span="2">
         <div style="display: flex; align-items: center; gap: 8px">
-          <el-icon v-if="task.is_pinned" color="var(--el-color-warning)"><Star /></el-icon>
+          <el-icon v-if="task.is_pinned" color="var(--dd-warn)"><Star /></el-icon>
           <span>{{ task.name }}</span>
         </div>
       </el-descriptions-item>
@@ -123,13 +124,13 @@ function handleClose() {
           v-if="task.task_type === 'cron'"
           :expressions="cronExpressions"
         />
-        <span v-else style="color: var(--el-text-color-placeholder)">不使用 Cron</span>
+        <span v-else style="color: var(--dd-text-3)">不使用 Cron</span>
       </el-descriptions-item>
       <el-descriptions-item label="执行命令" :span="2">
         <code style="word-break: break-all">{{ task.command }}</code>
       </el-descriptions-item>
       <el-descriptions-item label="随机延迟">
-        <span v-if="task.random_delay_seconds == null" style="color: var(--el-text-color-secondary)">继承系统设置</span>
+        <span v-if="task.random_delay_seconds == null" style="color: var(--dd-text-2)">继承系统设置</span>
         <span v-else-if="task.random_delay_seconds === 0">不随机延迟</span>
         <span v-else>最多 {{ task.random_delay_seconds }} 秒</span>
       </el-descriptions-item>
@@ -148,7 +149,7 @@ function handleClose() {
         >
           {{ label }}
         </el-tag>
-        <span v-if="displayLabels.length === 0" style="color: var(--el-text-color-placeholder)">无</span>
+        <span v-if="displayLabels.length === 0" style="color: var(--dd-text-3)">无</span>
       </el-descriptions-item>
       <el-descriptions-item label="上次运行状态">
         <el-tag v-if="task.last_run_status === null" type="info" size="small">未运行</el-tag>
@@ -159,7 +160,7 @@ function handleClose() {
       </el-descriptions-item>
       <el-descriptions-item label="上次运行耗时">
         <span v-if="task.last_running_time != null">{{ formatDuration(task.last_running_time) }}</span>
-        <span v-else style="color: var(--el-text-color-placeholder)">-</span>
+        <span v-else style="color: var(--dd-text-3)">-</span>
       </el-descriptions-item>
       <el-descriptions-item label="上次运行时间" :span="2">
         {{ formatTime(task.last_run_at) }}
@@ -167,10 +168,10 @@ function handleClose() {
       <el-descriptions-item label="通知渠道" :span="2">
         <span v-if="task.notification_channel_name">
           {{ task.notification_channel_name }}
-          <span v-if="task.notification_channel_enabled === false" style="color: var(--el-color-danger)">（已禁用）</span>
+          <span v-if="task.notification_channel_enabled === false" style="color: var(--dd-err-ink)">（已禁用）</span>
         </span>
         <!-- 未绑定渠道 = 走广播。广播只命中「默认推送」渠道，「绑定推送」渠道收不到。 -->
-        <span v-else style="color: var(--el-text-color-placeholder)">全部默认推送渠道</span>
+        <span v-else style="color: var(--dd-text-3)">全部默认推送渠道</span>
       </el-descriptions-item>
       <el-descriptions-item label="环境变量" :span="2">
         <span style="word-break: break-all">{{ envScopeText }}</span>
@@ -199,9 +200,15 @@ function handleClose() {
       <el-descriptions-item label="更新时间">{{ formatTime(task.updated_at) }}</el-descriptions-item>
       <el-descriptions-item label="备注" :span="2">
         <span v-if="task.remark">{{ task.remark }}</span>
-        <span v-else style="color: var(--el-text-color-placeholder)">无</span>
+        <span v-else style="color: var(--dd-text-3)">无</span>
       </el-descriptions-item>
     </el-descriptions>
+    <!-- 健康画像（v4.0 F5）：桌面端在任务表的展开行里看，移动端没有展开行，放在详情弹窗底部。
+         v-if 带上 visible：关掉弹窗就卸载，不在后台留着取数；换任务时组件按 taskId 自己重新取。 -->
+    <section v-if="visible && isMobile && task?.id" class="task-detail-health">
+      <h4 class="task-detail-health__title">健康画像</h4>
+      <TaskHealthPanel :task-id="task.id" />
+    </section>
     <!-- 移动端全屏时关闭入口放右下角（v3.3.1，issue #143 F2）：右上角 × 离拇指最远，iOS 上还曾被顶栏整块盖住。
          有 footer 后 global.scss 会在 ≤768 隐藏 EP 自带的 ×。桌面不渲染 footer，保持原样。
          关闭走 handleClose 通知父组件；v-model 置 false 时 EP 仍会触发 @close，再回传一次 false 无害。 -->
@@ -212,6 +219,17 @@ function handleClose() {
 </template>
 
 <style scoped>
+.task-detail-health {
+  margin-top: 16px;
+}
+
+.task-detail-health__title {
+  margin: 0 0 10px;
+  font-size: var(--dd-card-title-size, 14px);
+  font-weight: var(--dd-card-title-weight, 600);
+  color: var(--dd-text);
+}
+
 /* 状态标签 + 可能出现的「已禁用」开关位标签并排一行（本块是纯 CSS，注释不能用 //） */
 .status-cell {
   display: inline-flex;
@@ -231,7 +249,7 @@ function handleClose() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -240,7 +258,7 @@ function handleClose() {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
   line-height: 1.6;
 }
 </style>

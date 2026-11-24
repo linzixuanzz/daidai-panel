@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, onActivated, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { taskApi } from '@/api/task'
+import type { TaskRecentRun } from '@/api/task'
 import { depsApi, type PythonRuntimeInfo } from '@/api/deps'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -17,6 +18,7 @@ import TaskDetail from './components/TaskDetail.vue'
 import LogFileBrowser from './components/LogFileBrowser.vue'
 import ViewManager from './components/ViewManager.vue'
 import TaskCronList from './components/TaskCronList.vue'
+import TaskHealthPanel from '@/components/TaskHealthPanel.vue'
 import { DEFAULT_CRON_DAILY_MIDNIGHT } from './components/CronInput.vue'
 import BatchAddLabelDialog from './components/BatchAddLabelDialog.vue'
 import BatchNotifyDialog from './components/BatchNotifyDialog.vue'
@@ -52,7 +54,7 @@ const { isMobile, width: viewportWidth } = useResponsive()
 // v3.3.8（issue #163）把「最后运行」「下次运行」两列（各 160）合成一列「运行时间」（184），宽桌面固定列少了 136px；
 // 阈值没跟着重算，仍按 1600 切换——窄桌面要省的主要是「耗时」与名称标签，这条线本身没变。
 const isNarrowDesktop = computed(() => !isMobile.value && viewportWidth.value < 1600)
-const { isPageActive } = usePageActivity()
+const { isPageActive, isViewActive } = usePageActivity()
 let statusTimer: ReturnType<typeof setInterval> | null = null
 // 列表请求序号闸。loadTasks 在整页十几处被调用（切视图 / 分组、翻页、筛选、排序、增删改后重拉、keep-alive 回页……），
 // 几次请求可能同时在飞，返回顺序没有保证；原来是「后到者赢」，快速连点标签时列表会显示旧筛选的结果、
@@ -123,6 +125,14 @@ const selectedIdSet = computed(() => new Set(selectedIds.value))
 const taskTableRef = ref<any>(null)
 // 页面根：翻页回顶（scrollListToTop）的锚点
 const pageRootRef = ref<HTMLElement | null>(null)
+
+// ---- v4.0 F5：「最近 20 次」小柱列 + 展开行健康画像 ----
+// 「最近 20 次」按当前页的 id 一次批量取（一页只发 1 个请求），键是任务 id 的字符串形式，每个数组旧 → 新。
+// 只在桌面宽屏显示这一列：移动端是卡片、窄桌面（<1600）列宽已经压到下限，都不显示也不请求。
+const recentRuns = ref<Record<string, TaskRecentRun[]>>({})
+let recentRunsSeq = 0
+// 展开行（健康画像）：同一时刻只展开一行，既省请求，也让拖拽判定简单（见 dragSortDisabledReason）
+const expandedTaskId = ref<number | null>(null)
 // 视图分组栏实例：移动端「新建视图 / 视图管理」两个入口收进了工具栏的「+」菜单，要经它 expose 的方法打开
 const viewManagerRef = ref<InstanceType<typeof ViewManager> | null>(null)
 const nameLabelPrefs = ref<TaskNameLabelPrefs>(readStoredTaskNameLabelPrefs())
@@ -354,6 +364,8 @@ const dragSortDisabledReason = computed(() => {
   if (viewSortRules.value.length > 0) return '当前视图自带排序规则，切到不带排序的视图再拖拽'
   if (tasks.value.length < 2) return '至少两条任务才能拖拽排序'
   if (hasRunningTasks.value) return '运行中的任务被临时排到了最前，此时拖拽的落点会算错；等它跑完再拖，或先切到「已启用」/「已禁用」页签排'
+  // 展开行在 tbody 里多占一个 <tr>，sortablejs 的 oldIndex / newIndex 会把它算进去，和 tasks 的下标对不上
+  if (expandedTaskId.value !== null) return '先收起展开的健康画像再拖拽'
   return ''
 })
 const sortableEnabled = computed(() => dragSortDisabledReason.value === '')
@@ -612,6 +624,11 @@ watch(isMobile, (mobile) => {
 // 挂在 tasks 的整体替换上而不是只写进 loadTasks：运行后的回读、轮询合并剔除行也会换数组，一处收口。
 // 只裁不清：批量启用 / 置顶之后重拉，勾着的任务都还在，接着做下一个批量操作不用重选。
 watch(tasks, (rows) => {
+  // 展开的那一行已经不在本页（翻页、筛选、被删）：EP 会按 row-key 自己收起，但不回调 expand-change，这里补清记录，
+  // 否则 dragSortDisabledReason 会一直以为「有展开的行」而禁掉拖拽
+  if (expandedTaskId.value !== null && !rows.some(row => row?.id === expandedTaskId.value)) {
+    expandedTaskId.value = null
+  }
   if (!isMobile.value || selectedIds.value.length === 0) return
   const present = new Set<number>(rows.map(row => row?.id))
   const kept = selectedIds.value.filter(id => present.has(id))
@@ -735,11 +752,16 @@ function startStatusPolling() {
       if (!canPollTaskStatus.value) return
       // 飞行期间 loadTasks 又发起了新的一次（切筛选、翻页……）：这份是按旧参数拿的，不能再写回列表
       if (seq !== loadTasksSeq) return
+      // 记下这一轮之前在跑的任务：合并后有谁不在跑了 = 刚跑完，「最近 20 次」要补上这一次
+      const runningBefore = tasks.value.filter(row => row?.status === 2).map(row => row.id)
       // 优先就地刷字段（顺序纹丝不动），只有这一页的成员关系真变了才整表替换 ——
       // 两条路各自的理由与代价见 mergeTaskListInPlace 的注释。
       if (!mergeTaskListInPlace(res.data, res.total)) {
         tasks.value = res.data
         total.value = res.total
+      }
+      if (runningBefore.some(id => !tasks.value.some(row => row?.id === id && row.status === 2))) {
+        void loadRecentRuns()
       }
       syncStatusPolling()
     } catch {}
@@ -773,6 +795,8 @@ async function loadTasks() {
     tasks.value = res.data
     total.value = res.total
     syncStatusPolling()
+    // 一页只发 1 个请求：按这一页的 id 批量取「最近 20 次」
+    void loadRecentRuns()
   } catch {
     // 过期请求的失败同样丢弃：更新的那次还在飞，这时报「加载失败」只会误导
     if (seq !== loadTasksSeq) return
@@ -906,6 +930,23 @@ onActivated(async () => {
   }
   await Promise.all([loadTasks(), loadNotificationChannels(), loadDefaultPythonVersion()])
   await handleRouteQueryAction()
+})
+
+// 已经停在任务页时，命令面板 / 别处再跳 `/tasks?create=1`、`/tasks?keyword=…` 只改了 query：
+// 组件既不重新挂载也不重新激活，onMounted / onActivated 都不会再跑，这里补上监听。
+// 只在「本页正处于激活态、且路由确实是任务页」时处理：
+// - 从别的页面带着 query 进来时，路由变化那一刻本页还是失活的（keep-alive），交给 onActivated 处理，不会重复执行；
+// - keep-alive 失活期间别的页面改 query 也会触发这里，靠 isViewActive / path 挡掉。
+// - 只有 query 里真带着 handleRouteQueryAction 认的那几个键（create / autoCreate / keyword / task_id+action=run）才处理；
+//   它处理完会 replace 成不带 query 的 /tasks，这次变化不带这些键，直接跳过，不会循环。
+watch(() => route.query, (query) => {
+  if (!isViewActive.value || route.path !== '/tasks') return
+  const hasAction = query.create === '1'
+    || query.autoCreate === '1'
+    || (typeof query.keyword === 'string' && query.keyword.trim() !== '')
+    || (Number(query.task_id) > 0 && query.action === 'run')
+  if (!hasAction) return
+  void handleRouteQueryAction()
 })
 
 onBeforeUnmount(() => {
@@ -1326,9 +1367,79 @@ async function handleCopy(task: any) {
 }
 
 // 置顶行挂 task-row-pinned，样式见 <style> 里的「Pinned Row」（与环境变量页同一套）。
+// 运行中的行挂 task-row-running（整行淡主色底 + 左缘主色竖条），流光圈在「状态」格里（.dd-running-flow 不能挂在 tr 上）。
 // 类名由 el-table 每次渲染按行数据重算，轮询就地合并、拖拽重排之后都跟着数据走，不会挂错行。
 function getRowClassName({ row }: { row: any }) {
-  return row?.is_pinned ? 'task-row-pinned' : ''
+  const classes: string[] = []
+  if (row?.is_pinned) classes.push('task-row-pinned')
+  if (row?.status === 2) classes.push('task-row-running')
+  return classes.join(' ')
+}
+
+// 「最近 20 次」只在桌面宽屏显示（理由见 recentRuns 的注释）
+const showRecentRunsColumn = computed(() => !isMobile.value && !isNarrowDesktop.value)
+
+// 按当前页的全部 id 一次取回。调用时机：每次 loadTasks 成功之后（翻页 / 筛选 / 搜索 / 增删改都会走它）、
+// 这一列从隐藏变成显示时、以及轮询发现有任务刚跑完时。都是「一次一个请求」，不会按行发。
+async function loadRecentRuns() {
+  if (!showRecentRunsColumn.value) return
+  const seq = ++recentRunsSeq
+  const ids = tasks.value.map(row => Number(row?.id)).filter(id => id > 0).slice(0, 100)
+  try {
+    const res = await taskApi.recentRuns(ids, 20)
+    if (seq !== recentRunsSeq) return
+    recentRuns.value = res?.runs || {}
+  } catch {
+    // 小柱图只是锦上添花，失败时静默留空，不弹错
+    if (seq === recentRunsSeq) recentRuns.value = {}
+  }
+}
+
+// 小柱：颜色按 成功 / 失败 / 已终止（超时或手动停止），高度按这一行里最长的一次耗时归一化（最低 25%）。
+// 数据回来时整体算一遍，模板里按任务 id 取，不在每次渲染里逐行重算。
+const recentRunBars = computed(() => {
+  const result: Record<string, { key: number; tone: string; height: string; title: string }[]> = {}
+  for (const [id, runs] of Object.entries(recentRuns.value)) {
+    const max = Math.max(0, ...runs.map(run => run.duration || 0))
+    result[id] = runs.map((run, index) => {
+      const tone = run.status === 0 ? 'ok' : run.status === 1 ? 'err' : 'warn'
+      const text = run.status === 0 ? '成功' : run.status === 1 ? '失败' : '已终止'
+      const height = max > 0 && run.duration ? 25 + (run.duration / max) * 75 : 25
+      return {
+        key: index,
+        tone,
+        height: `${height.toFixed(0)}%`,
+        title: `${text} · ${formatDuration(run.duration)}`,
+      }
+    })
+  }
+  return result
+})
+
+watch(showRecentRunsColumn, (visible) => {
+  if (visible) void loadRecentRuns()
+})
+
+// 展开行：EP 自己切换展开状态后回调这里。只保留最新展开的那一行，其余收起（手风琴）。
+function handleExpandChange(row: any, expandedRows: any[]) {
+  const isOpen = expandedRows.some(item => item?.id === row?.id)
+  if (!isOpen) {
+    if (expandedTaskId.value === row?.id) expandedTaskId.value = null
+    return
+  }
+  expandedTaskId.value = row.id
+  for (const other of expandedRows) {
+    if (other?.id !== row.id) taskTableRef.value?.toggleRowExpansion(other, false)
+  }
+}
+
+// 点行的空白处也能展开 / 收起健康画像（原来整行就是 pointer 光标，但点了什么都不发生）。
+// 点在按钮、链接、复选框、拖拽手柄、下拉菜单上时不处理；正在选中文字（比如复制命令）时也不处理。
+function handleRowClick(row: any, _column: any, event: MouseEvent) {
+  const target = event?.target as HTMLElement | null
+  if (target?.closest('button, a, input, label, .el-checkbox, .el-dropdown, .task-drag-handle, .script-link, .el-table__expand-icon')) return
+  if (window.getSelection()?.toString()) return
+  taskTableRef.value?.toggleRowExpansion(row)
 }
 
 async function handlePin(task: any) {
@@ -1731,10 +1842,10 @@ async function handleImport(event: Event) {
                 <!-- 与桌面排序下拉同一套「选中打勾」写法（下拉菜单 teleport 到 body，scoped 命中不到，故用内联色） -->
                 <el-icon
                   v-if="activeQuickSortKey === option.key"
-                  style="margin-right: 6px; color: var(--el-color-primary);"
+                  style="margin-right: 6px; color: var(--dd-accent-ink);"
                 ><Check /></el-icon>
                 <span v-else style="display: inline-block; width: 20px;"></span>
-                <span :style="activeQuickSortKey === option.key ? 'color: var(--el-color-primary); font-weight: 600;' : ''">
+                <span :style="activeQuickSortKey === option.key ? 'color: var(--dd-accent-ink); font-weight: 600;' : ''">
                   {{ option.label }}
                 </span>
               </el-dropdown-item>
@@ -1859,10 +1970,10 @@ async function handleImport(event: Event) {
                 <!-- 选中项用左侧 Check 图标 + 品牌色高亮（下拉菜单 teleport 到 body，故用内联色保证生效） -->
                 <el-icon
                   v-if="activeQuickSortKey === option.key"
-                  style="margin-right: 6px; color: var(--el-color-primary);"
+                  style="margin-right: 6px; color: var(--dd-accent-ink);"
                 ><Check /></el-icon>
                 <span v-else style="display: inline-block; width: 20px;"></span>
-                <span :style="activeQuickSortKey === option.key ? 'color: var(--el-color-primary); font-weight: 600;' : ''">
+                <span :style="activeQuickSortKey === option.key ? 'color: var(--dd-accent-ink); font-weight: 600;' : ''">
                   {{ option.label }}
                 </span>
               </el-dropdown-item>
@@ -1891,10 +2002,10 @@ async function handleImport(event: Event) {
                   <!-- 与上面排序下拉同一套「选中打勾」写法：下拉菜单 teleport 到 body，scoped 样式命中不到，故用内联色 -->
                   <el-icon
                     v-if="nameLabelPrefs[option.key]"
-                    style="margin-right: 6px; color: var(--el-color-primary);"
+                    style="margin-right: 6px; color: var(--dd-accent-ink);"
                   ><Check /></el-icon>
                   <span v-else style="display: inline-block; width: 20px;"></span>
-                  <span :style="nameLabelPrefs[option.key] ? 'color: var(--el-color-primary); font-weight: 600;' : ''">
+                  <span :style="nameLabelPrefs[option.key] ? 'color: var(--dd-accent-ink); font-weight: 600;' : ''">
                     {{ option.label }}
                   </span>
                 </el-dropdown-item>
@@ -1928,7 +2039,7 @@ async function handleImport(event: Event) {
         v-for="row in tasks"
         :key="row.id"
         class="dd-mobile-card task-card"
-        :class="{ 'task-card--pinned': row.is_pinned }"
+        :class="{ 'task-card--pinned': row.is_pinned, 'dd-running-flow': row.status === 2 }"
       >
         <!-- 卡片（v3.3.1，issue #143 C1）：首行「复选框 · 任务名 · 状态 · ···」，中间两行横排的时间字段，
              末行左侧上次结果、右侧「运行 / 停止」「日志」。类型 / 分组 / 订阅 / 自定义标签、命令、定时规则、耗时
@@ -2015,7 +2126,18 @@ async function handleImport(event: Event) {
         :header-cell-style="{ background: 'var(--el-fill-color-light)', color: 'var(--el-text-color-regular)', fontWeight: 600, fontSize: '13px' }"
         :row-style="{ cursor: 'pointer' }"
         :row-class-name="getRowClassName"
+        @expand-change="handleExpandChange"
+        @row-click="handleRowClick"
       >
+        <!-- 展开行（v4.0 F5）：健康画像。组件只在展开时挂载，收起即卸载，不会在后台取数。
+             同一时刻只展开一行（handleExpandChange）；有展开行时拖拽排序暂停（理由见 dragSortDisabledReason）。 -->
+        <el-table-column type="expand" width="32" class-name="task-expand-col">
+          <template #default="{ row }">
+            <div class="task-expand-body">
+              <TaskHealthPanel :task-id="row.id" />
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column v-if="canOperateTasks" type="selection" width="40" />
         <!-- 拖拽列：40px，与环境变量页同宽同形（那边是 .env-drag-col）。
              只对有操作权限的账号渲染 —— 观察者拖不动，也不该白吃这 40px 列宽
@@ -2118,12 +2240,16 @@ async function handleImport(event: Event) {
                  out-in 让旧状态先淡出、新状态再淡入，变化本身有了可见的过程。
                  key 必须绑【状态值】：绑 row.id 的话同一行永远是同一个 key，节点被原地复用，
                  过渡一次都不会触发。 -->
-            <Transition name="dd-status-switch" mode="out-in">
-              <el-tag :key="row.status" :type="getStatusType(row.status)" size="small" :class="getStatusTagClass(row.status)">
-                <span v-if="row.status === 2" class="pulse-dot"></span>
-                {{ getStatusText(row.status) }}
-              </el-tag>
-            </Transition>
+            <!-- 运行中的流光圈挂在外层这个 inline-block 容器上：motion.scss 说明 tr 上 position 不可靠，
+                 而这一格的尺寸恰好等于标签，圈贴着标签边转，不改变行高。 -->
+            <span class="task-status-wrap" :class="{ 'dd-running-flow': row.status === 2 }">
+              <Transition name="dd-status-switch" mode="out-in">
+                <el-tag :key="row.status" :type="getStatusType(row.status)" size="small" :class="getStatusTagClass(row.status)">
+                  <span v-if="row.status === 2" class="pulse-dot"></span>
+                  {{ getStatusText(row.status) }}
+                </el-tag>
+              </Transition>
+            </span>
           </template>
         </el-table-column>
         <!-- 「运行时间」（issue #163）：原来的「最后运行」「下次运行」两列合成一列，单元格上下两行「上次 / 下次」。
@@ -2180,6 +2306,23 @@ async function handleImport(event: Event) {
                 </el-tag>
               </Transition>
             </div>
+          </template>
+        </el-table-column>
+        <!-- 「最近 20 次」（v4.0 F5）：每次运行一根小柱，颜色按 成功 / 失败 / 已终止，高度按耗时。
+             数据由 loadRecentRuns 按整页 id 一次取回；窄桌面与移动端不显示这一列，也不发请求。
+             列宽 124 = 20 根 × 3px + 19 个 2px 间隙（98px）+ .cell 左右各 12px。 -->
+        <el-table-column v-if="showRecentRunsColumn" label="最近 20 次" width="124" align="center">
+          <template #default="{ row }">
+            <div v-if="recentRunBars[row.id]?.length" class="recent-runs-strip" :aria-label="`${row.name} 最近 ${recentRunBars[row.id]?.length} 次运行结果`">
+              <i
+                v-for="bar in recentRunBars[row.id]"
+                :key="bar.key"
+                :class="`is-${bar.tone}`"
+                :style="{ height: bar.height }"
+                :title="bar.title"
+              />
+            </div>
+            <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
         <!-- 窄桌面隐藏「耗时」：信息没丢，任务详情弹窗里有。 -->
@@ -2336,13 +2479,13 @@ async function handleImport(event: Event) {
     margin: 0;
     font-size: 22px;
     font-weight: 700;
-    color: var(--el-text-color-primary);
+    color: var(--dd-text);
     line-height: 1.3;
   }
 
   .page-subtitle {
     font-size: 13px;
-    color: var(--el-text-color-secondary);
+    color: var(--dd-text-2);
     margin: 4px 0 0;
   }
 
@@ -2423,7 +2566,7 @@ async function handleImport(event: Event) {
   // 透明描边占位，选中时只换 border-color，避免出现 1px 的尺寸跳动
   border: 1px solid transparent;
   background: transparent;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -2434,13 +2577,13 @@ async function handleImport(event: Event) {
   white-space: nowrap;
 
   &:hover {
-    color: var(--el-text-color-primary);
+    color: var(--dd-text);
   }
 
   &.active {
-    background: var(--el-bg-color);
-    color: var(--el-color-primary);
-    border-color: var(--el-border-color-lighter);
+    background: var(--dd-surface-solid);
+    color: var(--dd-accent-ink);
+    border-color: var(--dd-border);
     font-weight: 600;
   }
 }
@@ -2471,7 +2614,7 @@ async function handleImport(event: Event) {
 
 .batch-actions__count {
   font-size: 13px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   white-space: nowrap;
   cursor: default;
 }
@@ -2525,10 +2668,10 @@ async function handleImport(event: Event) {
 
 // 表格卡：无阴影，仅靠 1px 边框与页面底色区分（dd-fixed-page 下的 flex:1 + 内部滚动由全局规则接管）
 .table-card {
-  background: var(--el-bg-color);
+  background: var(--dd-surface-solid);
   // 表格容器 → surface 档
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--dd-border);
   overflow: hidden;
 }
 
@@ -2547,7 +2690,7 @@ async function handleImport(event: Event) {
 
 .task-name-text {
   font-weight: 500;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
   min-width: 0;
 }
 
@@ -2556,7 +2699,7 @@ async function handleImport(event: Event) {
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   font: inherit;
   line-height: inherit;
   text-align: left;
@@ -2570,14 +2713,14 @@ async function handleImport(event: Event) {
     text-decoration-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    color: var(--el-color-primary-dark-2);
+    color: color-mix(in srgb, var(--dd-accent-ink) 75%, var(--dd-text));
     text-decoration: underline;
     text-decoration-thickness: 1px;
     text-underline-offset: 3px;
   }
 
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--el-color-primary) 45%, transparent);
+    outline: 2px solid var(--dd-accent-ring);
     outline-offset: 2px;
     // 焦点环沿 border-radius 描边，跟着控件档走
     border-radius: var(--dd-radius-control);
@@ -2597,8 +2740,8 @@ async function handleImport(event: Event) {
   border-radius: var(--dd-radius-control);
 
   &--type {
-    background: rgba(64, 158, 255, 0.08);
-    color: var(--el-color-primary);
+    background: var(--dd-accent-soft);
+    color: var(--dd-accent-ink);
     border-color: transparent;
   }
 
@@ -2606,14 +2749,14 @@ async function handleImport(event: Event) {
   // 不上色的话用户只会当成「多了个重复标签」，也判断不出「显示设置」里该关哪个开关。
   // 配色全部吃 EP 语义色令牌 + color-mix，暗色主题下自动跟着变，不写死色值（design-system 硬规则 1）。
   &--group {
-    background: color-mix(in srgb, var(--el-color-success) 12%, transparent);
-    color: var(--el-color-success);
+    background: color-mix(in srgb, var(--dd-ok) 12%, transparent);
+    color: var(--dd-ok-ink);
     border-color: transparent;
   }
 
   &--subscription {
-    background: color-mix(in srgb, var(--el-color-warning) 12%, transparent);
-    color: var(--el-color-warning);
+    background: color-mix(in srgb, var(--dd-warn) 12%, transparent);
+    color: var(--dd-warn-ink);
     border-color: transparent;
   }
 
@@ -2625,7 +2768,7 @@ async function handleImport(event: Event) {
 .command-text {
   font-family: var(--dd-font-mono);
   font-size: 13px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   // 两档桌面统一单行省略。操作列加宽到 172px 后宽桌面的命令列只剩 176px，
   // 长命令一换行就把行高从 23px 顶到 46px，正好把隐藏标签省下的高度又吃回去。
   // word-break 必须是 normal：按字符断行会让 text-overflow 失效。
@@ -2636,7 +2779,7 @@ async function handleImport(event: Event) {
   word-break: normal;
 
   .script-link {
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     cursor: pointer;
     &:hover { text-decoration: underline; }
   }
@@ -2649,7 +2792,7 @@ async function handleImport(event: Event) {
 }
 
 .text-muted {
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
 }
 
 // 移动端卡片的「下次运行」值：时间 + 可能存在的 schedule_hint 警示图标并排一行，靠左排。
@@ -2684,7 +2827,7 @@ async function handleImport(event: Event) {
 .run-time-cell__label {
   margin-right: 2px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .schedule-hint-icon {
@@ -2695,12 +2838,12 @@ async function handleImport(event: Event) {
 
 // 定时任务没注册上 = 真故障，用警示色
 .schedule-hint-icon--fault {
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
 }
 
 // 手动 / 开机运行只是在陈述任务类型，本来就不该自动跑，用中性色，别喊狼来了
 .schedule-hint-icon--info {
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
 }
 
 .last-run-result {
@@ -2752,7 +2895,7 @@ async function handleImport(event: Event) {
 
 .pagination-total {
   font-size: 13px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 @media screen and (min-width: 769px) {
@@ -2790,14 +2933,14 @@ async function handleImport(event: Event) {
 
 :deep(.el-table) {
   // 边框统一走令牌，明暗自动适配（原写死浅灰会在暗色串色）
-  --el-table-border-color: var(--el-border-color-lighter);
+  --el-table-border-color: var(--dd-border);
 
   .el-table__header-wrapper th {
     border-bottom: 1px solid var(--el-border-color-light);
   }
 
   .el-table__row td {
-    border-bottom: 1px solid var(--el-border-color-lighter);
+    border-bottom: 1px solid var(--dd-border);
   }
 
   .el-table__cell {
@@ -2818,11 +2961,11 @@ async function handleImport(event: Event) {
 //    不带 `.el-table` 只有 (0,2,1)，最右一格会退回普通底色；带上是 (0,3,1)，压得过。
 //    它仍输给 EP 的行 hover（0,3,2），悬停照常显示 hover 底色，别加 !important 去压。
 :deep(.el-table .task-row-pinned > td) {
-  background: color-mix(in srgb, #ffd66b 12%, var(--el-table-tr-bg-color));
+  background: color-mix(in srgb, var(--dd-warn) 9%, var(--el-table-tr-bg-color));
 }
 
 :deep(.task-row-pinned > td:first-child) {
-  box-shadow: inset 4px 0 0 #f5a623;
+  box-shadow: inset 4px 0 0 var(--dd-warn);
 }
 
 // ===== 窄桌面紧凑模式（视口 <1600px，由 isNarrowDesktop 挂 .is-compact）=====
@@ -2862,8 +3005,8 @@ async function handleImport(event: Event) {
 // 置顶移动卡：与环境变量页 .env-card--pinned 同一套，只改边框色与左缘竖条、不改底色。
 // global.scss 的 `.dd-mobile-card` 是 (0,1,0)，这条 scoped 之后是 (0,2,0)，压得过。
 .task-card--pinned {
-  border-color: rgba(245, 166, 35, 0.28);
-  box-shadow: inset 4px 0 0 #f5a623;
+  border-color: color-mix(in srgb, var(--dd-warn) 28%, transparent);
+  box-shadow: inset 4px 0 0 var(--dd-warn);
 }
 
 // 移动卡片的任务名：同挂 .task-name-link（蓝字、点击打开日志文件）与全局 .dd-mobile-card__name（16px 单行省略）。
@@ -2927,12 +3070,12 @@ async function handleImport(event: Event) {
 // 桌面拖拽手柄（与环境变量页 .env-drag-handle 同款）
 .task-drag-handle {
   cursor: grab;
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
   font-size: 16px;
   transition: color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    color: var(--el-text-color-secondary);
+    color: var(--dd-text-2);
   }
 
   &:active {
@@ -2946,13 +3089,68 @@ async function handleImport(event: Event) {
     opacity: 0.35;
 
     &:hover {
-      color: var(--el-text-color-placeholder);
+      color: var(--dd-text-3);
     }
   }
 }
 
 :deep(.task-drag-col) {
   padding: 0 !important;
+}
+
+// ===== v4.0 F5：运行中流光 / 「最近 20 次」小柱 / 展开行健康画像 =====
+// 状态格外层：尺寸贴着标签，运行中时挂 .dd-running-flow，流光圈沿标签边缘转，不改变行高
+.task-status-wrap {
+  display: inline-flex;
+  vertical-align: middle;
+  border-radius: var(--dd-radius-control);
+}
+
+// 运行中整行：淡主色底 + 首格左缘 3px 主色竖条（写法同上面的置顶行；两者同时成立时竖条取运行中）。
+// 底色用 background-image 叠一层，不动 background-color：固定列的 `background: inherit`、行 hover 底色都照常生效。
+:deep(.el-table .task-row-running > td) {
+  background-image: linear-gradient(var(--dd-accent-soft), var(--dd-accent-soft));
+}
+
+:deep(.el-table .task-row-running > td:first-child) {
+  box-shadow: inset 3px 0 0 var(--dd-accent);
+}
+
+// 最近 20 次：底对齐的一排细柱，旧 → 新从左到右
+.recent-runs-strip {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 24px;
+  vertical-align: middle;
+
+  i {
+    display: block;
+    width: 3px;
+    min-height: 4px;
+    border-radius: 1.5px;
+    background: var(--dd-ok);
+    opacity: 0.85;
+
+    &.is-err {
+      background: var(--dd-err);
+      opacity: 1;
+    }
+
+    &.is-warn {
+      background: var(--dd-warn);
+      opacity: 1;
+    }
+  }
+}
+
+// 展开行：EP 默认 20px 50px 的内边距太空，收到与表格单元格对齐；紧凑模式下的 6px 也不能套到这里
+.table-card :deep(.el-table__expanded-cell[class*='cell']) {
+  padding: 4px 16px 16px;
+}
+
+.task-expand-body {
+  min-width: 0;
 }
 </style>
 

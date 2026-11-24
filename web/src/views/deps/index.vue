@@ -1,6 +1,6 @@
 <template>
   <div ref="pageRootRef" class="deps-page dd-scroll-page dd-page-hide-heading">
-    <div class="page-header">
+    <div class="page-header dd-rise" style="--dd-i: 0">
       <div>
         <h2 class="page-title-with-icon"><el-icon><Box /></el-icon><span>依赖管理</span></h2>
         <p class="page-subtitle">
@@ -12,7 +12,7 @@
     <!-- Android 面具版：一键安装 Python / Node 解释器 -->
     <el-card
       v-if="androidStatus && androidStatus.supported"
-      class="android-runtime-card"
+      class="android-runtime-card dd-spot dd-rise" style="--dd-i: 1"
       shadow="never"
     >
       <template #header>
@@ -130,7 +130,7 @@
          ③只在 Python 页签出现：版本选择 + 设为默认。
          状态筛选（桌面的 el-select 与「全部 / 已安装 / 失败」分段）移动端不渲染，
          进入移动端时由 watch(isMobile) 清空，免得留下看不见也关不掉的筛选。 -->
-    <div v-if="isMobile" class="deps-mobile-toolbar">
+    <div v-if="isMobile" class="deps-mobile-toolbar dd-rise" style="--dd-i: 2">
       <div v-if="selectedIds.length === 0" class="dd-mobile-toolbar">
         <el-input
           v-model="searchKeyword"
@@ -255,7 +255,7 @@
     </div>
 
     <template v-else>
-    <div class="deps-tabs">
+    <div class="deps-tabs dd-rise" style="--dd-i: 2">
       <!-- 类型页签上各挂一个自己的失败数。三者之和 == 侧栏「依赖管理」角标，
            用户看到角标 9 时能直接看出是哪一类、各几个，不用挨个切标签去凑。
            与右边那排状态角标（level="info" + show-zero 的中性计数）刻意不同：
@@ -336,7 +336,7 @@
       </div>
     </div>
 
-    <div class="toolbar">
+    <div class="toolbar dd-rise" style="--dd-i: 3">
       <div class="toolbar__left">
         <!-- 原来这里平铺 5 个按钮（新增依赖 / 刷新 / 批量重装 / 导出清单 / 镜像源设置），
              主次不分、横着吃掉半条工具条。改成 Split Button：
@@ -520,7 +520,7 @@
       </div>
     </el-alert>
 
-    <div v-if="isMobile" class="dd-mobile-list">
+    <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 4">
       <!-- 移动卡片（v3.3.1，issue #143）：首行 复选框 → 名称 → 状态标签（紧跟名称）→ 右上角「···」；
            字段区标签与值横排；末行右侧只留最常用的「日志」「卸载」，
            取消 / 重装 / 强制卸载收进「···」（与桌面操作列同一份 depActionItems，见 depCardMenuItems）。 -->
@@ -528,6 +528,7 @@
         v-for="row in paginatedDepsList"
         :key="row.id"
         class="dd-mobile-card"
+        :class="{ 'is-locate-highlight': row.id === locateHighlightId }"
       >
         <div class="dd-mobile-card__head">
           <el-checkbox
@@ -588,11 +589,12 @@
       />
     </div>
 
-    <div v-else class="table-card">
+    <div v-else class="table-card dd-spot dd-rise" style="--dd-i: 4">
       <el-table
         :data="paginatedDepsList"
         v-loading="loading"
         style="width: 100%"
+        :row-class-name="({ row }: { row: any }) => (row.id === locateHighlightId ? 'is-locate-highlight' : '')"
         @selection-change="handleSelectionChange"
         :header-cell-style="{
           background: 'var(--el-fill-color-light)',
@@ -607,7 +609,7 @@
             <div class="dep-name-cell">
               <span
                 class="dep-name-avatar"
-                :style="{ background: getLetterColor(row.name) }"
+                :style="{ '--dd-avatar': getLetterColor(row.name) }"
                 >{{ (row.name || "?").charAt(0).toUpperCase() }}</span
               >
               <span class="dep-name-text" :title="row.name">{{
@@ -691,7 +693,7 @@
       </el-table>
     </div>
 
-    <div class="pagination-bar">
+    <div class="pagination-bar dd-rise" style="--dd-i: 5">
       <span class="pagination-total">共 {{ depsTotal }} 条数据</span>
       <el-pagination
         v-model:current-page="depsPage"
@@ -1035,6 +1037,7 @@ import {
   type AndroidRuntimePreset,
 } from "@/api/androidRuntime";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { useRoute, useRouter } from "vue-router";
 import {
   ArrowDown,
   Box,
@@ -1069,6 +1072,7 @@ import { canAdminister } from "@/utils/roles";
 import { ansiToHtml, normalizeAnsi } from "@/utils/ansi";
 import { formatDateTime } from "@/utils/datetime";
 import { scrollListToTop } from "@/utils/scrollToTop";
+import { motionLevel } from "@/utils/motion";
 
 const badgesStore = useBadgesStore();
 const authStore = useAuthStore();
@@ -1391,7 +1395,7 @@ function depCardMenuItems(row: any): SplitButtonItem[] {
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 const { isMobile, dialogFullscreen } = useResponsive();
-const { isPageActive } = usePageActivity();
+const { isPageActive, isViewActive } = usePageActivity();
 
 const showMirrorDialog = ref(false);
 const mirrorLoading = ref(false);
@@ -2597,47 +2601,147 @@ async function handleSaveMirrors() {
   }
 }
 
+// 首字母 → 主题色令牌（作为 --dd-avatar 内联给 .dep-name-avatar），跟随主题切换
 const letterColors: Record<string, string> = {
-  a: "#409eff",
-  b: "#67c23a",
-  c: "#e6a23c",
-  d: "#67c23a",
-  e: "#f56c6c",
-  f: "#909399",
-  g: "#2f7df6",
-  h: "#36cfc9",
-  i: "#409eff",
-  j: "#0ea5e9",
-  k: "#ffc53d",
-  l: "#10b981",
-  m: "#e6a23c",
-  n: "#409eff",
-  o: "#36cfc9",
-  p: "#67c23a",
-  q: "#f56c6c",
-  r: "#06b6d4",
-  s: "#ffc53d",
-  t: "#409eff",
-  u: "#22c55e",
-  v: "#36cfc9",
-  w: "#e6a23c",
-  x: "#909399",
-  y: "#67c23a",
-  z: "#f56c6c",
+  a: "var(--dd-info)",
+  b: "var(--dd-ok)",
+  c: "var(--dd-warn)",
+  d: "var(--dd-ok)",
+  e: "var(--dd-err)",
+  f: "var(--dd-text-3)",
+  g: "var(--dd-info)",
+  h: "var(--dd-accent-2)",
+  i: "var(--dd-info)",
+  j: "var(--dd-info)",
+  k: "var(--dd-warn)",
+  l: "var(--dd-ok)",
+  m: "var(--dd-warn)",
+  n: "var(--dd-info)",
+  o: "var(--dd-accent-2)",
+  p: "var(--dd-ok)",
+  q: "var(--dd-err)",
+  r: "var(--dd-accent-2)",
+  s: "var(--dd-warn)",
+  t: "var(--dd-info)",
+  u: "var(--dd-ok)",
+  v: "var(--dd-accent-2)",
+  w: "var(--dd-warn)",
+  x: "var(--dd-text-3)",
+  y: "var(--dd-ok)",
+  z: "var(--dd-err)",
 };
 function getLetterColor(name: string): string {
   const ch = (name || "?").charAt(0).toLowerCase();
-  return letterColors[ch] || "#409eff";
+  return letterColors[ch] || "var(--dd-info)";
 }
+
+// ---------- 按 query 定位（「需要关注」里依赖安装失败的条目跳过来）----------
+// 链接形如 /deps?dep_id=<id>&keyword=<名称>&type=python|nodejs|linux：
+// type 切页签、keyword 填搜索框、dep_id 把那一行翻到所在页、滚进可视区并高亮约 2 秒。
+// 处理完立刻 router.replace 清掉 query，刷新页面不会再触发一次。
+const route = useRoute();
+const router = useRouter();
+const locateHighlightId = ref(0);
+let locateHighlightTimer: ReturnType<typeof setTimeout> | null = null;
+// router.replace 是异步的，清掉之前 onActivated 与 watch(route.query) 可能先后读到同一份 query，用它挡第二次
+let locateQueryConsuming = false;
+
+/**
+ * 读 query、改页面状态（页签 / 搜索词），并发起清 query。不拉数据。
+ * 返回要定位的依赖 id（没有 dep_id 时为 0）；query 里没有定位参数、或正在处理上一份时返回 null。
+ */
+function applyLocateQuery(): number | null {
+  if (locateQueryConsuming) return null;
+  const query = route.query;
+  const type = typeof query.type === "string" ? query.type : "";
+  const keyword = typeof query.keyword === "string" ? query.keyword.trim() : "";
+  const depId = Number(query.dep_id) || 0;
+  const tab = depTypeTabs.find((item) => item.key === type);
+  if (!tab && !keyword && depId <= 0) return null;
+
+  locateQueryConsuming = true;
+  void router.replace({ path: route.path }).finally(() => {
+    locateQueryConsuming = false;
+  });
+  if (tab) activeTab.value = tab.key;
+  if (keyword) searchKeyword.value = keyword;
+  // 状态筛选清掉：目标多半是「失败」，挂着「已安装」筛选会把它藏起来
+  statusFilter.value = "";
+  depsPage.value = 1;
+  return depId;
+}
+
+/** 列表已拉好之后：翻到目标所在页、滚进可视区、高亮约 2 秒 */
+async function focusDepRow(depId: number) {
+  let index = filteredDepsList.value.findIndex((dep) => dep.id === depId);
+  // Python 列表只含当前选中的版本；失败的依赖可能装在别的版本下，逐个版本找一遍
+  if (index < 0 && activeTab.value === "python") {
+    for (const runtime of pythonRuntimes.value) {
+      if (runtime.version === pythonVersion.value) continue;
+      try {
+        const res = await depsApi.list("python", runtime.version);
+        if (!(res.data || []).some((dep: any) => dep.id === depId)) continue;
+        pythonVersion.value = runtime.version;
+        createPythonVersion.value = runtime.version;
+        await loadData();
+        break;
+      } catch {
+        // 某个版本拉失败不影响找其它版本
+      }
+    }
+    index = filteredDepsList.value.findIndex((dep) => dep.id === depId);
+  }
+  if (index < 0) {
+    ElMessage.info("列表里没有找到这条依赖，可能已被卸载");
+    return;
+  }
+  depsPage.value = Math.floor(index / depsPageSize.value) + 1;
+  locateHighlightId.value = depId;
+  await nextTick();
+  const target = pageRootRef.value?.querySelector(".is-locate-highlight");
+  target?.scrollIntoView({
+    block: "center",
+    behavior: motionLevel() === "off" ? "auto" : "smooth",
+  });
+  if (locateHighlightTimer) clearTimeout(locateHighlightTimer);
+  locateHighlightTimer = setTimeout(() => {
+    locateHighlightId.value = 0;
+    locateHighlightTimer = null;
+  }, 2000);
+}
+
+/** 已挂载过的页面（keep-alive 再次进入、或就停在本页时 query 变了）：应用 query → 重新拉列表 → 定位 */
+async function handleLocateQuery(): Promise<boolean> {
+  const depId = applyLocateQuery();
+  if (depId === null) return false;
+  if (activeTab.value === "linux") void loadPlaywrightStatus();
+  await loadData();
+  if (depId > 0) await focusDepRow(depId);
+  return true;
+}
+
+// 用户已经停在依赖页时，从铃铛弹出层再点一条：路由组件不重建，只有 query 变。
+// 只在本页激活、路径就是本页时处理；从别的页跳过来那次由 onActivated 处理（那时 isViewActive 还是 false）。
+watch(
+  () => route.query,
+  () => {
+    if (!isViewActive.value || route.path !== "/deps") return;
+    void handleLocateQuery();
+  },
+);
+// ---------- /按 query 定位 ----------
 
 onMounted(async () => {
   mounted = true;
+  // 首次进页：先把 query 里的页签 / 搜索词应用上，下面的首拉直接拉对的页签，不会先拉一遍默认页签
+  const locateDepId = applyLocateQuery();
   createType.value = activeTab.value;
   // 进页即把侧栏的「依赖管理」失败角标标记为已读——用户已经站在这一页上了，再红着没有意义
   badgesStore.ackDepsFailed();
   await loadPythonRuntimes();
   createPythonVersion.value = pythonVersion.value || pythonDefaultVersion.value;
-  loadData();
+  const firstLoad = loadData();
+  if (locateDepId) void firstLoad.then(() => focusDepRow(locateDepId));
   loadAndroidStatus();
   // Linux 页签的说明、新建弹窗的提示与 placeholder 都要靠这份元数据，
   // 不能再等到用户打开镜像源弹窗才拉。失败也不弹错，页面自己退化成「未识别」。
@@ -2653,7 +2757,10 @@ onActivated(() => {
   // 不再触发 onMounted，写进 if 里就只有首次访问才会清零。
   badgesStore.ackDepsFailed();
   if (!mounted) {
-    void loadData();
+    // 带定位 query 进来时由 handleLocateQuery 自己拉数据，这里不再重复拉
+    void handleLocateQuery().then((handled) => {
+      if (!handled) void loadData();
+    });
     // 离开期间 Playwright 可能已经装完，但按钮旁的状态不在这里拉：isPageActive 的监听（Playwright 段 ③）
     // 对「从别的菜单页切回来」同样生效，跟踪还在时则由恢复那一轮 tick 拉，这里再拉就重复发了
   }
@@ -2665,6 +2772,7 @@ onBeforeUnmount(() => {
   stopRefreshTimer();
   // 连同标记一起清：还在路上的那一轮回来后看到标记已灭，就不会在页面卸载后再弹提示
   stopPlaywrightWatch();
+  if (locateHighlightTimer) clearTimeout(locateHighlightTimer);
   if (depsLogFlushRaf) {
     cancelAnimationFrame(depsLogFlushRaf);
     depsLogFlushRaf = 0;
@@ -2801,7 +2909,7 @@ onBeforeUnmount(() => {
 
 // Playwright 三项都装齐时的「已就绪」前缀
 .linux-runtime-hint__ready {
-  color: var(--el-color-success);
+  color: var(--dd-ok-ink);
   font-weight: 600;
 }
 
@@ -2813,6 +2921,22 @@ onBeforeUnmount(() => {
   border-radius: var(--dd-radius-surface);
   border: 1px solid var(--el-border-color-lighter);
   overflow: hidden;
+}
+
+// 按 query 定位到的那一行 / 那张卡片：主色浅底约 2 秒，类名撤掉后随过渡淡出。
+// 用 inset 阴影叠色而不是直接换 background：--dd-accent-soft 是半透明的，换掉不透明底色后
+// 右侧固定的「操作」列横滚时会透出底下的内容，卡片也会透出页面背景。
+:deep(.el-table__row.is-locate-highlight > td.el-table__cell),
+.dd-mobile-card.is-locate-highlight {
+  box-shadow: inset 0 0 0 100vmax var(--dd-accent-soft);
+}
+
+:deep(.el-table__row > td.el-table__cell),
+.dd-mobile-card {
+  // 带上 EP 自己的 background-color 过渡，免得把行悬停的过渡覆盖掉
+  transition:
+    background-color 0.25s ease,
+    box-shadow 0.6s var(--dd-ease-standard);
 }
 
 .dep-name-cell {
@@ -2833,7 +2957,10 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
+  // --dd-avatar 由模板按首字母内联传入（某个主题状态色令牌）；浅色底 + 墨色字，字色与 --dd-*-ink 同一公式，
+  // 原来的实色底白字在浅黄、青色上对比度不到 2:1
+  background: color-mix(in srgb, var(--dd-avatar) 14%, transparent);
+  color: color-mix(in srgb, var(--dd-avatar) 55%, var(--dd-text));
 }
 
 .deps-tabs {
@@ -2879,17 +3006,17 @@ onBeforeUnmount(() => {
   }
   &.active {
     background: var(--el-bg-color);
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     border-color: var(--el-border-color-lighter);
     font-weight: 600;
   }
   // 成功/失败筛选选中态用语义色，标出「这一档筛的是哪类结果」。
   // 语义色只上在标签文字上，角标本身保持中性——见下方说明。
   &--success.active {
-    color: var(--el-color-success);
+    color: var(--dd-ok-ink);
   }
   &--danger.active {
-    color: var(--el-color-danger);
+    color: var(--dd-err-ink);
   }
 }
 // 计数徽标改用 DdBadge（level="info" + show-zero），原来手写的 .status-tab__count 删除。
@@ -3207,7 +3334,7 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 .runtime-item__note {
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
   margin-top: 4px;
 }
 .runtime-item__actions {

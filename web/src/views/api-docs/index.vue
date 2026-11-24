@@ -139,7 +139,7 @@ function methodClass(method: string) {
 
 <template>
   <div class="api-docs-page dd-fixed-page">
-    <div class="page-header">
+    <div class="page-header dd-rise" style="--dd-i: 0">
       <h3 class="page-title">
         开发接口文档
       </h3>
@@ -178,7 +178,7 @@ function methodClass(method: string) {
     </el-drawer>
 
     <div class="api-layout">
-      <div class="api-sider">
+      <div class="api-sider dd-rise" style="--dd-i: 1">
         <div class="sider-search">
           <el-input v-model="searchText" placeholder="搜索接口..." clearable :prefix-icon="Search" />
           <div class="sider-count">共 {{ totalEndpoints }} 个接口</div>
@@ -206,7 +206,7 @@ function methodClass(method: string) {
         </div>
       </div>
 
-      <div class="api-content">
+      <div class="api-content dd-rise" style="--dd-i: 2">
         <!-- 切换左侧接口时右侧整块内容是硬替换的，看不出「换了一篇」。
              这里只做纯淡入淡出：本页正文很长，一旦带位移，滚动容器里的长内容会跟着抖。
              key 绑 selectedId —— 绑分类或索引都不会在同分类内切换时触发。 -->
@@ -247,7 +247,7 @@ function methodClass(method: string) {
 
         <el-card
           v-if="currentEndpoint.pathParams?.length || currentEndpoint.queryParams?.length || currentEndpoint.bodyParams?.length"
-          shadow="never" class="api-card"
+          shadow="never" class="api-card dd-spot"
         >
           <template #header>
             <div class="section-title">请求参数</div>
@@ -320,7 +320,7 @@ function methodClass(method: string) {
           </template>
         </el-card>
 
-        <el-card shadow="never" class="api-card">
+        <el-card shadow="never" class="api-card dd-spot">
           <template #header>
             <div class="section-title">请求示例代码</div>
           </template>
@@ -347,7 +347,7 @@ function methodClass(method: string) {
         <el-card
           v-if="currentEndpoint.helperExamples && Object.keys(currentEndpoint.helperExamples).length"
           shadow="never"
-          class="api-card"
+          class="api-card dd-spot"
         >
           <template #header>
             <div class="section-title">脚本示例</div>
@@ -377,7 +377,7 @@ function methodClass(method: string) {
           </el-tabs>
         </el-card>
 
-        <el-card v-if="currentEndpoint.responseExample" shadow="never" class="api-card">
+        <el-card v-if="currentEndpoint.responseExample" shadow="never" class="api-card dd-spot">
           <template #header>
             <div class="section-title">返回响应</div>
           </template>
@@ -544,7 +544,7 @@ function methodClass(method: string) {
     border-left-color: var(--el-color-primary);
 
     .menu-item-text {
-      color: var(--el-color-primary);
+      color: var(--dd-accent-ink);
       font-weight: 600;
     }
   }
@@ -569,7 +569,7 @@ function methodClass(method: string) {
   font-weight: 700;
   letter-spacing: 0.5px;
   font-family: var(--dd-font-mono);
-  color: #fff;
+  color: var(--dd-on-status);
   line-height: 20px;
 }
 
@@ -581,11 +581,12 @@ function methodClass(method: string) {
   border-radius: var(--dd-radius-control);
 }
 
-// 方法色标改纯色（原为渐变）
-.method-get { background: #52c41a; }
-.method-post { background: #1677ff; }
-.method-put { background: #fa8c16; }
-.method-delete { background: #ff4d4f; }
+// 方法色标改纯色（原为渐变）；底色读主题实心状态色，配 --dd-on-status 文字
+// POST 没有现成的实心蓝：把 --dd-info 向正文色压 18%，亮色下变深、暗色下变亮，白字 / 深字都能过 4.5:1
+.method-get { background: var(--dd-ok-solid); }
+.method-post { background: color-mix(in srgb, var(--dd-info) 82%, var(--dd-text)); }
+.method-put { background: var(--dd-warn-solid); }
+.method-delete { background: var(--dd-err-solid); }
 
 .api-content {
   flex: 1;
@@ -672,20 +673,20 @@ function methodClass(method: string) {
   &.auth-jwt {
     background: color-mix(in srgb, var(--el-color-warning) 10%, var(--el-bg-color));
     border: 1px solid color-mix(in srgb, var(--el-color-warning) 32%, transparent);
-    color: var(--el-color-warning);
+    color: var(--dd-warn-ink);
   }
 
   // 票据鉴权：既不是常规 Bearer，也不是「无需鉴权」，用品牌色单列一档避免被误读成公开接口
   &.auth-ticket {
     background: color-mix(in srgb, var(--el-color-primary) 10%, var(--el-bg-color));
     border: 1px solid color-mix(in srgb, var(--el-color-primary) 32%, transparent);
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
   }
 
   &.auth-none {
     background: color-mix(in srgb, var(--el-color-success) 10%, var(--el-bg-color));
     border: 1px solid color-mix(in srgb, var(--el-color-success) 32%, transparent);
-    color: var(--el-color-success);
+    color: var(--dd-ok-ink);
   }
 }
 
@@ -775,8 +776,9 @@ function methodClass(method: string) {
 }
 
 .code-block {
-  background: #1a1a2e !important;
-  color: #e0e0e0;
+  // 代码示例底色跟随主题：在不透明卡底上叠 6% 正文色，亮色是浅灰、暗色是略亮的深底
+  background: color-mix(in srgb, var(--dd-text) 6%, var(--dd-surface-solid)) !important;
+  color: var(--dd-text);
   padding: 20px;
   margin: 0;
   font-family: var(--dd-font-mono);
@@ -829,7 +831,7 @@ function methodClass(method: string) {
 // 200 成功标签：用 Element Plus success 语义色 + color-mix 浅底，明暗双主题自适应
 .status-200 {
   background: color-mix(in srgb, var(--el-color-success) 12%, var(--el-bg-color));
-  color: var(--el-color-success);
+  color: var(--dd-ok-ink);
   border: 1px solid color-mix(in srgb, var(--el-color-success) 32%, transparent);
 }
 

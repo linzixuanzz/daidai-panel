@@ -97,6 +97,6 @@ async function handleConfirm() {
   margin: 0 0 12px;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 </style>

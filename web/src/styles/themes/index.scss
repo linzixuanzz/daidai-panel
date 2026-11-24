@@ -1,0 +1,13 @@
+// 主题引擎样式入口（main.ts 在 global.scss 之后 import）。
+// 顺序有讲究：先排版级令牌的默认值（:root），再 7 个主题块，再 EP 映射，最后是压在主题之上的开关（背景 / 玻璃 / 密度）。
+// 主题块之间互不重叠（各自只匹配自己的 data-dd-theme），谁先谁后无所谓。
+@use "layout";
+@use "classic";
+@use "aurora";
+@use "mist";
+@use "terminal";
+@use "paper";
+@use "daidai";
+@use "clean";
+@use "ep-map";
+@use "switches";

@@ -680,7 +680,7 @@ const groupedTemplates = computed(() => {
 .cron-field-hint {
   margin-top: 6px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   line-height: 1.6;
 
   code {
@@ -713,11 +713,12 @@ const groupedTemplates = computed(() => {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  background: var(--el-color-success);
+  // 实心状态底读 *-solid（亮色主题压深过一档），文字配 --dd-on-status
+  background: var(--dd-ok-solid);
   // 与下面的 .error-badge 是同一槽位互斥的两态，统一走 control 档：
   // error 那条会折成多行，胶囊档在多行块上会变成一个大椭圆，两态之间形状还会跳。
   border-radius: var(--dd-radius-control);
-  color: #fff;
+  color: var(--dd-on-status);
   font-weight: 500;
 
   .badge-icon {
@@ -740,10 +741,10 @@ const groupedTemplates = computed(() => {
   align-items: flex-start;
   gap: 4px;
   padding: 5px 10px;
-  background: var(--el-color-danger);
+  background: var(--dd-err-solid);
   // 会折行的多行提示块 → control 档（不用 pill：多行时胶囊两端会撑成半圆）
   border-radius: var(--dd-radius-control);
-  color: #fff;
+  color: var(--dd-on-status);
   font-weight: 500;
   line-height: 1.6;
 
@@ -765,12 +766,12 @@ const groupedTemplates = computed(() => {
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  background: var(--el-color-primary-light-9);
+  background: color-mix(in srgb, var(--dd-accent) 10%, var(--dd-surface-solid));
   // 「下次执行」信息小块 → control 档，与旁边的 .valid-badge 同档
   border-radius: var(--dd-radius-control);
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   font-weight: 500;
-  border: 1px solid var(--el-color-primary-light-7);
+  border: 1px solid color-mix(in srgb, var(--dd-accent) 30%, var(--dd-surface-solid));
 
   .time-icon {
     font-size: 13px;
@@ -809,19 +810,19 @@ const groupedTemplates = computed(() => {
   background: var(--el-fill-color-light);
   // 模板弹窗里的分组标题条，是一块独立的容器类表面 → surface 档，与下面的 .template-item 同档
   border-radius: var(--dd-radius-surface);
-  border-left: 4px solid var(--el-color-primary);
+  border-left: 4px solid var(--dd-accent);
 }
 
 .group-title {
   font-size: 14px;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
 }
 
 .group-count {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-bg-color);
+  color: var(--dd-text-2);
+  background: var(--dd-surface-solid);
   padding: 2px 8px;
   // 分组里的模板条数，是计数角标 → pill 档
   border-radius: var(--dd-radius-pill);
@@ -838,17 +839,17 @@ const groupedTemplates = computed(() => {
   border: 1px solid var(--el-border-color-light);
   // 模板卡片 → surface 档
   border-radius: var(--dd-radius-surface);
-  background: var(--el-bg-color);
+  background: var(--dd-surface-solid);
   cursor: pointer;
   transition: border-color 0.2s ease, background-color 0.2s ease;
 
   &:hover {
-    border-color: var(--el-color-primary-light-5);
+    border-color: color-mix(in srgb, var(--dd-accent) 50%, var(--dd-surface-solid));
   }
 
   &.active {
-    border-color: var(--el-color-primary);
-    background: var(--el-color-primary-light-9);
+    border-color: var(--dd-accent);
+    background: color-mix(in srgb, var(--dd-accent) 10%, var(--dd-surface-solid));
   }
 }
 
@@ -863,7 +864,7 @@ const groupedTemplates = computed(() => {
 .item-name {
   font-size: 13px;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
 }
 
 .item-tools {
@@ -874,31 +875,31 @@ const groupedTemplates = computed(() => {
 }
 
 .tool-icon {
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
   cursor: pointer;
   transition: color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
   }
 
   &.is-starred {
-    color: var(--el-color-warning);
+    color: var(--dd-warn-ink);
   }
 
   &.is-danger:hover {
-    color: var(--el-color-danger);
+    color: var(--dd-err-ink);
   }
 }
 
 .check-icon {
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
 }
 
 .item-expr {
   font-family: var(--dd-font-mono);
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   word-break: break-all;
 }
 

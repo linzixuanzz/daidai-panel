@@ -499,14 +499,14 @@ function achievedMessage(
   margin: 0;
   font-size: 14px;
   line-height: 1.7;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
 }
 
 .task-delete__muted {
   margin: 8px 0 0;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .task-delete__alert {
@@ -516,7 +516,7 @@ function achievedMessage(
 .task-delete__scripts {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
+  border-top: 1px solid var(--dd-border);
 }
 
 /* 区块里的第一行紧贴分隔线下方，不再叠加各自的上边距 */
@@ -566,7 +566,7 @@ function achievedMessage(
 .task-delete__path {
   padding: 1px 4px;
   font-size: 12px;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
   background: var(--el-fill-color-light);
   border-radius: var(--dd-radius-control);
   word-break: break-all;
@@ -576,14 +576,14 @@ function achievedMessage(
   margin: 2px 0 0;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
 }
 
 .task-delete__danger {
   margin: 8px 0 0;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--el-color-danger);
+  color: var(--dd-err-ink);
 }
 
 .task-delete__kept {
@@ -594,6 +594,6 @@ function achievedMessage(
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 </style>

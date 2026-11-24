@@ -131,7 +131,7 @@ function rankLabel(rank: number) {
     <template #header>
       <div class="sponsor-wall__header">
         <div class="card-title-bar sponsor-wall__header-copy">
-          <span class="title-dot" style="background: #f97316"></span>
+          <span class="title-dot"></span>
           <span class="title-text">赞助名单</span>
         </div>
         <div class="sponsor-wall__summary" v-if="summary">
@@ -213,8 +213,10 @@ function rankLabel(rank: number) {
 </template>
 
 <style scoped lang="scss">
-/* 赞助墙：纯琥珀底 + 1px 描边，去掉两层圆形光晕与底色渐变
-   （暗色由 global.scss 的 `.sponsor-wall` 覆盖为纯色 #1e293b，与此处一致）
+/* 赞助墙：淡琥珀底 + 描边，去掉两层圆形光晕与底色渐变。
+   v4.0 起全部读主题令牌：琥珀取警告色 --dd-warn（各主题都有亮 / 暗两版），文字用墨色 --dd-warn-ink，
+   卡片底用实色 --dd-surface-solid。明暗两套都由令牌给出，不再需要 html.dark 分支
+   （global.scss 里原来那层写死深蓝灰的暗色覆盖第一波已删）。
 
    模板上的 el-card 必须用 shadow="never"（与全站其余 el-card 保持一致）。
    一旦写成 shadow="hover"/"always"，就会命中 EP 自带的 `.el-card.is-hover-shadow:hover`
@@ -222,8 +224,8 @@ function rankLabel(rank: number) {
    这两条 EP 规则特异度是 (0,2,0)，压得过本文件里的 `.sponsor-wall`。 */
 .sponsor-wall {
   overflow: hidden;
-  background: #fff7ed;
-  border: 1px solid rgba(249, 115, 22, 0.1);
+  background: color-mix(in srgb, var(--dd-warn) 7%, var(--dd-surface-solid));
+  border: var(--dd-border-width) solid color-mix(in srgb, var(--dd-warn) 20%, var(--dd-border));
 }
 
 .sponsor-wall__header {
@@ -249,6 +251,7 @@ function rankLabel(rank: number) {
   width: 3px;
   height: 14px;
   border-radius: var(--dd-radius-pill);
+  background: var(--dd-warn);
   display: inline-block;
   flex-shrink: 0;
 }
@@ -256,7 +259,7 @@ function rankLabel(rank: number) {
 .title-text {
   font-size: 14px;
   font-weight: 700;
-  color: #7c2d12;
+  color: var(--dd-warn-ink);
 }
 
 .sponsor-wall__summary {
@@ -265,15 +268,15 @@ function rankLabel(rank: number) {
   gap: 10px;
   flex-wrap: wrap;
   font-size: 12px;
-  color: #7c5f10;
+  color: var(--dd-text-2);
 }
 
 .summary-pill {
   padding: 6px 10px;
   /* 「N 位支持者 / 累计金额」计数角标，天然胶囊 → pill 档 */
   border-radius: var(--dd-radius-pill);
-  background: #ffffff;
-  border: 1px solid rgba(249, 115, 22, 0.12);
+  background: var(--dd-surface-solid);
+  border: 1px solid color-mix(in srgb, var(--dd-warn) 16%, var(--dd-border));
 }
 
 .sponsor-loading {
@@ -289,15 +292,16 @@ function rankLabel(rank: number) {
   min-height: 88px;
   /* 占位块要和真实的 .sponsor-card 同形，否则加载完会看到形状跳变 → 同取 surface 档 */
   border-radius: var(--dd-radius-surface);
-  background: #ffffff;
-  border: 1px solid rgba(251, 146, 60, 0.16);
+  background: var(--dd-surface-solid);
+  border: 1px solid color-mix(in srgb, var(--dd-warn) 18%, var(--dd-border));
 
   &::after {
     content: '';
     position: absolute;
     inset: 0;
     transform: translateX(-100%);
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
+    // 流光取二级底色：亮色是一道浅灰、暗色是一道略亮的深色，两种明暗下都看得见
+    background: linear-gradient(90deg, transparent, var(--dd-surface-2), transparent);
     animation: sponsor-loading 1.4s ease-in-out infinite;
   }
 }
@@ -313,15 +317,15 @@ function rankLabel(rank: number) {
   padding: 28px 24px;
   /* 空状态面板是容器类表面 → surface 档 */
   border-radius: var(--dd-radius-surface);
-  background: #ffffff;
-  border: 1px dashed rgba(249, 115, 22, 0.24);
+  background: var(--dd-surface-solid);
+  border: 1px dashed color-mix(in srgb, var(--dd-warn) 30%, var(--dd-border));
   text-align: center;
 
   h4 {
     margin: 10px 0 8px;
     font-size: 24px;
     font-weight: 700;
-    color: #7c2d12;
+    color: var(--dd-warn-ink);
   }
 
   p {
@@ -329,7 +333,7 @@ function rankLabel(rank: number) {
     max-width: 520px;
     font-size: 13px;
     line-height: 1.8;
-    color: #9a3412;
+    color: var(--dd-text-2);
   }
 }
 
@@ -383,13 +387,13 @@ function rankLabel(rank: number) {
   /* 纯色卡：去掉顶部圆形高光、投影与 hover 上浮，层次交给 1px 描边。卡片本体 → surface 档 */
   border-radius: var(--dd-radius-surface);
   text-align: center;
-  background: #ffffff;
-  border: 1px solid rgba(249, 115, 22, 0.16);
+  background: var(--dd-surface-solid);
+  border: 1px solid color-mix(in srgb, var(--dd-warn) 18%, var(--dd-border));
 }
 
 /* 第一名：用更暖的琥珀底与其余两名区分（原为渐变） */
 .podium-card--first {
-  background: #fffbeb;
+  background: color-mix(in srgb, var(--dd-warn) 10%, var(--dd-surface-solid));
 }
 
 .podium-card__rank {
@@ -399,11 +403,11 @@ function rankLabel(rank: number) {
   padding: 4px 10px;
   /* 「No.1」名次标签，是卡片里的小标签而非状态胶囊 → control 档（与 .dd-stat-card__delta 同档） */
   border-radius: var(--dd-radius-control);
-  background: #ffffff;
-  border: 1px solid rgba(249, 115, 22, 0.18);
+  background: var(--dd-surface-solid);
+  border: 1px solid color-mix(in srgb, var(--dd-warn) 22%, var(--dd-border));
   font-size: 11px;
   font-weight: 700;
-  color: #9a3412;
+  color: var(--dd-warn-ink);
 }
 
 .podium-card__avatar {
@@ -417,11 +421,11 @@ function rankLabel(rank: number) {
     height: 100%;
     /* 白名单：形状承载语义 —— 这里直接渲染 GitHub 头像，头像本身按圆形构图，
        方切后人像被裁到角上观感最差。两种 shape 模式下都固定圆形，不吃 --dd-radius-* 刻度。
-       （底色也保留纯橙，只是去掉了渐变与投影） */
+       （底色用实心警告色令牌，配 --dd-on-status 文字，去掉了渐变与投影） */
     border-radius: 50%;
     object-fit: cover;
-    background: #ea580c;
-    color: #fff;
+    background: var(--dd-warn-solid);
+    color: var(--dd-on-status);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -439,7 +443,7 @@ function rankLabel(rank: number) {
   width: 100%;
   font-size: 15px;
   font-weight: 700;
-  color: #7c2d12;
+  color: var(--dd-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -448,7 +452,7 @@ function rankLabel(rank: number) {
 .podium-card__amount {
   font-size: 18px;
   font-weight: 800;
-  color: #ea580c;
+  color: var(--dd-warn-ink);
   white-space: nowrap;
 }
 
@@ -459,8 +463,8 @@ function rankLabel(rank: number) {
 /* 领奖台底座：纯色块，去掉渐变与顶部内高光。它与上方卡片之间有 gap，是独立的容器类表面 → surface 档 */
 .podium-base {
   border-radius: var(--dd-radius-surface);
-  border: 1px solid rgba(249, 115, 22, 0.14);
-  background: #fef3c7;
+  border: 1px solid color-mix(in srgb, var(--dd-warn) 20%, var(--dd-border));
+  background: color-mix(in srgb, var(--dd-warn) 16%, var(--dd-surface-solid));
 }
 
 .podium-base--first {
@@ -488,8 +492,8 @@ function rankLabel(rank: number) {
   padding: 14px;
   /* 赞助者列表卡片本体 → surface 档 */
   border-radius: var(--dd-radius-surface);
-  background: #ffffff;
-  border: 1px solid rgba(253, 186, 116, 0.18);
+  background: var(--dd-surface-solid);
+  border: 1px solid color-mix(in srgb, var(--dd-warn) 18%, var(--dd-border));
 }
 
 .sponsor-card__avatar {
@@ -504,8 +508,8 @@ function rankLabel(rank: number) {
     /* 白名单：形状承载语义 —— 同 .podium-card__avatar，直接渲染 GitHub 头像，固定圆形 */
     border-radius: 50%;
     object-fit: cover;
-    background: #ea580c;
-    color: #fff;
+    background: var(--dd-warn-solid);
+    color: var(--dd-on-status);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -522,7 +526,7 @@ function rankLabel(rank: number) {
 .sponsor-card__name {
   font-size: 14px;
   font-weight: 700;
-  color: #7c2d12;
+  color: var(--dd-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -531,7 +535,7 @@ function rankLabel(rank: number) {
 .sponsor-card__amount {
   font-size: 16px;
   font-weight: 800;
-  color: #ea580c;
+  color: var(--dd-warn-ink);
   white-space: nowrap;
 }
 
@@ -569,36 +573,4 @@ function rankLabel(rank: number) {
   }
 }
 
-:global(html.dark) {
-  // 暗色同样走纯色底（global.scss 里还有一层 !important 覆盖为 #1e293b，取值一致）
-  .sponsor-wall {
-    background: #1e293b;
-    border-color: rgba(249, 115, 22, 0.18);
-  }
-
-  .title-text,
-  .sponsor-wall__summary,
-  .sponsor-empty h4,
-  .sponsor-empty p,
-  .podium-card__name,
-  .sponsor-card__name {
-    color: #f8fafc;
-  }
-
-  .summary-pill,
-  .sponsor-loading__card,
-  .sponsor-empty,
-  .podium-card,
-  .sponsor-card,
-  .podium-card__rank {
-    background: color-mix(in srgb, var(--el-bg-color-overlay) 92%, black);
-    border-color: rgba(249, 115, 22, 0.18);
-  }
-
-  // 与 global.scss 的 `.sponsor-wall .podium-base` 覆盖取值保持一致的纯色
-  .podium-base {
-    background: #334155;
-    border-color: rgba(249, 115, 22, 0.16);
-  }
-}
 </style>

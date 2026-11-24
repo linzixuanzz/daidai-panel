@@ -135,31 +135,34 @@ function resetFilters() {
 }
 
 // --- Channel type color / avatar helpers ---
-const typeColorMap: Record<string, { bg: string; color: string; badge: string }> = {
-  wecom: { bg: '#e8f5e9', color: '#4caf50', badge: 'success' },
-  wecom_app: { bg: '#e8f5e9', color: '#4caf50', badge: 'success' },
-  pushplus: { bg: '#e3f2fd', color: '#2196f3', badge: '' },
-  feishu: { bg: '#eff6ff', color: '#2563eb', badge: '' },
-  dingtalk: { bg: '#fff3e0', color: '#ff9800', badge: 'warning' },
-  email: { bg: '#fce4ec', color: '#e91e63', badge: 'danger' },
-  webhook: { bg: '#eff6ff', color: '#2563eb', badge: 'warning' },
-  custom: { bg: '#ecfeff', color: '#0891b2', badge: 'warning' },
-  telegram: { bg: '#e3f2fd', color: '#2196f3', badge: '' },
-  bark: { bg: '#fff8e1', color: '#ffc107', badge: 'warning' },
-  serverchan: { bg: '#e0f7fa', color: '#00bcd4', badge: '' },
-  gotify: { bg: '#e8f5e9', color: '#4caf50', badge: 'success' },
-  pushdeer: { bg: '#fff3e0', color: '#ff9800', badge: 'warning' },
-  pushme: { bg: '#e3f2fd', color: '#2196f3', badge: '' },
-  discord: { bg: '#e0f2fe', color: '#0284c7', badge: '' },
-  slack: { bg: '#fce4ec', color: '#e91e63', badge: 'danger' },
-  ntfy: { bg: '#e0f2f1', color: '#009688', badge: 'success' },
-  wxpusher: { bg: '#e8f5e9', color: '#4caf50', badge: 'success' },
+// hue 是主题令牌名（ok / info / warn / err / accent-2），头像用 --dd-<hue> 调浅底、--dd-<hue>-ink 做字色
+const typeColorMap: Record<string, { hue: string; badge: string }> = {
+  wecom: { hue: 'ok', badge: 'success' },
+  wecom_app: { hue: 'ok', badge: 'success' },
+  pushplus: { hue: 'info', badge: '' },
+  feishu: { hue: 'info', badge: '' },
+  dingtalk: { hue: 'warn', badge: 'warning' },
+  email: { hue: 'err', badge: 'danger' },
+  webhook: { hue: 'info', badge: 'warning' },
+  custom: { hue: 'accent-2', badge: 'warning' },
+  telegram: { hue: 'info', badge: '' },
+  bark: { hue: 'warn', badge: 'warning' },
+  serverchan: { hue: 'accent-2', badge: '' },
+  gotify: { hue: 'ok', badge: 'success' },
+  pushdeer: { hue: 'warn', badge: 'warning' },
+  pushme: { hue: 'info', badge: '' },
+  discord: { hue: 'info', badge: '' },
+  slack: { hue: 'err', badge: 'danger' },
+  ntfy: { hue: 'ok', badge: 'success' },
+  wxpusher: { hue: 'ok', badge: 'success' },
 }
 
 function getChannelAvatar(type: string, name: string) {
-  const colors = typeColorMap[type] || { bg: '#f5f5f5', color: '#999' }
   const initial = (name || type || '?').charAt(0).toUpperCase()
-  return { initial, bg: colors.bg, color: colors.color }
+  const hue = typeColorMap[type]?.hue
+  // 未知渠道类型走中性灰
+  if (!hue) return { initial, bg: 'var(--dd-surface-3)', color: 'var(--dd-text-2)' }
+  return { initial, bg: `color-mix(in srgb, var(--dd-${hue}) 12%, transparent)`, color: `var(--dd-${hue}-ink)` }
 }
 
 function getTypeBadgeType(type: string): string {
@@ -558,7 +561,7 @@ function getChannelConfigSummary(row: any): string[] {
 <template>
   <div ref="pageRootRef" class="notifications-page dd-fixed-page dd-page-hide-heading">
     <!-- Page Header -->
-    <div class="page-header">
+    <div class="page-header dd-rise" style="--dd-i: 0">
       <div>
         <h2 class="page-title-with-icon"><el-icon><Bell /></el-icon><span>通知渠道</span></h2>
         <p class="page-subtitle">配置任务执行结果的通知渠道</p>
@@ -591,7 +594,7 @@ function getChannelConfigSummary(row: any): string[] {
         </Transition>
 
         <!-- Toolbar -->
-        <div class="toolbar">
+        <div class="toolbar dd-rise" style="--dd-i: 1">
           <div class="toolbar__left">
             <el-input
               v-model="searchKeyword"
@@ -648,7 +651,7 @@ function getChannelConfigSummary(row: any): string[] {
         </div>
 
         <!-- Mobile Cards -->
-        <div v-if="isMobile" class="dd-mobile-list">
+        <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 2">
           <div
             v-for="row in pagedChannels"
             :key="row.id"
@@ -688,7 +691,7 @@ function getChannelConfigSummary(row: any): string[] {
         </div>
 
         <!-- Desktop Table -->
-        <div v-else class="table-card">
+        <div v-else class="table-card dd-spot dd-rise" style="--dd-i: 2">
           <el-table
             :data="pagedChannels"
             v-loading="channelLoading"
@@ -788,7 +791,7 @@ function getChannelConfigSummary(row: any): string[] {
         </div>
 
         <!-- Pagination -->
-        <div class="pagination-bar">
+        <div class="pagination-bar dd-rise" style="--dd-i: 3">
           <span class="pagination-total">共 {{ filteredTotal }} 条</span>
           <el-pagination
             v-model:current-page="channelPage"

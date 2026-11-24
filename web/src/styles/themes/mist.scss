@@ -1,0 +1,106 @@
+// ============================================================================
+// 主题：晨雾（mist）
+// ----------------------------------------------------------------------------
+// 亮色取自效果演示第 2 节；暗色是新设计：深靛蓝底 + 马卡龙色低亮极光，玻璃深卡。
+// 写法约定见 classic.scss 文件头。
+// ============================================================================
+
+html[data-dd-theme="mist"] {
+  color-scheme: light;
+  --dd-bg: #eef1f8;
+  --dd-surface: rgba(255, 255, 255, 0.56);
+  --dd-surface-solid: #f8f9fc;
+  --dd-surface-2: rgba(255, 255, 255, 0.5);
+  --dd-surface-3: rgba(20, 26, 51, 0.045);
+  --dd-overlay: rgba(255, 255, 255, 0.97);
+  --dd-border: rgba(255, 255, 255, 0.75);
+  --dd-border-strong: rgba(20, 26, 51, 0.12);
+  --dd-border-width: 1px;
+  --dd-text: #141a33;
+  --dd-text-2: #4a5375;
+  --dd-text-3: #5a6385;
+  --dd-accent: #5b5bf6;
+  --dd-accent-2: #ec4899;
+  --dd-on-accent: #ffffff;
+  --dd-on-status: #ffffff;
+  --dd-ok: #059669;
+  --dd-warn: #d97706;
+  --dd-err: #e11d48;
+  --dd-info: #4f46e5;
+  --dd-chart-ok: var(--dd-accent);
+  // 实心填充色覆盖（v4.0 验收返工）：上面的文字色（--dd-on-status / --dd-on-accent）在原色上不到 4.5:1
+  --dd-ok-solid: #078561;
+  --dd-warn-solid: #ac6210;
+  --dd-glass-blur: 26px;
+  --dd-shadow-card: 0 10px 36px -14px rgba(60, 70, 120, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --dd-shadow-card-hover: 0 16px 44px -14px rgba(60, 70, 120, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --dd-shadow-shell: 0 14px 40px -18px rgba(60, 70, 120, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --dd-text-glow: none;
+  --dd-theme-radius-control: 13px;
+  --dd-theme-radius-surface: 22px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 16px;
+  --dd-theme-radius-surface-mobile: 22px;
+  --dd-bg-blob-1: #a5b4fc;
+  --dd-bg-blob-2: #f9a8d4;
+  --dd-bg-blob-3: #99f6e4;
+  --dd-bg-blob-4: #fde68a;
+  --dd-bg-blob-opacity: 0.78;
+  --dd-bg-grid-opacity: 0;
+  --dd-bg-grid-line: rgba(20, 26, 51, 0.05);
+  --dd-bg-noise-opacity: 0.05;
+  --dd-bg-noise-blend: multiply;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: var(--dd-font-ui);
+}
+
+html.dark[data-dd-theme="mist"] {
+  color-scheme: dark;
+  --dd-bg: #0f1226;
+  --dd-surface: rgba(30, 35, 68, 0.55);
+  --dd-surface-solid: #181c38;
+  --dd-surface-2: rgba(255, 255, 255, 0.045);
+  --dd-surface-3: rgba(255, 255, 255, 0.08);
+  --dd-overlay: rgba(25, 29, 58, 0.97);
+  --dd-border: rgba(199, 210, 254, 0.12);
+  --dd-border-strong: rgba(199, 210, 254, 0.24);
+  --dd-border-width: 1px;
+  --dd-text: #e8ebff;
+  --dd-text-2: #b1b8de;
+  --dd-text-3: #959dc6;
+  --dd-accent: #8b8cff;
+  --dd-accent-2: #f472b6;
+  --dd-on-accent: #11142b;
+  --dd-on-status: #0f1226;
+  --dd-ok: #34d399;
+  --dd-warn: #fbbf24;
+  --dd-err: #fb7185;
+  --dd-info: #a5b4fc;
+  --dd-chart-ok: var(--dd-accent);
+  // 复位亮色块里的实心色覆盖（亮色块在暗色下同样匹配，这里不写就会漏过来；暗色下状态色本身就够亮）
+  --dd-ok-solid: var(--dd-ok);
+  --dd-warn-solid: var(--dd-warn);
+  --dd-err-solid: var(--dd-err);
+  --dd-btn-primary-bg: var(--dd-accent);
+  --dd-glass-blur: 26px;
+  --dd-shadow-card: 0 14px 40px -18px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --dd-shadow-card-hover: 0 20px 50px -18px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --dd-shadow-shell: 0 16px 44px -20px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --dd-text-glow: none;
+  --dd-theme-radius-control: 13px;
+  --dd-theme-radius-surface: 22px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 16px;
+  --dd-theme-radius-surface-mobile: 22px;
+  --dd-bg-blob-1: #4338ca;
+  --dd-bg-blob-2: #9d174d;
+  --dd-bg-blob-3: #0f766e;
+  --dd-bg-blob-4: #a16207;
+  --dd-bg-blob-opacity: 0.32;
+  --dd-bg-grid-opacity: 0;
+  --dd-bg-grid-line: rgba(199, 210, 254, 0.05);
+  --dd-bg-noise-opacity: 0.05;
+  --dd-bg-noise-blend: screen;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: var(--dd-font-ui);
+}

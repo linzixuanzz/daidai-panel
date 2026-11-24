@@ -529,24 +529,26 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .update-progress-shell {
-  --dd-update-accent: #0f766e;
-  --dd-update-accent-soft: rgba(15, 118, 110, 0.16);
-  --dd-update-accent-strong: rgba(15, 118, 110, 0.28);
+  // 进度主色跟随主题：进行中 = 主色，失败 = 错误色，切换中 = 信息色。
+  // -ink 是当文字用的墨色；soft / strong 由 --dd-update-accent 派生（在同一元素上计算，
+  // 下面两个状态类只改 accent / accent-ink，soft / strong 会自动跟着变）。
+  --dd-update-accent: var(--dd-accent);
+  --dd-update-accent-ink: var(--dd-accent-ink);
+  --dd-update-accent-soft: color-mix(in srgb, var(--dd-update-accent) 16%, transparent);
+  --dd-update-accent-strong: color-mix(in srgb, var(--dd-update-accent) 28%, transparent);
   display: flex;
   flex-direction: column;
   gap: 22px;
   padding: 6px 2px 2px;
 
   &.is-danger {
-    --dd-update-accent: #dc2626;
-    --dd-update-accent-soft: rgba(220, 38, 38, 0.14);
-    --dd-update-accent-strong: rgba(220, 38, 38, 0.24);
+    --dd-update-accent: var(--dd-err);
+    --dd-update-accent-ink: var(--dd-err-ink);
   }
 
   &.is-switching {
-    --dd-update-accent: #2563eb;
-    --dd-update-accent-soft: rgba(37, 99, 235, 0.16);
-    --dd-update-accent-strong: rgba(37, 99, 235, 0.28);
+    --dd-update-accent: var(--dd-info);
+    --dd-update-accent-ink: var(--dd-info-ink);
   }
 }
 
@@ -617,7 +619,7 @@ onBeforeUnmount(() => {
   strong {
     font-size: 30px;
     line-height: 1;
-    color: var(--dd-update-accent);
+    color: var(--dd-update-accent-ink);
   }
 
   span {
@@ -658,7 +660,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--dd-update-accent);
+  color: var(--dd-update-accent-ink);
   background: var(--dd-update-accent-soft);
 }
 
@@ -696,7 +698,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   // 进度条轨道是天然胶囊 → pill 档
   border-radius: var(--dd-radius-pill);
-  background: rgba(148, 163, 184, 0.16);
+  background: var(--dd-surface-3);
 }
 
 .update-progress-bar__fill {
@@ -734,7 +736,7 @@ onBeforeUnmount(() => {
   strong {
     flex-shrink: 0;
     font-size: 15px;
-    color: var(--dd-update-accent);
+    color: var(--dd-update-accent-ink);
   }
 }
 
@@ -790,13 +792,13 @@ onBeforeUnmount(() => {
   }
 
   &.is-done {
-    border-color: color-mix(in srgb, var(--dd-update-accent) 36%, white);
+    border-color: color-mix(in srgb, var(--dd-update-accent) 36%, var(--dd-surface-solid));
     background: color-mix(in srgb, var(--dd-update-accent) 8%, var(--el-bg-color));
   }
 
   &.is-failed {
-    border-color: rgba(220, 38, 38, 0.3);
-    background: rgba(254, 242, 242, 0.88);
+    border-color: color-mix(in srgb, var(--dd-err) 30%, transparent);
+    background: color-mix(in srgb, var(--dd-err) 8%, var(--el-bg-color));
   }
 }
 
@@ -817,13 +819,13 @@ onBeforeUnmount(() => {
 
 .update-step.is-active .update-step__badge,
 .update-step.is-done .update-step__badge {
-  color: var(--dd-update-accent);
+  color: var(--dd-update-accent-ink);
   border-color: var(--dd-update-accent);
 }
 
 .update-step.is-failed .update-step__badge {
-  color: #dc2626;
-  border-color: rgba(220, 38, 38, 0.18);
+  color: var(--dd-err-ink);
+  border-color: color-mix(in srgb, var(--dd-err) 30%, transparent);
 }
 
 .update-step__content {
@@ -850,9 +852,10 @@ onBeforeUnmount(() => {
   padding: 16px 18px;
   // 错误提示是弹窗内的独立区块 → surface 档
   border-radius: var(--dd-radius-surface);
-  background: rgba(254, 242, 242, 0.92);
-  border: 1px solid rgba(220, 38, 38, 0.18);
-  color: #b42318;
+  // 错误框：错误色浅底 + 墨色标题，正文比标题更靠近正文色（明暗两档都成立，不再需要暗色补丁）
+  background: color-mix(in srgb, var(--dd-err) 8%, var(--el-bg-color));
+  border: 1px solid color-mix(in srgb, var(--dd-err) 24%, transparent);
+  color: var(--dd-err-ink);
 
   strong {
     display: block;
@@ -863,7 +866,7 @@ onBeforeUnmount(() => {
   p {
     margin: 0;
     line-height: 1.7;
-    color: #7f1d1d;
+    color: color-mix(in srgb, var(--dd-err) 30%, var(--dd-text));
     // 后端的更新失败诊断是分行文案（判定结论 / 根因 / 逐条自查命令 / 原始错误），
     // 不保留换行的话 \n 会被 HTML 折叠成空格，编号步骤全挤成一行没法照着做。
     // 与下面的 word-break 不冲突：pre-wrap 管「保留换行 + 允许软换行」，
@@ -922,38 +925,6 @@ onBeforeUnmount(() => {
 
   .update-progress-steps {
     grid-template-columns: 1fr;
-  }
-}
-
-:global(html.dark) {
-  .update-progress-hero {
-    background: var(--el-bg-color-overlay);
-    border-color: var(--el-border-color-darker);
-  }
-
-  .update-progress-core,
-  .update-progress-bar,
-  .update-target-chip,
-  .update-step,
-  .update-progress-meta span {
-    background: color-mix(in srgb, var(--el-bg-color-overlay) 92%, black);
-    border-color: var(--el-border-color-darker);
-    box-shadow: none;
-  }
-
-  .update-step.is-done {
-    background: color-mix(in srgb, var(--el-color-primary) 12%, var(--el-bg-color-overlay));
-  }
-
-  .update-step.is-failed,
-  .update-progress-error {
-    background: color-mix(in srgb, #7f1d1d 35%, var(--el-bg-color-overlay));
-    border-color: rgba(220, 38, 38, 0.3);
-    color: #fecaca;
-  }
-
-  .update-progress-error p {
-    color: #fecaca;
   }
 }
 </style>

@@ -47,8 +47,17 @@ const DEMO_PANEL_SETTINGS: PanelSettingsPayload = {
   panel_title: '呆呆面板',
   panel_icon: '',
   // 界面圆角风格，与服务端 SystemHandler.PanelSettings 下发的字段对齐。
-  // 演示站取注册表默认值 square（直角），保持与全新安装的面板同一个观感。
-  panel_shape_style: 'square',
+  // v4.0 起注册表默认值是 theme（跟随主题），演示站取同一个值，保持与全新安装的面板同一个观感。
+  panel_shape_style: 'theme',
+  // ===== v4.0 主题引擎的全站默认值，取值逐个对齐注册表默认值（wave1-handoff §6）=====
+  // 演示站因此默认是「极光」；访客在主题工坊里改的是本机偏好，刷新后仍在。
+  panel_theme_preset: 'aurora',
+  panel_accent_color: '',
+  panel_background_effect: 'theme',
+  panel_background_image: '',
+  panel_glass_blur: '',
+  panel_density: 'cozy',
+  panel_custom_css: '',
 }
 
 /**

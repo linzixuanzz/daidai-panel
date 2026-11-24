@@ -63,16 +63,24 @@ import {
 } from "@element-plus/icons-vue";
 import App from "./App.vue";
 import LoadingMotion from "./components/LoadingMotion.vue";
+import { installSpotlight, vMagnetic } from "./directives/pointerEffects";
 import router from "./router";
 import { isChunkLoadError, reloadOnce } from "./utils/chunkReload";
 import {
   applyMotionPreference,
   applyPanelShapeStyle,
+  applyThemeAppearance,
   applyThemeMode,
   fetchAndApplyPanelAppearance,
 } from "./utils/panelAppearance";
 import "./styles/global.scss";
 import "./styles/animations.css";
+// v4.0 主题引擎：7 套主题 × 明暗的令牌、排版级令牌、EP 映射、背景 / 玻璃 / 密度开关。
+// 必须排在 global.scss 之后：两者靠特异性分胜负（主题块 0,1,1 / 0,2,1 压 :root 与 html.dark），
+// 但 _switches.scss 里少数与 global.scss 同特异性的规则（密度下的表格行高）要靠后出现。
+import "./styles/themes/index.scss";
+// v4.0 动效系统：弹簧缓动、交错入场、光斑、流光、烟花、View Transitions（档位见 data-dd-motion）
+import "./styles/motion.scss";
 // visual-enhancements.css 已删除（v3.0.8）：209 行 / 22 个工具类【全部零引用】，
 // 逐个 grep 确认过。唯一看似有引用的 `.status-dot` 是 api-docs 页自己在 scoped 里
 // 定义的同名类（且属性更全、取色走令牌），删掉全局那份不影响它。
@@ -230,6 +238,10 @@ async function bootstrap() {
   // 都会先闪一帧白底。这里同步重放一遍缓存值，跟随系统档会现读一次 matchMedia。
   // 同样必须早于下面 demo 的 await。
   applyThemeMode();
+  // v4.0 主题引擎（风格 / 主色 / 背景 / 模糊 / 密度 / 自定义 CSS）：index.html 的内联脚本已经按同样规则写过一遍
+  // <html> 的属性，这里用正式实现再写一次（顺带把自定义 CSS 注入 <head> 末尾，内联脚本不管它）。
+  // 同样必须早于下面 demo 的 await；panel-settings 回来后 fetchAndApplyPanelAppearance 会以服务端值重算。
+  applyThemeAppearance();
 
   // 这段刻意写成「编译期常量守卫 + 动态 import()」：
   // VITE_DEMO 在发布版构建里被 define 成 ''（见 vite.config.ts），条件恒假，
@@ -297,6 +309,9 @@ async function bootstrap() {
   // ↓ 首次导航在这一行触发，此时 demo adapter 已经就位
   app.use(router);
   app.component("LoadingMotion", LoadingMotion);
+  // 动效 2.0：主按钮磁吸（v-magnetic）与卡片光斑（.dd-spot 的全局 pointermove 监听）
+  app.directive("magnetic", vMagnetic);
+  installSpotlight();
 
   for (const [key, component] of Object.entries(globalIcons)) {
     app.component(key, component);

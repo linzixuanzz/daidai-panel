@@ -381,12 +381,12 @@ watch(
   // 上方现在恒定有一行「全部」固定项，留出间距免得两块贴在一起
   padding: 20px 0 4px;
   text-align: center;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .view-manager-hint {
   font-size: 13px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   margin-bottom: 12px;
   display: flex;
   justify-content: space-between;
@@ -395,7 +395,7 @@ watch(
 }
 
 .view-manager-counts {
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
 }
 
 .view-manager-list {
@@ -421,7 +421,7 @@ watch(
   transition: border-color 0.15s, background 0.15s, opacity 0.15s;
 
   &:hover {
-    border-color: var(--el-border-color);
+    border-color: var(--dd-border-strong);
   }
 
   &.is-hidden {
@@ -432,8 +432,8 @@ watch(
   // hover 也不点亮描边 —— 它没有拖拽/编辑/删除，点亮反而会误导成「这行能拖」。
   &.is-builtin,
   &.is-builtin:hover {
-    background: var(--el-bg-color);
-    border-color: var(--el-border-color-lighter);
+    background: var(--dd-surface-solid);
+    border-color: var(--dd-border);
   }
 
   // 两个内置项（「全部」「顶栏分组页签」）上下相邻，间距与下方视图列表的行间距同为 6px
@@ -444,7 +444,7 @@ watch(
 
 .view-drag-handle {
   cursor: grab;
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
   display: inline-flex;
   align-items: center;
   padding: 2px;
@@ -464,7 +464,7 @@ watch(
   flex: 1;
   font-size: 14px;
   font-weight: 500;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
   word-break: break-word;
 }
 
@@ -477,10 +477,10 @@ watch(
   font-size: 12px;
   font-weight: 400;
   line-height: 1.4;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 
   &.is-warning {
-    color: var(--el-color-warning);
+    color: var(--dd-warn-ink);
   }
 }
 
@@ -493,7 +493,7 @@ watch(
 
 .view-row-ghost {
   opacity: 0.4;
-  background: var(--el-color-primary-light-9);
+  background: color-mix(in srgb, var(--dd-accent) 10%, var(--dd-surface-solid));
 }
 
 .view-row-chosen {
@@ -502,6 +502,6 @@ watch(
 
 /* 拖拽中不再靠阴影浮起，改用描边标出当前拖动的行 */
 .view-row-dragging {
-  border-color: var(--el-border-color);
+  border-color: var(--dd-border-strong);
 }
 </style>

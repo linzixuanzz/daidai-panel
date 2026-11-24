@@ -332,7 +332,7 @@ const binaryProxyOptions = [
   line-height: 1.6;
 
   a {
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     font-weight: 600;
     text-decoration: none;
 
@@ -362,7 +362,7 @@ const binaryProxyOptions = [
   &.active {
     border-color: var(--el-color-primary);
     background: color-mix(in srgb, var(--el-color-primary) 8%, var(--el-bg-color));
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
   }
 }
 

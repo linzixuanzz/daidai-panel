@@ -103,7 +103,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <el-card shadow="never" class="health-card">
+  <el-card shadow="never" class="health-card dd-spot dd-rise" style="--dd-i: 3">
     <template #header>
       <div class="card-header">
         <div class="card-header__main">
@@ -127,7 +127,7 @@ onMounted(() => {
     <div v-else class="health-list">
       <div v-for="item in healthItems" :key="item.name" class="health-item">
         <div class="health-item__icon">
-          <el-icon :size="18" :color="isOk(item.status) ? '#10b981' : (isWarning(item.status) ? '#f59e0b' : '#ef4444')">
+          <el-icon :size="18" :color="isOk(item.status) ? 'var(--dd-ok)' : (isWarning(item.status) ? 'var(--dd-warn)' : 'var(--dd-err)')">
             <CircleCheckFilled v-if="isOk(item.status)" />
             <WarningFilled v-else-if="isWarning(item.status)" />
             <CircleCloseFilled v-else />
@@ -222,19 +222,20 @@ onMounted(() => {
   // 健康状态 chip 是天然胶囊 → pill 档（与 .dd-status-chip 同档）
   border-radius: var(--dd-radius-pill);
 
+  // chip 文字用墨色、浅底用状态色 12%，都跟随主题
   &.is-ok {
-    color: #10b981;
-    background: rgba(16, 185, 129, 0.1);
+    color: var(--dd-ok-ink);
+    background: color-mix(in srgb, var(--dd-ok) 12%, transparent);
   }
 
   &.is-warning {
-    color: #f59e0b;
-    background: rgba(245, 158, 11, 0.12);
+    color: var(--dd-warn-ink);
+    background: color-mix(in srgb, var(--dd-warn) 12%, transparent);
   }
 
   &.is-error {
-    color: #ef4444;
-    background: rgba(239, 68, 68, 0.1);
+    color: var(--dd-err-ink);
+    background: color-mix(in srgb, var(--dd-err) 12%, transparent);
   }
 }
 

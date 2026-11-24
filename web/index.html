@@ -6,10 +6,121 @@
     <link rel="icon" type="image/webp" href="/favicon-512.webp" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+    <!-- PWA（v4.0 F10）：清单、Service Worker 与图标由 web/public/ 提供。路径写成以 / 开头，Vite 构建时按 base 自动加前缀（演示站子路径也能解析）。
+         theme-color 取默认主题「极光」亮色面的底色（--dd-bg）。 -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f5f3ff" />
     <link rel="stylesheet" href="/assets/optimization.css" />
     <!-- 字体自托管（原为 fonts.loli.net）。缘由与约束见 public/fonts/fonts.css 顶部注释。 -->
     <link rel="stylesheet" href="/fonts/fonts.css" />
     <title>呆呆面板</title>
+    <!--
+      v4.0 首屏防闪（design §1.5）：在 Vue 挂载、样式表加载之前，同步把外观写到 <html> 上 ——
+      明暗（.dark）、风格（data-dd-theme）、背景（data-dd-bg）、密度（data-dd-density）、动效（data-dd-motion + 兼容类）、
+      玻璃开关（data-dd-glass）与内联令牌（主色、模糊、圆角）。
+      数据来源：本机偏好 localStorage 的 theme / dd:appearance:*，以及上次缓存的全站设置快照 dd:appearance:site。
+      🔴 这是 src/utils/panelAppearance.ts 的「手抄版」：那边改了键名、默认值、优先级，这里必须同步改。
+         main.ts 在 createApp 之前会用正式实现再写一遍，panel-settings 回来后以服务端值为准，所以这里写错只会闪一下，不会持久错。
+      CSP 的 script-src 含 'unsafe-inline'（server/middleware/security.go），内联脚本可以执行。
+      整段包在 try 里：隐私模式读存储抛错、老浏览器缺 API 时什么都不做，交给 main.ts。
+    -->
+    <script>
+      (function () {
+        try {
+          var root = document.documentElement;
+          var read = function (key) {
+            try { return window.localStorage.getItem(key); } catch (e) { return null; }
+          };
+          // 在 list 里就返回规范化后的值，否则返回 fallback
+          var pick = function (raw, list, fallback) {
+            var value = String(raw == null ? '' : raw).trim().toLowerCase();
+            return list.indexOf(value) >= 0 ? value : fallback;
+          };
+          // 0~max 的整数，否则 null
+          var int = function (raw, max) {
+            var text = String(raw == null ? '' : raw).trim();
+            if (!/^\d{1,3}$/.test(text)) return null;
+            var value = Number(text);
+            return value <= max ? value : null;
+          };
+          // #rrggbb（小写）或 ''
+          var hex = function (raw) {
+            var value = String(raw == null ? '' : raw).trim().toLowerCase();
+            return /^#[0-9a-f]{6}$/.test(value) ? value : '';
+          };
+          var media = function (query) {
+            return !!(window.matchMedia && window.matchMedia(query).matches);
+          };
+          var site = {};
+          try { site = JSON.parse(read('dd:appearance:site') || '{}') || {}; } catch (e) { site = {}; }
+
+          // 明暗：裸 theme 键，light / dark / system，默认 system
+          var mode = pick(read('theme'), ['light', 'dark', 'system'], 'system');
+          root.classList.toggle('dark', mode === 'dark' || (mode === 'system' && media('(prefers-color-scheme: dark)')));
+
+          // 风格 / 背景 / 密度：本机 > 全站 > 默认
+          var presets = ['classic', 'aurora', 'mist', 'terminal', 'paper', 'daidai', 'clean'];
+          var bgs = ['theme', 'plain', 'aurora', 'grid', 'image'];
+          var densities = ['compact', 'cozy', 'roomy'];
+          var preset = pick(read('dd:appearance:preset'), presets, '') || pick(site.panel_theme_preset, presets, 'aurora');
+          root.setAttribute('data-dd-theme', preset);
+          root.setAttribute('data-dd-bg', pick(read('dd:appearance:background'), bgs, '') || pick(site.panel_background_effect, bgs, 'theme'));
+          root.setAttribute('data-dd-density', pick(read('dd:appearance:density'), densities, '') || pick(site.panel_density, densities, 'cozy'));
+
+          // 动效：旧值 always → rich、reduce → off（只读不回写）；跟随系统时：减少动效 → off，低端设备 → subtle
+          var motion = pick(read('dd:appearance:motion'), ['system', 'rich', 'subtle', 'off', 'always', 'reduce'], 'system');
+          motion = motion === 'always' ? 'rich' : motion === 'reduce' ? 'off' : motion;
+          var cores = navigator.hardwareConcurrency;
+          var lowEnd = typeof cores === 'number' && cores > 0 && cores <= 4 && (navigator.deviceMemory || 8) <= 4;
+          var level = motion !== 'system' ? motion : media('(prefers-reduced-motion: reduce)') ? 'off' : lowEnd ? 'subtle' : 'rich';
+          root.setAttribute('data-dd-motion', level);
+          root.classList.toggle('dd-motion-force', motion === 'rich' || motion === 'subtle');
+          root.classList.toggle('dd-motion-off', level === 'off');
+          root.classList.toggle('dd-vt', level !== 'off' && typeof document.startViewTransition === 'function');
+
+          // 主色：本机 > 全站。主色上的文字取白 / 近黑里对比度高的那个（WCAG 相对亮度）
+          var accent = hex(read('dd:appearance:accent')) || hex(site.panel_accent_color);
+          if (accent) {
+            var channel = function (offset) {
+              var v = parseInt(accent.slice(offset, offset + 2), 16) / 255;
+              return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+            };
+            var lum = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+            root.style.setProperty('--dd-accent', accent);
+            root.style.setProperty('--dd-on-accent', 1.05 / (lum + 0.05) >= (lum + 0.05) / 0.0556 ? '#ffffff' : '#111111');
+          }
+
+          // 玻璃模糊：本机 > 全站 > （低端设备且动效跟随系统 → 0）> 主题默认（与 THEME_PRESETS 的 blur 一致）
+          var blurDefaults = { classic: 0, aurora: 22, mist: 26, terminal: 4, paper: 0, daidai: 0, clean: 0 };
+          var blur = int(read('dd:appearance:blur'), 40);
+          if (blur === null) blur = int(site.panel_glass_blur, 40);
+          if (blur === null && motion === 'system' && lowEnd) blur = 0;
+          if (blur !== null) root.style.setProperty('--dd-glass-blur', blur + 'px');
+          root.setAttribute('data-dd-glass', (blur === null ? blurDefaults[preset] : blur) === 0 ? 'off' : 'on');
+
+          // 圆角：本机滑杆 > 全站圆角风格（缓存键 dd:appearance:shape，再退到快照，默认 theme）
+          var shapes = ['theme', 'square', 'rounded'];
+          var slider = int(read('dd:appearance:radius'), 28);
+          var shape = pick(read('dd:appearance:shape'), shapes, '') || pick(site.panel_shape_style, shapes, 'theme');
+          var radius;
+          if (slider !== null) {
+            var control = Math.round(slider * 0.6) + 'px';
+            radius = [control, slider + 'px', slider === 0 ? '0' : '999px', control, slider + 'px'];
+          } else if (shape === 'square') {
+            radius = ['0', '0', '0', '0', '0'];
+          } else if (shape === 'rounded') {
+            radius = ['6px', '10px', '999px', '16px', '20px'];
+          } else {
+            radius = ['var(--dd-theme-radius-control)', 'var(--dd-theme-radius-surface)', 'var(--dd-theme-radius-pill)', 'var(--dd-theme-radius-control-mobile)', 'var(--dd-theme-radius-surface-mobile)'];
+          }
+          ['--dd-radius-control', '--dd-radius-surface', '--dd-radius-pill', '--dd-radius-control-mobile', '--dd-radius-surface-mobile'].forEach(function (name, index) {
+            root.style.setProperty(name, radius[index]);
+          });
+        } catch (e) {
+          // 交给 main.ts 的正式实现
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

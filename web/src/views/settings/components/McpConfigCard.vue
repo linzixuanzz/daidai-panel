@@ -171,7 +171,7 @@ async function handleCopy(text: string, successMessage: string) {
 }
 
 .form-hint a {
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   text-decoration: none;
 
   &:hover {

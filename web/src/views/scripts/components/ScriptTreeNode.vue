@@ -13,7 +13,8 @@ const props = defineProps<{
 const isInSubDir = computed(() => props.data.key.includes('/'))
 
 const dotColor = computed(() => {
-  if (!props.data.isLeaf) return 'var(--scripts-folder-dot, #94a3b8)'
+  // 文件夹点用中性灰令牌；下面各扩展名的颜色是语言识别色（同 GitHub 语言色），刻意保持固定
+  if (!props.data.isLeaf) return 'var(--dd-text-3)'
   const ext = props.data.title.split('.').pop()?.toLowerCase()
   switch (ext) {
     case 'js':
@@ -69,7 +70,7 @@ const extLabel = computed(() => {
               <el-icon><FolderRemove /></el-icon>移动到根目录
             </el-dropdown-item>
             <el-dropdown-item divided @click="onDelete(data.key, !data.isLeaf)">
-              <el-icon><Delete /></el-icon><span style="color: var(--el-color-danger)">删除</span>
+              <el-icon><Delete /></el-icon><span style="color: var(--dd-err-ink)">删除</span>
             </el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -173,7 +174,7 @@ const extLabel = computed(() => {
 
     &:hover {
       background: var(--el-fill-color);
-      color: var(--el-color-primary);
+      color: var(--dd-accent-ink);
     }
 
     &:focus-visible {
@@ -185,7 +186,7 @@ const extLabel = computed(() => {
 
 .tree-node:hover {
   background: color-mix(in srgb, var(--el-fill-color-light) 86%, transparent);
-  .tree-node-label { color: var(--el-color-primary); }
+  .tree-node-label { color: var(--dd-accent-ink); }
 
   .tree-node-ext,
   .tree-node-actions {

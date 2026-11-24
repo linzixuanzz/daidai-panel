@@ -453,7 +453,7 @@ watch(showVersionDiffDialog, (visible) => {
   border: 1px dashed var(--el-border-color);
   // 空态占位区是整块虚线容器（占满 62vh）→ surface 档
   border-radius: var(--dd-radius-surface);
-  background: color-mix(in srgb, var(--el-fill-color-light) 72%, white);
+  background: color-mix(in srgb, var(--el-fill-color-light) 72%, var(--dd-surface-solid));
 }
 
 .version-diff-empty-copy {

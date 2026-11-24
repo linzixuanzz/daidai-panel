@@ -1,0 +1,118 @@
+// ============================================================================
+// 主题：经典（classic）
+// ----------------------------------------------------------------------------
+// 亮色取自效果演示第 2 节；暗色沿用 v3.x 的暗色观感（底 #0b1120），补上「底 → 卡 → 二级」三层表面。
+//
+// 每个主题文件的写法约定（6 个文件一致，新增主题照抄）：
+//   - 亮色块 html[data-dd-theme="x"]（0,1,1）压过 :root（0,1,0）；
+//     暗色块 html.dark[data-dd-theme="x"]（0,2,1）压过 EP 的 html.dark 与 global.scss 的 html.dark{}（0,1,1）。
+//   - 两块都必须给全 design §1.2 的令牌，不许缺项：暗色块缺一项，就会漏出亮色块的值。
+//   - 🔴 令牌一律不带 !important：主色 / 模糊 / 圆角由 JS 写成 <html> 上的内联普通声明，带了就压不过来。
+//   - 额外令牌（design 表外，本组补的）：
+//       --dd-surface-solid  不透明的卡片底色（≈ surface 叠在 bg 上的结果），EP 的 --el-bg-color 等实色面用它；
+//       --dd-on-status      ok / warn / err 实色按钮上的文字色；
+//       --dd-bg-noise-blend 噪点层的混合模式（亮底 multiply、暗底 screen）；
+//       --dd-font-ui        正文字体（只有终端主题改成等宽）。
+// ============================================================================
+
+html[data-dd-theme="classic"] {
+  color-scheme: light;
+  --dd-bg: #f2f4f8;
+  --dd-surface: #ffffff;
+  --dd-surface-solid: #ffffff;
+  --dd-surface-2: #f6f8fb;
+  --dd-surface-3: #eef1f6;
+  --dd-overlay: #ffffff;
+  --dd-border: rgba(15, 23, 42, 0.08);
+  --dd-border-strong: rgba(15, 23, 42, 0.16);
+  --dd-border-width: 1px;
+  --dd-text: #0f172a;
+  --dd-text-2: #475569;
+  --dd-text-3: #5f6c80;
+  --dd-accent: #2f6bff;
+  --dd-accent-2: #22b8f0;
+  --dd-on-accent: #ffffff;
+  --dd-on-status: #ffffff;
+  --dd-ok: #16a34a;
+  --dd-warn: #d97706;
+  --dd-err: #dc2626;
+  --dd-info: #2563eb;
+  --dd-chart-ok: var(--dd-accent);
+  // 实心填充色覆盖（v4.0 验收返工）：上面的文字色（--dd-on-status / --dd-on-accent）在原色上不到 4.5:1
+  --dd-ok-solid: #158643;
+  --dd-warn-solid: #ad620e;
+  --dd-btn-primary-bg: #2e69fb;
+  --dd-glass-blur: 0px;
+  --dd-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px -16px rgba(15, 23, 42, 0.18);
+  --dd-shadow-card-hover: 0 1px 2px rgba(15, 23, 42, 0.05), 0 16px 36px -18px rgba(15, 23, 42, 0.26);
+  --dd-shadow-shell: 0 1px 2px rgba(15, 23, 42, 0.04), 0 18px 44px -26px rgba(15, 23, 42, 0.24);
+  --dd-text-glow: none;
+  --dd-theme-radius-control: 8px;
+  --dd-theme-radius-surface: 14px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 12px;
+  --dd-theme-radius-surface-mobile: 18px;
+  --dd-bg-blob-1: #93c5fd;
+  --dd-bg-blob-2: #c4b5fd;
+  --dd-bg-blob-3: #a5f3fc;
+  --dd-bg-blob-4: #bfdbfe;
+  --dd-bg-blob-opacity: 0;
+  --dd-bg-grid-opacity: 0;
+  --dd-bg-grid-line: rgba(15, 23, 42, 0.06);
+  --dd-bg-noise-opacity: 0;
+  --dd-bg-noise-blend: multiply;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: var(--dd-font-ui);
+}
+
+html.dark[data-dd-theme="classic"] {
+  color-scheme: dark;
+  --dd-bg: #0b1120;
+  --dd-surface: #121a2e;
+  --dd-surface-solid: #121a2e;
+  --dd-surface-2: #172238;
+  --dd-surface-3: #1e2a44;
+  --dd-overlay: #162036;
+  --dd-border: rgba(148, 163, 184, 0.14);
+  --dd-border-strong: rgba(148, 163, 184, 0.28);
+  --dd-border-width: 1px;
+  --dd-text: #e2e8f0;
+  --dd-text-2: #a9b4c7;
+  --dd-text-3: #8c98ae;
+  --dd-accent: #4d84ff;
+  --dd-accent-2: #38bdf8;
+  --dd-on-accent: #ffffff;
+  --dd-on-status: #0b1120;
+  --dd-ok: #22c55e;
+  --dd-warn: #f59e0b;
+  --dd-err: #f87171;
+  --dd-info: #60a5fa;
+  --dd-chart-ok: var(--dd-accent);
+  // 复位亮色块里的实心色覆盖（亮色块在暗色下同样匹配，这里不写就会漏过来；暗色下状态色本身就够亮）
+  --dd-ok-solid: var(--dd-ok);
+  --dd-warn-solid: var(--dd-warn);
+  --dd-err-solid: var(--dd-err);
+  // 实心填充色覆盖（v4.0 验收返工）：上面的文字色（--dd-on-status / --dd-on-accent）在原色上不到 4.5:1
+  --dd-btn-primary-bg: #4170d9;
+  --dd-glass-blur: 0px;
+  --dd-shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 12px 30px -18px rgba(0, 0, 0, 0.6);
+  --dd-shadow-card-hover: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 40px -18px rgba(0, 0, 0, 0.7);
+  --dd-shadow-shell: 0 18px 44px -24px rgba(0, 0, 0, 0.7);
+  --dd-text-glow: none;
+  --dd-theme-radius-control: 8px;
+  --dd-theme-radius-surface: 14px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 12px;
+  --dd-theme-radius-surface-mobile: 18px;
+  --dd-bg-blob-1: #1e3a8a;
+  --dd-bg-blob-2: #4c1d95;
+  --dd-bg-blob-3: #155e75;
+  --dd-bg-blob-4: #1e40af;
+  --dd-bg-blob-opacity: 0;
+  --dd-bg-grid-opacity: 0;
+  --dd-bg-grid-line: rgba(148, 163, 184, 0.07);
+  --dd-bg-noise-opacity: 0;
+  --dd-bg-noise-blend: screen;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: var(--dd-font-ui);
+}

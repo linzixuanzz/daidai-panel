@@ -505,7 +505,8 @@
 
 /* 骨架屏：这里的移动渐变是加载指示（同 loading 圆弧），属于功能性动效，予以保留 */
 .skeleton {
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  /* v4.0：底色改读 EP 填充色令牌（随主题与明暗变化），原写死 #f0f0f0 / #e0e0e0 */
+  background: linear-gradient(90deg, var(--el-fill-color-light) 25%, var(--el-fill-color-dark) 50%, var(--el-fill-color-light) 75%);
   background-size: 200% 100%;
   animation: skeletonLoading 1.5s ease-in-out infinite;
   border-radius: 0;

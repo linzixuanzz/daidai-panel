@@ -48,6 +48,13 @@ export interface SettingsConfigForm {
   // 界面圆角，v3.2.9 从兜底区挪进「面板外观」卡。服务端下发的其实是字符串，这里按已知枚举收窄
   // （与 PanelSettingsPayload 同一口径），认不出的历史值由 panelAppearance.ts 的 normalizePanelShape 兜住
   panel_shape_style: PanelShapeStyle
+  // v4.0 主题引擎的两个全站键（服务端注册项同名，category branding，仅网页端生效），放在「面板外观」卡里编辑。
+  // 背景效果：theme / plain / aurora / grid / image（认不出的历史值按字符串原样留着，见 resolveConfigOptions）
+  panel_background_effect: string
+  // 背景图片 data URL，背景效果为 image 时使用；'' = 没有
+  panel_background_image: string
+  // 其余 5 个 panel_* 键（风格、主色、玻璃模糊、密度、自定义 CSS）在主题工坊里编辑，
+  // 不进这张表单，由 systemConfigSchema.ts 的 CONFIG_KEYS_RENDERED_ELSEWHERE 从兜底区排除
   backup_schedule_enabled: boolean
   backup_schedule_frequency: 'daily' | 'weekly' | 'monthly' | string
   backup_schedule_time: string

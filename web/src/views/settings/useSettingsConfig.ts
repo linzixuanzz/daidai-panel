@@ -3,6 +3,7 @@ import { configApi, type SystemConfigMap } from '@/api/system'
 import { ElMessage } from 'element-plus'
 import { applyPanelAppearance, type PanelAppearanceSettings } from '@/utils/panelAppearance'
 import type { PanelShapeStyle } from '@/utils/panelSettings'
+import { useThemeStore } from '@/stores/theme'
 import type { SettingsConfigForm } from './types'
 import {
   buildConfigDraftWrites,
@@ -14,7 +15,7 @@ import {
   type ParsedSystemConfigItem
 } from './systemConfigSchema'
 
-const logBackgroundImageMaxBytes = 10 * 1024 * 1024
+export const logBackgroundImageMaxBytes = 10 * 1024 * 1024
 const logBackgroundImageTargetDataUrlBytes = 1600 * 1024
 const logBackgroundImageMaxDimensions = [1920, 1600, 1280, 1024, 900, 768, 640]
 const logBackgroundImageQualities = [0.82, 0.72, 0.62, 0.52, 0.42, 0.34, 0.28]
@@ -49,7 +50,10 @@ function canvasToDataURL(canvas: HTMLCanvasElement, mimeType: string, quality: n
   return dataUrl
 }
 
-async function compressLogBackgroundImage(file: File) {
+// 日志背景图与 v4.0 的页面背景图（panel_background_image）共用这一套压缩与大小限制（design §1.3）。
+// 导出给「面板外观」卡（components/SystemConfigCard.vue）与主题工坊（components/ThemeStudio.vue）的背景图上传复用，
+// 不在那边另抄一份
+export async function compressLogBackgroundImage(file: File) {
   const originalDataUrl = await readFileAsDataURL(file)
   if (getTextBytes(originalDataUrl) <= logBackgroundImageTargetDataUrlBytes) {
     return { dataUrl: originalDataUrl, compressed: false }
@@ -161,7 +165,10 @@ export function useSettingsConfig() {
     editor_background_color: '',
     log_background_color: '',
     log_background_image: '',
-    panel_shape_style: 'square',
+    // v4.0 起服务端默认是 theme（跟随主题），旧库升级时也会被一次性迁移成 theme
+    panel_shape_style: 'theme',
+    panel_background_effect: 'theme',
+    panel_background_image: '',
     backup_schedule_enabled: false,
     backup_schedule_frequency: 'daily',
     backup_schedule_time: '03:00',
@@ -303,7 +310,9 @@ export function useSettingsConfig() {
         log_background_image: readConfigString(cfgs, 'log_background_image', ''),
         // 按字符串原样读：认不出的历史值要留在下拉里给用户看到（见 resolveConfigOptions），
         // 应用到页面时由 normalizePanelShape 忽略，不会被拍回直角
-        panel_shape_style: readConfigString(cfgs, 'panel_shape_style', 'square') as PanelShapeStyle,
+        panel_shape_style: readConfigString(cfgs, 'panel_shape_style', 'theme') as PanelShapeStyle,
+        panel_background_effect: readConfigString(cfgs, 'panel_background_effect', 'theme'),
+        panel_background_image: readConfigString(cfgs, 'panel_background_image', ''),
         backup_schedule_enabled: readConfigBool(cfgs, 'backup_schedule_enabled', false),
         backup_schedule_frequency: readConfigString(cfgs, 'backup_schedule_frequency', 'daily'),
         backup_schedule_time: readConfigString(cfgs, 'backup_schedule_time', '03:00'),
@@ -394,18 +403,29 @@ export function useSettingsConfig() {
       const val = (configForm.value as any)[key]
       next[key] = typeof val === 'boolean' ? (val ? 'true' : 'false') : String(val ?? '')
     }
-    if (await submitConfigs(next)) {
+    const saved = await submitConfigs(next)
+    if (saved) {
       applyPanelAppearance(appearanceSnapshot())
     }
+    return saved
   }
 
   // 界面圆角随本卡保存：保存成功后 submitConfigs 已把新值记进 rawConfigs，
   // saveConfigKeys 重跑 applyPanelAppearance 时快照里就是刚保存的圆角，当场生效、不用刷新
-  function handleSaveSystemConfig() {
-    void saveConfigKeys([
+  async function handleSaveSystemConfig() {
+    const saved = await saveConfigKeys([
       'panel_title', 'timezone', 'panel_icon', 'editor_background_color', 'log_background_color', 'log_background_image',
-      'panel_shape_style'
+      'panel_shape_style', 'panel_background_effect', 'panel_background_image'
     ])
+    if (saved) {
+      // v4.0：圆角、背景效果、背景图同时是主题引擎的全站值，交给 theme store 更新首屏快照并当场重画背景。
+      // 取的是 rawConfigs 里刚保存成功的值（不是表单），与 appearanceSnapshot 同一口径
+      useThemeStore().applySiteSettings({
+        panel_shape_style: readConfigString(rawConfigs.value, 'panel_shape_style', '') as PanelShapeStyle,
+        panel_background_effect: readConfigString(rawConfigs.value, 'panel_background_effect', ''),
+        panel_background_image: readConfigString(rawConfigs.value, 'panel_background_image', '')
+      })
+    }
   }
 
   function handleSaveAlertConfig() {

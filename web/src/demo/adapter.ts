@@ -10,14 +10,20 @@ import {
   appendEnvToSortBucket,
   appendTaskRunLog,
   archiveDemoLogs,
+  buildAttention,
   buildDashboard,
   buildLogContent,
+  buildRecentRuns,
+  buildRunningTasks,
   buildScriptList,
   buildScriptTree,
   buildSystemBadges,
   buildSystemStats,
   buildTaskGroups,
+  buildTaskHealth,
   buildTaskLabels,
+  buildUpcoming,
+  clampQueryInt,
   db,
   estimateNextRun,
   executeDemoTaskScriptDeletion,
@@ -640,6 +646,8 @@ route('GET', '/system/dashboard', (ctx) => ({ data: buildDashboard(ctx.params) }
 route('GET', '/system/stats', () => ({ data: buildSystemStats() }))
 // 侧栏角标：同样是现算的，访客运行任务后运行中角标会真的跳动
 route('GET', '/system/badges', () => ({ data: buildSystemBadges() }))
+// v4.0「需要关注」：同样现算（连续失败的任务、拉取失败的订阅、安装失败的依赖），响应没有 data 包装
+route('GET', '/system/attention', () => buildAttention())
 
 // 类型是 SystemHealthSnapshot，页面直接读 .items，走兜底体会拿到 undefined
 function healthSnapshot() {
@@ -1161,6 +1169,24 @@ route('GET', '/tasks/groups', () => buildTaskGroups())
 // 口径见 db.ts 的 buildTaskLabels。
 route('GET', '/tasks/labels', () => buildTaskLabels())
 
+// ---- v4.0 任务洞察（响应都没有 data 包装，口径见 db.ts 里各 build* 的注释）----
+// 三个都是静态路径，进 exactRoutes，不会被 /tasks/:id 抢走；写在这里是沿用「静态段写在 /:id 前面」的约定。
+route('GET', '/tasks/upcoming', (ctx) => buildUpcoming(ctx.params))
+route('GET', '/tasks/running', () => buildRunningTasks())
+route('GET', '/tasks/recent-runs', (ctx) => {
+  // ids 的校验与文案逐字抄服务端 TaskHandler.RecentRuns：格式错或超过 100 个回 400，重复的只算一次
+  const ids: number[] = []
+  for (const part of (ctx.params['ids'] ?? '').split(',')) {
+    const text = part.trim()
+    if (!text) continue
+    const id = /^\d+$/.test(text) ? Number(text) : 0
+    if (!id) badRequest('ids 格式无效，应为逗号分隔的任务 ID')
+    if (!ids.includes(id)) ids.push(id)
+  }
+  if (ids.length > 100) badRequest('ids 一次最多 100 个')
+  return buildRecentRuns(ids, clampQueryInt(ctx.params['limit'], 20, 1, 30))
+})
+
 route('POST', '/tasks/views', (ctx) => {
   const body = bodyObject(ctx)
   const current = db()
@@ -1564,6 +1590,8 @@ route('GET', '/tasks/:id/live-logs', (ctx) => {
     status: task.status,
   }
 })
+
+route('GET', '/tasks/:id/health', (ctx) => buildTaskHealth(requireTask(ctx).id, ctx.params))
 
 route('GET', '/tasks/:id/stats', (ctx) => {
   const task = requireTask(ctx)

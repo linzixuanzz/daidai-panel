@@ -353,7 +353,7 @@ function handleSubmit() {
           </el-form-item>
           <el-form-item label="执行命令" required>
             <el-input v-model="form.command" placeholder="如: script.py 或 python3 script.py" />
-            <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px">
+            <div style="font-size: 12px; color: var(--dd-text-2); margin-top: 4px">
               支持 task 脚本名 格式,自动根据扩展名选择解释器 (.py/.js/.ts/.sh)
             </div>
           </el-form-item>
@@ -369,7 +369,7 @@ function handleSubmit() {
             </el-select>
             <div
               v-if="selectedPythonRuntimeMessage"
-              style="font-size: 12px; color: var(--el-color-warning); margin-top: 4px"
+              style="font-size: 12px; color: var(--dd-warn-ink); margin-top: 4px"
             >
               {{ selectedPythonRuntimeMessage }}
             </div>
@@ -388,7 +388,7 @@ function handleSubmit() {
             <StopScheduleInput v-model="form.stop_schedule" />
           </el-form-item>
           <el-form-item v-else label="执行说明">
-            <div style="font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.7">
+            <div style="font-size: 12px; color: var(--dd-text-2); line-height: 1.7">
               <template v-if="form.task_type === 'manual'">
                 不自动调度，仅在你手动点击“运行”或批量运行时执行。
               </template>
@@ -433,7 +433,7 @@ function handleSubmit() {
         <el-form :model="form" :label-width="dialogFullscreen ? 'auto' : '120px'" :label-position="dialogFullscreen ? 'top' : 'right'">
           <el-form-item label="超时(秒)">
             <el-input-number v-model="form.timeout" :min="0" :max="604800" />
-            <div v-if="form.timeout === 0" style="font-size: 11px; color: var(--el-color-warning); margin-top: 4px">
+            <div v-if="form.timeout === 0" style="font-size: 11px; color: var(--dd-warn-ink); margin-top: 4px">
               设置为 0 表示永不超时，任务将持续运行直到手动停止或定时停止。
             </div>
           </el-form-item>
@@ -475,7 +475,7 @@ function handleSubmit() {
           </el-form-item>
           <el-form-item label="成功时通知">
             <el-switch v-model="form.notify_on_success" />
-            <span style="font-size: 12px; color: var(--el-text-color-secondary); margin-left: 8px">任务执行成功后发送通知</span>
+            <span style="font-size: 12px; color: var(--dd-text-2); margin-left: 8px">任务执行成功后发送通知</span>
           </el-form-item>
           <el-form-item label="通知渠道">
             <div style="width: 100%">
@@ -493,7 +493,7 @@ function handleSubmit() {
                   :value="channel.id"
                 />
               </el-select>
-              <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px">
+              <div style="font-size: 12px; color: var(--dd-text-2); margin-top: 4px">
                 可绑定单个通知渠道；留空时按广播发送，也就是只发到「默认推送」渠道。
                 设为「绑定推送」的渠道不参与广播，必须在这里选中才会收到本任务的通知。
               </div>
@@ -501,7 +501,7 @@ function handleSubmit() {
           </el-form-item>
           <el-form-item label="终止时通知">
             <el-switch v-model="form.notify_on_abort" />
-            <span style="font-size: 12px; color: var(--el-text-color-secondary); margin-left: 8px">任务被手动停止或定时停止后发送终止通知；终止状态会单独统计，不再算成功或失败。</span>
+            <span style="font-size: 12px; color: var(--dd-text-2); margin-left: 8px">任务被手动停止或定时停止后发送终止通知；终止状态会单独统计，不再算成功或失败。</span>
           </el-form-item>
           <el-form-item label="允许多实例">
             <el-switch v-model="form.allow_multiple_instances" />
@@ -654,7 +654,7 @@ function handleSubmit() {
 .group-options__title {
   margin-bottom: 6px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .group-options__chips {
@@ -674,7 +674,7 @@ function handleSubmit() {
   max-width: 16em;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--dd-border-strong);
   // 标签类小表面 → control 档
   border-radius: var(--dd-radius-control);
   background: var(--el-fill-color-blank);
@@ -688,20 +688,20 @@ function handleSubmit() {
     border-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    color: var(--el-color-primary);
-    border-color: var(--el-color-primary-light-5);
-    background: var(--el-color-primary-light-9);
+    color: var(--dd-accent-ink);
+    border-color: color-mix(in srgb, var(--dd-accent) 50%, var(--dd-surface-solid));
+    background: color-mix(in srgb, var(--dd-accent) 10%, var(--dd-surface-solid));
   }
 
   &[aria-pressed='true'] {
-    color: var(--el-color-primary);
-    border-color: var(--el-color-primary);
-    background: var(--el-color-primary-light-9);
+    color: var(--dd-accent-ink);
+    border-color: var(--dd-accent);
+    background: color-mix(in srgb, var(--dd-accent) 10%, var(--dd-surface-solid));
   }
 
   // 负 offset 把焦点环画在 chip 内侧：限高滚动时外扩的环会被容器裁掉
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--el-color-primary) 45%, transparent);
+    outline: 2px solid var(--dd-accent-ring);
     outline-offset: -1px;
   }
 }
@@ -728,14 +728,14 @@ function handleSubmit() {
 
 .advanced-field-hint {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   line-height: 1.6;
 }
 
 .hooks-help {
   margin: 0 0 14px;
   padding: 10px 12px;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--dd-border);
   // 弹窗内的说明区块 → surface 档
   border-radius: var(--dd-radius-surface);
   background: var(--el-fill-color-lighter);
@@ -758,9 +758,9 @@ function handleSubmit() {
 
 // 「这不是沙箱」那条警示（#168）：沿用说明区块的版式，换成警告色，免得被当成普通说明扫过去
 .env-scope-warning {
-  border-color: var(--el-color-warning-light-5);
-  background: var(--el-color-warning-light-9);
-  color: var(--el-color-warning-dark-2);
+  border-color: color-mix(in srgb, var(--dd-warn) 50%, var(--dd-surface-solid));
+  background: color-mix(in srgb, var(--dd-warn) 10%, var(--dd-surface-solid));
+  color: var(--dd-warn-ink);
 }
 
 @media (max-width: 768px) {

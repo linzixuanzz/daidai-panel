@@ -183,7 +183,8 @@ async function handleKill(row: PanelProcess) {
 
 <template>
   <div class="processes-page dd-fixed-page dd-page-hide-heading">
-    <div class="toolbar">
+    <!-- 入场：全局 .dd-rise，内联 --dd-i 控制错落（工具条 0、列表 1） -->
+    <div class="toolbar dd-rise" style="--dd-i: 0">
       <div class="toolbar__left">
         <el-icon class="toolbar__icon"><Cpu /></el-icon>
         <span class="toolbar__tip">任务里用 <code>setsid nohup … &amp;</code> 拉起的进程会脱离任务继续运行，在这里查看和结束</span>
@@ -197,7 +198,7 @@ async function handleKill(row: PanelProcess) {
     <el-empty v-if="!supported" description="仅 Linux 部署支持" />
 
     <template v-else>
-      <div v-if="isMobile" class="dd-mobile-list">
+      <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 1">
         <div v-for="row in processes" :key="row.pid" class="dd-mobile-card">
           <div class="dd-mobile-card__header">
             <div class="dd-mobile-card__title-wrap">
@@ -238,7 +239,7 @@ async function handleKill(row: PanelProcess) {
         <el-empty v-if="!loading && processes.length === 0" :description="showAll ? '没有可显示的进程' : '没有任务拉起的后台进程'" />
       </div>
 
-      <div v-else class="table-card">
+      <div v-else class="table-card dd-spot dd-rise" style="--dd-i: 1">
         <el-table
           :data="processes"
           v-loading="loading"
@@ -296,7 +297,7 @@ async function handleKill(row: PanelProcess) {
   display: flex; justify-content: space-between; align-items: center; margin: 14px 0; gap: 12px; flex-wrap: wrap;
   &__left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
   &__right { display: flex; align-items: center; gap: 12px; }
-  &__icon { color: var(--el-color-primary); flex-shrink: 0; }
+  &__icon { color: var(--dd-accent-ink); flex-shrink: 0; }
   &__tip {
     font-size: 13px; line-height: 1.6; color: var(--el-text-color-secondary);
     code { font-family: var(--dd-font-mono); font-size: 12px; color: var(--el-text-color-regular); }

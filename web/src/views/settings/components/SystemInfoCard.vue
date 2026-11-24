@@ -24,7 +24,7 @@ async function handleCopyMachineCode(code: string) {
 </script>
 
 <template>
-  <el-card shadow="never" class="mt-card" v-if="systemInfo">
+  <el-card shadow="never" class="mt-card dd-spot dd-rise" style="--dd-i: 2" v-if="systemInfo">
     <template #header>
       <div class="card-header">
         <span class="card-title"><el-icon><InfoFilled /></el-icon> 系统信息</span>
@@ -134,15 +134,15 @@ async function handleCopyMachineCode(code: string) {
 }
 
 .usage-success {
-  color: var(--el-color-success);
+  color: var(--dd-ok-ink);
 }
 
 .usage-warning {
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
 }
 
 .usage-danger {
-  color: var(--el-color-danger);
+  color: var(--dd-err-ink);
 }
 
 @media (max-width: 768px) {

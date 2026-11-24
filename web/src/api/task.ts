@@ -110,6 +110,87 @@ export interface TaskLabelSummary {
   count: number
 }
 
+// ---- v4.0 任务洞察接口（design §4.2 ~ §4.5）----
+// 四个接口的响应体都【没有】外层 data 包装，字段与 server/service/task_insights.go 的 json tag 一一对应。
+// 日志状态码沿用 model/task_log.go：0 成功 / 1 失败 / 2 运行中 / 3 已中止。
+
+/** GET /tasks/upcoming：未来 N 小时的调度点 */
+export interface TaskUpcomingTask {
+  id: number
+  name: string
+  /** Unix 秒，升序 */
+  times: number[]
+}
+
+export interface TaskUpcoming {
+  /** 窗口起止，Unix 秒 */
+  from: number
+  to: number
+  tasks: TaskUpcomingTask[]
+  /** 每小时的调度次数，长度 = hours */
+  hourly: number[]
+  /** 总点数超过 5000 被截断时为 true（不截断时字段缺省） */
+  truncated?: boolean
+}
+
+/** GET /tasks/:id/health：按天聚合 + 统计 + 最近 20 次 */
+export interface TaskHealthDay {
+  /** YYYY-MM-DD（服务器本地时区）；没有运行的天也会补 0 行 */
+  date: string
+  total: number
+  failed: number
+  /** 秒 */
+  avg_duration: number
+}
+
+export interface TaskHealthStats {
+  runs: number
+  /** 百分比，0~100 */
+  success_rate: number
+  /** 秒 */
+  avg_duration: number
+  /** 秒 */
+  p90_duration: number
+}
+
+export interface TaskHealthRun {
+  status: number
+  /** 秒；还在运行或没记录时为 null */
+  duration: number | null
+  started_at: string
+}
+
+export interface TaskHealth {
+  days: TaskHealthDay[]
+  stats: TaskHealthStats
+  /** 最近 20 次，旧 → 新 */
+  recent: TaskHealthRun[]
+}
+
+/** GET /tasks/recent-runs：多个任务的最近 N 次，键是任务 id 的字符串形式，每个数组旧 → 新 */
+export interface TaskRecentRun {
+  status: number
+  duration: number | null
+}
+
+export interface TaskRecentRuns {
+  runs: Record<string, TaskRecentRun[]>
+}
+
+/** GET /tasks/running：运行中的任务与它正在写的那条日志 */
+export interface TaskRunningItem {
+  task_id: number
+  name: string
+  /** 极短的竞态窗口里（任务已标记运行、日志行还没建好）为 null */
+  log_id: number | null
+  /** 同上情况下回落到任务的 last_run_at；都没有时为 null */
+  started_at: string | null
+}
+
+export interface TaskRunning {
+  items: TaskRunningItem[]
+}
+
 export const taskApi = {
   // 列表项，以及启用 / 禁用、新建 / 编辑 / 复制接口响应里的 data，从 v3.2.8 起多一个 enabled: boolean（启用开关位，与运行态无关，issue #133）。
   // 老后端不下发，页面用 taskLabels.ts 的 isTaskSwitchOn 读它，缺失时回退 status !== 0。
@@ -232,6 +313,33 @@ export const taskApi = {
 
   stats(id: number, days?: number) {
     return request.get(`/tasks/${id}/stats`, { params: { days } }) as Promise<any>
+  },
+
+  // ---- v4.0 任务洞察（viewer+，类型见本文件上方 TaskUpcoming 等）----
+
+  /** F4 未来 N 小时调度（hours 1~48，不传服务端按 24） */
+  upcoming(hours?: number) {
+    return request.get('/tasks/upcoming', { params: hours ? { hours } : undefined }) as Promise<TaskUpcoming>
+  },
+
+  /** F5 健康画像（days 7~180，不传服务端按 91） */
+  health(id: number, days?: number) {
+    return request.get(`/tasks/${id}/health`, { params: days ? { days } : undefined }) as Promise<TaskHealth>
+  },
+
+  /** F5 任务表「最近 20 次」：一次取一页（ids ≤ 100，limit ≤ 30）。ids 为空时不发请求，直接返回空结果 */
+  recentRuns(ids: number[], limit?: number) {
+    if (ids.length === 0) {
+      return Promise.resolve({ runs: {} } as TaskRecentRuns)
+    }
+    return request.get('/tasks/recent-runs', {
+      params: { ids: ids.join(','), ...(limit ? { limit } : {}) },
+    }) as Promise<TaskRecentRuns>
+  },
+
+  /** F6 运行中浮窗的数据源 */
+  running() {
+    return request.get('/tasks/running') as Promise<TaskRunning>
   },
 
   // extra 只在批量删除且勾了「同时删除脚本」时才传；不传时 body 仍是 { ids, action }，与改动前逐字节一致。

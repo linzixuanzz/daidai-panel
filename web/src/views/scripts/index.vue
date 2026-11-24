@@ -304,7 +304,7 @@ async function handleCancelEdit() {
 
 <style scoped lang="scss">
 .scripts-page {
-  --scripts-accent: #3b82f6;
+  --scripts-accent: var(--dd-accent);
   --scripts-surface: var(--el-bg-color);
   --scripts-surface-muted: color-mix(in srgb, var(--el-fill-color) 70%, transparent);
   --scripts-border-soft: var(--el-border-color-lighter);

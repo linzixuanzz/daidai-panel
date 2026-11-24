@@ -599,7 +599,8 @@ watch(
   padding: 4px;
   // 按钮组的灰底槽 → control 档（与槽内按钮同档，圆角一致才不会露出内外错位的角）
   border-radius: var(--dd-radius-control);
-  background: color-mix(in srgb, var(--el-fill-color-light) 84%, transparent);
+  // 半透明凹槽令牌：明暗两档各自有值，不再需要单独的暗色补丁
+  background: var(--dd-surface-3);
 }
 
 .page-header {
@@ -669,14 +670,14 @@ watch(
       color var(--dd-motion-fast) var(--dd-ease-standard);
 
     &:hover {
-      // 未选中项 hover 时用品牌色提示
-      color: var(--el-color-primary);
+      // 未选中项 hover 时用品牌色提示（文字用墨色）
+      color: var(--dd-accent-ink);
     }
 
     &.is-active {
       font-weight: 600;
-      // 选中项仅用品牌色文字，配合底部下划线指示条
-      color: var(--el-color-primary);
+      // 选中项仅用品牌色文字（墨色），配合底部下划线指示条
+      color: var(--dd-accent-ink);
     }
   }
 
@@ -747,15 +748,6 @@ watch(
 
   :deep(.el-tabs__item) {
     white-space: nowrap;
-  }
-}
-</style>
-
-
-<style lang="scss">
-html.dark {
-  .settings-page .settings-toolbar {
-    background: color-mix(in srgb, var(--el-fill-color-light) 72%, black);
   }
 }
 </style>

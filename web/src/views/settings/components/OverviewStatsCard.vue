@@ -7,7 +7,7 @@ defineProps<{
 </script>
 
 <template>
-  <el-card shadow="never" class="stats-card" v-if="systemStats">
+  <el-card shadow="never" class="stats-card dd-spot dd-rise" style="--dd-i: 1" v-if="systemStats">
     <template #header>
       <div class="card-header">
         <span class="card-title"><el-icon><InfoFilled /></el-icon> 系统概况</span>
@@ -89,12 +89,13 @@ defineProps<{
   letter-spacing: -0.01em;
 }
 
+// 大号数字是文字，用墨色令牌（原来写死的绿 / 橙在浅色主题下对比度只有 2 左右）
 .color-success {
-  color: #10b981;
+  color: var(--dd-ok-ink);
 }
 
 .color-warning {
-  color: #f59e0b;
+  color: var(--dd-warn-ink);
 }
 
 @media (max-width: 768px) {

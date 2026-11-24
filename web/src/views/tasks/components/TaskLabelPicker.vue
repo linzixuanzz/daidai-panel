@@ -295,7 +295,7 @@ defineExpose({ commitPending })
 .label-picker__add {
   flex-shrink: 0;
   padding: 0 14px;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--dd-border-strong);
   // 按钮角色：桌面 = control 档，≤768 跟着移动端按钮档走
   border-radius: var(--dd-radius-button);
   background: var(--el-fill-color-blank);
@@ -309,19 +309,19 @@ defineExpose({ commitPending })
     border-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover:not(:disabled) {
-    color: var(--el-color-primary);
-    border-color: var(--el-color-primary-light-7);
-    background: var(--el-color-primary-light-9);
+    color: var(--dd-accent-ink);
+    border-color: color-mix(in srgb, var(--dd-accent) 30%, var(--dd-surface-solid));
+    background: color-mix(in srgb, var(--dd-accent) 10%, var(--dd-surface-solid));
   }
 
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--el-color-primary) 45%, transparent);
+    outline: 2px solid var(--dd-accent-ring);
     outline-offset: 1px;
   }
 
   &:disabled {
     border-color: var(--el-border-color-light);
-    color: var(--el-text-color-placeholder);
+    color: var(--dd-text-3);
     cursor: not-allowed;
   }
 }
@@ -329,7 +329,7 @@ defineExpose({ commitPending })
 .label-picker__pending,
 .label-picker__empty {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   // 很长的英文标签不能把手机全屏弹窗撑出横向滚动
   overflow-wrap: anywhere;
 }
@@ -341,7 +341,7 @@ defineExpose({ commitPending })
   gap: 8px;
   margin-bottom: 6px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 // 「全部 N 个 / 收起」：文字链观感，只有 focus-visible 的焦点环露出形状
@@ -351,18 +351,18 @@ defineExpose({ commitPending })
   border: none;
   border-radius: var(--dd-radius-control);
   background: transparent;
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
   transition: color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    color: var(--el-color-primary-light-3);
+    color: color-mix(in srgb, var(--dd-accent-ink) 75%, var(--dd-text));
   }
 
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--el-color-primary) 45%, transparent);
+    outline: 2px solid var(--dd-accent-ring);
     outline-offset: 1px;
   }
 }
@@ -385,7 +385,7 @@ defineExpose({ commitPending })
   max-width: 16em;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--dd-border-strong);
   // 标签类小表面 → control 档
   border-radius: var(--dd-radius-control);
   background: var(--el-fill-color-blank);
@@ -399,14 +399,14 @@ defineExpose({ commitPending })
     border-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    color: var(--el-color-primary);
-    border-color: var(--el-color-primary-light-5);
-    background: var(--el-color-primary-light-9);
+    color: var(--dd-accent-ink);
+    border-color: color-mix(in srgb, var(--dd-accent) 50%, var(--dd-surface-solid));
+    background: color-mix(in srgb, var(--dd-accent) 10%, var(--dd-surface-solid));
   }
 
   // 负 offset 把焦点环画在 chip 内侧：限高滚动时外扩的环会被容器裁掉
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--el-color-primary) 45%, transparent);
+    outline: 2px solid var(--dd-accent-ring);
     outline-offset: -1px;
   }
 }

@@ -404,7 +404,7 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
                 v-for="option in sortOptions"
                 :key="option.value"
                 :command="option.value"
-                :style="sortMode === option.value ? { color: 'var(--el-color-primary)', fontWeight: 600 } : undefined"
+                :style="sortMode === option.value ? { color: 'var(--dd-accent-ink)', fontWeight: 600 } : undefined"
               >
                 {{ option.label }}
               </el-dropdown-item>
@@ -583,7 +583,7 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
 
 // issue #144 / v3.3.2：这里原来是一块灰底圆角槽（padding + border-radius + color-mix 底色），
 // 实测槽底色把刷新按钮衬得像被额外「框」了一层，已收成纯排布容器（槽没底色后圆角只是死声明，一并删）。
-// 暗色那份底色覆盖在文件末尾的 html.dark 块里，删这里就必须一起删，否则是「浅色干净、暗色还留着」的半主题 bug。
+// v4.0 起本文件的 html.dark 暗色补丁已整体删除：分区线与执行器卡片底色都由主题令牌决定明暗。
 // 编辑器侧的同构槽 ScriptsEditorPane 的 .hero-actions 同口径处理
 .sidebar-toolbar-actions {
   display: flex;
@@ -628,7 +628,7 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
   transition: color 0.15s, background 0.15s, border-color 0.15s;
 
   &:hover {
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     border-color: color-mix(in srgb, var(--el-color-primary) 40%, var(--el-border-color-lighter));
     background: color-mix(in srgb, var(--el-color-primary) 6%, transparent);
   }
@@ -750,12 +750,12 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
   transition: background 0.15s, border-color 0.15s;
 
   &:hover {
-    background: color-mix(in srgb, var(--scripts-accent, #22c55e) 8%, var(--el-fill-color-light));
-    border-color: color-mix(in srgb, var(--scripts-accent, #22c55e) 40%, var(--el-border-color-lighter));
+    background: color-mix(in srgb, var(--scripts-accent, var(--dd-accent)) 8%, var(--el-fill-color-light));
+    border-color: color-mix(in srgb, var(--scripts-accent, var(--dd-accent)) 40%, var(--el-border-color-lighter));
   }
 
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--scripts-accent, #22c55e) 70%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--scripts-accent, var(--dd-accent)) 70%, transparent);
     outline-offset: 2px;
   }
 }
@@ -768,8 +768,8 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--scripts-accent, #22c55e);
-  background: color-mix(in srgb, var(--scripts-accent, #22c55e) 12%, transparent);
+  color: var(--scripts-accent, var(--dd-accent));
+  background: color-mix(in srgb, var(--scripts-accent, var(--dd-accent)) 12%, transparent);
   flex-shrink: 0;
 }
 
@@ -812,20 +812,3 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
 }
 </style>
 
-
-<style lang="scss">
-html.dark {
-  /* 暗色卡面/边框由 --el-bg-color 与 index.vue 的卡片样式自动适配，
-     此处仅保留内部分区线与执行器卡片底色的暗色覆盖。
-     issue #144 / v3.3.2：工具条按钮组 .sidebar-toolbar-actions 的槽底色已在浅色侧删掉，
-     这里的暗色覆盖同步移除，别再往回加 */
-  .scripts-sidebar .sidebar-top,
-  .scripts-sidebar .sidebar-footer {
-    border-color: rgba(255,255,255,0.08);
-  }
-
-  .scripts-sidebar .runner-card {
-    background: color-mix(in srgb, var(--el-bg-color-overlay) 92%, black);
-  }
-}
-</style>

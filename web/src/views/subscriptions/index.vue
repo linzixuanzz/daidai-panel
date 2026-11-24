@@ -1386,7 +1386,7 @@ function viewLogDetail(log: any) {
         v3.3.2 起不再贴屏幕边缘：贴边时横滑到尽头会吃掉 iOS 的边缘返回手势，留白后才让得开。
         它是「已禁用」唯一的筛选入口，所以保留。
     -->
-    <div v-if="isMobile" class="subscription-mobile-toolbar">
+    <div v-if="isMobile" class="subscription-mobile-toolbar dd-rise" style="--dd-i: 0">
       <div v-if="selectedIds.length === 0" class="dd-mobile-toolbar">
         <el-input
           v-model="keyword"
@@ -1451,7 +1451,7 @@ function viewLogDetail(log: any) {
       </div>
     </div>
 
-    <div v-else class="toolbar">
+    <div v-else class="toolbar dd-rise" style="--dd-i: 0">
       <div class="toolbar__left">
         <div class="status-tabs">
           <button
@@ -1504,7 +1504,7 @@ function viewLogDetail(log: any) {
       </div>
     </div>
 
-    <div v-if="isMobile" class="dd-mobile-list">
+    <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 1">
       <div
         v-for="row in filteredSubList"
         :key="row.id"
@@ -1664,7 +1664,7 @@ function viewLogDetail(log: any) {
       />
     </div>
 
-    <div v-else class="table-card">
+    <div v-else class="table-card dd-spot dd-rise" style="--dd-i: 1">
       <el-table
         :data="filteredSubList"
         v-loading="loading"
@@ -2660,7 +2660,7 @@ function viewLogDetail(log: any) {
   }
   &.active {
     background: var(--el-bg-color);
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     border-color: var(--el-border-color-lighter);
     font-weight: 600;
   }
@@ -2925,7 +2925,7 @@ function viewLogDetail(log: any) {
   word-break: break-all;
 }
 .pull-running {
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3151,29 +3151,6 @@ function viewLogDetail(log: any) {
 }
 
 // ===== 入场动画 =====
-// 与定时任务页/执行日志页统一：只对卡片级容器（工具条 / 表格卡 / 移动列表）做克制的淡入上移 + 轻微错落；
-// 不给表格每一行或每张移动卡做 stagger。时长走令牌，prefers-reduced-motion 时令牌自动降为 1ms 即等效关闭。
-@keyframes dd-subs-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.toolbar,
-.subscription-mobile-toolbar,
-.table-card,
-.dd-mobile-list {
-  animation: dd-subs-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) both;
-}
-
-// 轻微错落：工具条先入，表格卡/移动列表略晚
-.table-card,
-.dd-mobile-list {
-  animation-delay: 60ms;
-}
+// v4.0 起改用全局 .dd-rise（styles/motion.scss，受动效档位控制）：模板里给工具条 / 表格卡 / 移动列表挂类，
+// 内联 --dd-i 控制错落。不给表格每一行或每张移动卡做 stagger。
 </style>

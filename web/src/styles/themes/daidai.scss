@@ -1,0 +1,110 @@
+// ============================================================================
+// 主题：呆呆（daidai）
+// ----------------------------------------------------------------------------
+// 亮色取自效果演示第 2 节：1.5px 粗黑描边 + 硬投影。
+// 暗色是新设计：深炭底 + 黄 / 蓝 / 橙，粗描边改浅色描边 + 浅色硬阴影。
+// 侧栏小人（SidebarCritters）由第二波 G1 按 data-dd-theme="daidai" 渲染，这里不提供开关令牌。
+// 写法约定见 classic.scss 文件头。
+// ============================================================================
+
+html[data-dd-theme="daidai"] {
+  color-scheme: light;
+  --dd-bg: #fff6df;
+  --dd-surface: #ffffff;
+  --dd-surface-solid: #ffffff;
+  --dd-surface-2: #fffaf0;
+  --dd-surface-3: #fff0c9;
+  --dd-overlay: #ffffff;
+  --dd-border: #1d1d1f;
+  --dd-border-strong: #1d1d1f;
+  --dd-border-width: 1.5px;
+  --dd-text: #1d1d1f;
+  --dd-text-2: #45454c;
+  --dd-text-3: #5d5d66;
+  --dd-accent: #1e7bff;
+  --dd-accent-2: #ff8a1f;
+  --dd-on-accent: #ffffff;
+  --dd-on-status: #ffffff;
+  --dd-ok: #14904c;
+  --dd-warn: #c27400;
+  --dd-err: #e5484d;
+  --dd-info: #1e7bff;
+  --dd-chart-ok: var(--dd-accent);
+  // 实心填充色覆盖（v4.0 验收返工）：上面的文字色（--dd-on-status / --dd-on-accent）在原色上不到 4.5:1
+  --dd-ok-solid: #158648;
+  --dd-warn-solid: #a66505;
+  --dd-err-solid: #cf4348;
+  --dd-btn-primary-bg: #1e71e6;
+  --dd-glass-blur: 0px;
+  --dd-shadow-card: 4px 4px 0 #1d1d1f;
+  --dd-shadow-card-hover: 6px 6px 0 #1d1d1f;
+  --dd-shadow-shell: 4px 4px 0 #1d1d1f;
+  --dd-text-glow: none;
+  --dd-theme-radius-control: 11px;
+  --dd-theme-radius-surface: 18px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 14px;
+  --dd-theme-radius-surface-mobile: 20px;
+  --dd-bg-blob-1: #ffe08a;
+  --dd-bg-blob-2: #bfe0ff;
+  --dd-bg-blob-3: #ffd0a8;
+  --dd-bg-blob-4: #fff1bf;
+  --dd-bg-blob-opacity: 0.6;
+  --dd-bg-grid-opacity: 0;
+  --dd-bg-grid-line: rgba(0, 0, 0, 0.05);
+  --dd-bg-noise-opacity: 0;
+  --dd-bg-noise-blend: multiply;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: var(--dd-font-ui);
+}
+
+html.dark[data-dd-theme="daidai"] {
+  color-scheme: dark;
+  --dd-bg: #17171a;
+  --dd-surface: #222226;
+  --dd-surface-solid: #222226;
+  --dd-surface-2: #2a2a2f;
+  --dd-surface-3: #33333a;
+  --dd-overlay: #26262b;
+  --dd-border: #e8e4d8;
+  --dd-border-strong: #f5f1e6;
+  --dd-border-width: 1.5px;
+  --dd-text: #f5f3ec;
+  --dd-text-2: #c9c6bc;
+  --dd-text-3: #a9a69c;
+  --dd-accent: #4d9bff;
+  --dd-accent-2: #ffa24a;
+  --dd-on-accent: #111113;
+  --dd-on-status: #111113;
+  --dd-ok: #3fcf7f;
+  --dd-warn: #ffc53d;
+  --dd-err: #ff6b6f;
+  --dd-info: #4d9bff;
+  --dd-chart-ok: var(--dd-accent);
+  // 复位亮色块里的实心色覆盖（亮色块在暗色下同样匹配，这里不写就会漏过来；暗色下状态色本身就够亮）
+  --dd-ok-solid: var(--dd-ok);
+  --dd-warn-solid: var(--dd-warn);
+  --dd-err-solid: var(--dd-err);
+  --dd-btn-primary-bg: var(--dd-accent);
+  --dd-glass-blur: 0px;
+  --dd-shadow-card: 4px 4px 0 rgba(245, 241, 230, 0.85);
+  --dd-shadow-card-hover: 6px 6px 0 rgba(245, 241, 230, 0.9);
+  --dd-shadow-shell: 4px 4px 0 rgba(245, 241, 230, 0.85);
+  --dd-text-glow: none;
+  --dd-theme-radius-control: 11px;
+  --dd-theme-radius-surface: 18px;
+  --dd-theme-radius-pill: 999px;
+  --dd-theme-radius-control-mobile: 14px;
+  --dd-theme-radius-surface-mobile: 20px;
+  --dd-bg-blob-1: #ffd54a;
+  --dd-bg-blob-2: #3b82f6;
+  --dd-bg-blob-3: #ff8a1f;
+  --dd-bg-blob-4: #fde68a;
+  --dd-bg-blob-opacity: 0.14;
+  --dd-bg-grid-opacity: 0;
+  --dd-bg-grid-line: rgba(255, 255, 255, 0.05);
+  --dd-bg-noise-opacity: 0;
+  --dd-bg-noise-blend: screen;
+  --dd-bg-scan-opacity: 0;
+  --dd-font-head: var(--dd-font-ui);
+}

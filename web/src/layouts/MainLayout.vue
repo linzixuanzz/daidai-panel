@@ -1,37 +1,37 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useBadgesStore } from '@/stores/badges'
+import { useUiStore } from '@/stores/ui'
+import { useAttentionStore } from '@/stores/attention'
+import { useRunningStore } from '@/stores/running'
+import { installDesktopNotify } from '@/utils/desktopNotify'
 import DdBadge from '@/components/ui/DdBadge.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
+import ThemeStudio from '@/components/ThemeStudio.vue'
+import RunningDock from '@/components/RunningDock.vue'
+import AttentionList from '@/components/AttentionList.vue'
+import ShortcutHelpDialog from '@/components/ShortcutHelpDialog.vue'
+import SidebarCritters from '@/components/SidebarCritters.vue'
 import { systemApi } from '@/api/system'
 import { loadPanelSettings as loadCachedPanelSettings } from '@/utils/panelSettings'
 import { reloadIfWebVersionStale } from '@/utils/chunkReload'
 import { warmMonacoOnEngineSwitch } from '@/utils/monacoWarmup'
 import { useResponsive } from '@/composables/useResponsive'
 import { preloadPanelRoutes, preloadRouteByPath } from '@/router'
+import { PANEL_MENU_GROUPS, GOTO_SHORTCUTS, findMenuItem, hasMinRole, type PanelMenuItem } from './menu'
 import {
   Bell,
-  Box,
-  Connection,
-  Cpu,
-  Document,
-  Download,
+  Brush,
   Expand,
   Fold,
-  Key,
   Monitor,
   Moon,
-  Odometer,
   Operation,
-  Setting,
-  SetUp,
+  Search,
   Sunny,
-  Tickets,
-  Timer,
-  User,
-  UserFilled,
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -39,13 +39,16 @@ const route = useRoute()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const badgesStore = useBadgesStore()
+const ui = useUiStore()
+const attentionStore = useAttentionStore()
+const runningStore = useRunningStore()
 const { isMobile } = useResponsive()
 const isCollapsed = ref(false)
 const drawerVisible = ref(false)
 const panelTitle = ref('呆呆面板')
 const panelIcon = ref('')
 const panelVersion = ref('')
-// 与侧栏菜单项总数一致（工作台 11 + 管理后台 4），v3.4.3 加「后台进程」时从 14 调到 15
+// keep-alive 上限：菜单里的路由页 14 个（主题工坊是抽屉不是页面）+ 留 1 个给 /dev/motion 这类不在菜单里的页
 const routeCacheMax = 15
 
 // 侧边栏 logo 的兜底图标。
@@ -56,56 +59,41 @@ const routeCacheMax = 15
 const defaultPanelIcon = `${import.meta.env.BASE_URL}favicon-512.webp`
 const panelIconSrc = computed(() => panelIcon.value || defaultPanelIcon)
 
-const roleLevel: Record<string, number> = {
-  viewer: 1,
-  operator: 2,
-  admin: 3,
-}
+// Mac 上搜索胶囊显示 ⌘ K，其余显示 Ctrl K（快捷键本身两种修饰键都认）
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent)
+const paletteKbd = isMac ? '⌘ K' : 'Ctrl K'
 
-function hasRole(minRole: string) {
-  const currentRole = authStore.user?.role
-  if (!currentRole) return false
-  return (roleLevel[currentRole] || 0) >= (roleLevel[minRole] || 0)
-}
+const canAccessAdmin = computed(() => hasMinRole(authStore.user?.role, 'admin'))
 
-const canAccessAdmin = computed(() => hasRole('admin'))
-
-const workspaceItems = [
-  { index: '/dashboard', title: '仪表板', icon: Odometer, minRole: 'viewer' },
-  { index: '/tasks', title: '定时任务', icon: Timer, minRole: 'viewer' },
-  // 「后台进程」（#176）紧跟在定时任务下面：看的都是任务拉起的进程
-  { index: '/processes', title: '后台进程', icon: Cpu, minRole: 'admin' },
-  { index: '/subscriptions', title: '订阅管理', icon: Download, minRole: 'operator' },
-  { index: '/envs', title: '环境变量', icon: Setting, minRole: 'operator' },
-  { index: '/config-file', title: '配置文件', icon: Document, minRole: 'admin' },
-  { index: '/logs', title: '执行日志', icon: Tickets, minRole: 'viewer' },
-  { index: '/scripts', title: '脚本管理', icon: Document, minRole: 'operator' },
-  { index: '/deps', title: '依赖管理', icon: Box, minRole: 'admin' },
-  { index: '/docs/api', title: '接口文档', icon: Connection, minRole: 'viewer' },
-  { index: '/profile', title: '个人设置', icon: User, minRole: 'viewer' },
-]
-
-const adminItems = [
-  { index: '/admin/settings', title: '系统设置', icon: SetUp, minRole: 'admin' },
-  { index: '/admin/notifications', title: '通知渠道', icon: Bell, minRole: 'admin' },
-  { index: '/admin/users', title: '用户管理', icon: UserFilled, minRole: 'admin' },
-  { index: '/admin/open-api', title: 'Open API', icon: Key, minRole: 'admin' },
-]
-
-const filteredWorkspaceItems = computed(() =>
-  workspaceItems.filter(item => hasRole(item.minRole))
+// 菜单来自 layouts/menu.ts（与命令面板共用）。按角色过滤，过滤后为空的分组整组不显示
+const visibleGroups = computed(() =>
+  PANEL_MENU_GROUPS
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => hasMinRole(authStore.user?.role, item.minRole)),
+    }))
+    .filter(group => group.items.length > 0)
 )
 
-const filteredAdminItems = computed(() =>
-  canAccessAdmin.value ? adminItems : []
-)
+// 当前项：路径完全相同，或是它的子路径（例如将来的 /tasks/123）。有 action 的项（主题工坊）永远不是「当前页」
+function isItemActive(item: PanelMenuItem) {
+  if (!item.path) return false
+  return route.path === item.path || route.path.startsWith(`${item.path}/`)
+}
 
-const activeMenu = computed(() => route.path)
+const activeKey = computed(() => {
+  for (const group of visibleGroups.value) {
+    const found = group.items.find(isItemActive)
+    if (found) return found.key
+  }
+  return ''
+})
 
 const preloadableMenuPaths = computed(() =>
-  [...filteredWorkspaceItems.value, ...filteredAdminItems.value]
-    .map(item => item.index)
-    .filter(index => index !== route.path)
+  visibleGroups.value
+    .flatMap(group => group.items)
+    .map(item => item.path)
+    .filter((path): path is string => !!path && path !== route.path)
 )
 
 const breadcrumb = computed(() => {
@@ -114,6 +102,9 @@ const breadcrumb = computed(() => {
   const title = route.meta.title as string || ''
   return { section, title }
 })
+
+// 呆呆主题的侧栏小人：这是「内容」差异（多渲染一个组件），不是样式分支，所以允许按主题名判断
+const showCritters = computed(() => themeStore.preset === 'daidai' && !isCollapsed.value)
 
 // 主题三档（v3.3.2，issue #145）：跟随系统时显示显示器图标，与「明亮/暗夜」两个显式档区分开。
 // 这里的图标必须【局部 import】：themeIcon 是 JS computed 返回组件对象，
@@ -128,6 +119,12 @@ const themeTitle = computed(() => {
   return themeStore.isDark ? '暗夜 · 点击切换明暗' : '明亮 · 点击切换明暗'
 })
 
+// 顶栏铃铛角标 = 「需要关注」条目数（服务端已按角色裁剪，前端再合并「有新版本」）
+const attentionCount = computed(() => attentionStore.count)
+const attentionCountText = computed(() => (attentionCount.value > 99 ? '99+' : String(attentionCount.value)))
+// 运行中胶囊：为 0 时整个隐藏
+const runningCount = computed(() => runningStore.count)
+
 /**
  * 侧栏菜单角标。
  *
@@ -137,13 +134,43 @@ const themeTitle = computed(() => {
  *
  * 刻意【不】给每个菜单都挂数字：角标是打断，全挂满等于全不挂，用户会直接学会忽略它。
  */
-function badgeOf(path: string) {
-  return badgesStore.menuBadges[path]
+function badgeOf(item: PanelMenuItem) {
+  return item.path ? badgesStore.menuBadges[item.path] : undefined
 }
+
+// ==================== 侧栏当前项指示条 ====================
+// 一个绝对定位的元素，按当前项的 offsetTop / offsetHeight 用 --dd-spring 滑过去（design §3）。
+// 第一次定位不带过渡（否则每次进页面都从顶上滑下来），之后才打开过渡。
+const navRef = ref<HTMLElement | null>(null)
+const indicator = ref({ top: 0, height: 40, visible: false })
+const indicatorAnimated = ref(false)
+
+function placeIndicator() {
+  const nav = navRef.value
+  if (!nav) return
+  const active = nav.querySelector<HTMLElement>('.nav-item.is-active')
+  if (!active) {
+    // 当前页不在菜单里（例如 /dev/motion）：指示条原地淡出
+    indicator.value = { ...indicator.value, visible: false }
+    return
+  }
+  indicator.value = { top: active.offsetTop, height: active.offsetHeight, visible: true }
+  if (!indicatorAnimated.value) {
+    window.requestAnimationFrame(() => {
+      indicatorAnimated.value = true
+    })
+  }
+}
+
+watch([activeKey, isCollapsed, visibleGroups, isMobile], () => {
+  void nextTick(placeIndicator)
+})
 
 // 切到 Monaco 引擎时立即预热（#133，utils/monacoWarmup.ts）。挂在布局上而不是某个编辑器页：
 // 引擎可能在任一编辑器页的齿轮菜单里切，布局是它们登录后一直在的共同祖先。
 let stopEngineSwitchWarmup: (() => void) | null = null
+// 桌面通知（F10）的清理函数：installDesktopNotify() 返回
+let stopDesktopNotify: (() => void) | null = null
 
 onMounted(() => {
   loadPanelSettings()
@@ -155,14 +182,28 @@ onMounted(() => {
   stopEngineSwitchWarmup = warmMonacoOnEngineSwitch()
   // 只在布局挂上之后才开始轮询：登录页不该去打受保护的接口
   badgesStore.start()
+  attentionStore.start()
+  runningStore.start()
+  stopDesktopNotify = installDesktopNotify()
+  // 全站唯一的全局快捷键入口（F9，handoff §8）。其他组件不要再挂全局 keydown
+  window.addEventListener('keydown', handleGlobalKeydown)
+  void nextTick(placeIndicator)
 })
 
 onBeforeUnmount(() => {
   // 退出登录会卸载整个布局。不停表的话定时器会继续打 /system/badges，
-  // 每次都 401，把用户刚跳到的登录页反复推一遍。
+  // 每次都 401，把用户刚跳到的登录页反复推一遍。下面两个轮询同理。
   badgesStore.stop()
+  attentionStore.stop()
+  runningStore.stop()
+  stopDesktopNotify?.()
+  stopDesktopNotify = null
   stopEngineSwitchWarmup?.()
   stopEngineSwitchWarmup = null
+  window.removeEventListener('keydown', handleGlobalKeydown)
+  if (gotoTimer) window.clearTimeout(gotoTimer)
+  // 浮层开关在 store 里，布局卸载（退出登录）后不清的话，下次登录一进来命令面板 / 浮窗还开着
+  ui.closeAll()
 })
 
 watch(isMobile, (mobile) => {
@@ -177,14 +218,19 @@ watch(() => authStore.user?.role, () => {
   scheduleMenuPreload()
 })
 
-function handleMenuSelect(index: string) {
-  preloadPage(index)
-  router.push(index)
+function handleMenuClick(item: PanelMenuItem) {
   if (isMobile.value) drawerVisible.value = false
+  if (item.action === 'theme-studio') {
+    ui.openStudio()
+    return
+  }
+  if (!item.path) return
+  preloadPage(item.path)
+  router.push(item.path)
 }
 
-function preloadPage(index: string) {
-  void preloadRouteByPath(index)
+function preloadPage(path?: string) {
+  if (path) void preloadRouteByPath(path)
 }
 
 function scheduleMenuPreload() {
@@ -202,6 +248,111 @@ function toggleSidebar() {
 
 async function handleLogout() {
   await authStore.logout()
+}
+
+// ==================== F9 全局快捷键 ====================
+// 规则（design §5 F9 + handoff §8）：
+//   - Ctrl/⌘ K：开关命令面板。在输入框里也生效；焦点在 Monaco / CodeMirror 里时【不拦截】，交给编辑器。
+//   - g 后接字母：跳页（映射见 menu.ts 的 GOTO_SHORTCUTS）；? 打开帮助；Esc 关掉全部浮层。
+//   - 输入框、可编辑区、代码编辑器里一律不触发单键快捷键（g / ? / Esc），放心打字。
+//   - 有 EP 弹窗 / 抽屉开着时也不触发 g / ?（不在弹窗背后偷偷换页）；Esc 照常交给弹窗自己处理。
+let gotoPending = false
+let gotoTimer = 0
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false
+  if (target instanceof HTMLElement && target.isContentEditable) return true
+  return !!target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"], .monaco-editor, .cm-editor')
+}
+
+function hasOpenOverlay() {
+  // 与 global.scss 锁滚动那条同一个判断：EP 关掉的遮罩会留在 DOM 里，只是 display: none
+  return !!document.querySelector('.el-overlay:not([style*="display: none"])')
+}
+
+// 是否开着「业务页自己的」EP 弹窗 / 抽屉（不算本布局挂的主题工坊抽屉与快捷键帮助弹窗）。
+// 命令面板 z-index 是 1990，EP 弹窗从 2000 起：业务弹窗开着时再打开命令面板，面板会被压在遮罩下面看不见。
+// 主题工坊、快捷键帮助由 ui store 管，打开面板时会被互斥关掉，所以不拦。
+function hasForeignOverlay() {
+  return Array.from(document.querySelectorAll('.el-overlay:not([style*="display: none"])')).some(
+    el => !el.classList.contains('dd-studio-mask') && !el.querySelector('.dd-shortcut-dialog')
+  )
+}
+
+function clearGotoPending() {
+  gotoPending = false
+  if (gotoTimer) window.clearTimeout(gotoTimer)
+  gotoTimer = 0
+}
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  // 输入法组字中（中文输入的回车 / 字母）一律不管
+  if (event.isComposing || event.keyCode === 229) return
+  // 挂在 window 的冒泡阶段：命令面板等组件先处理自己的按键（Esc 会 stopPropagation 根本到不了这里）；
+  // 已经被组件 preventDefault 的按键（包括面板自己处理的 Ctrl K）一律不再处理，避免开了又关
+  if (event.defaultPrevented) return
+  const target = event.target
+
+  // Ctrl/⌘ K
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') {
+    if (target instanceof Element && target.closest('.monaco-editor, .cm-editor')) return
+    event.preventDefault()
+    clearGotoPending()
+    // 业务弹窗开着时不打开（面板会被遮罩压住，见 hasForeignOverlay）；已经开着的面板照常可以关
+    if (!ui.paletteOpen && hasForeignOverlay()) return
+    // 快捷键帮助不参与 ui store 的互斥：从帮助里按 Ctrl K 时先关掉它，免得帮助弹窗（2000+）盖住面板
+    if (!ui.paletteOpen) ui.closeShortcutHelp()
+    ui.togglePalette()
+    return
+  }
+
+  // 以下都是单键快捷键：带修饰键的组合、组件自己已经处理过的按键、可编辑区里的按键都放过
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  if (isEditableTarget(target)) {
+    clearGotoPending()
+    return
+  }
+
+  if (event.key === 'Escape') {
+    clearGotoPending()
+    // EP 弹窗 / 抽屉（含主题工坊、快捷键帮助）开着时，Esc 归 EP 自己（它在 document 上先处理、关掉那一层）。
+    // 这里再 closeAll 会把运行中浮窗、铃铛弹出层一起关掉，一次 Esc 关两层。
+    if (hasOpenOverlay()) return
+    if (ui.paletteOpen || ui.studioOpen || ui.dockOpen || ui.attentionOpen || ui.shortcutHelpOpen) {
+      ui.closeAll()
+    }
+    return
+  }
+
+  if (hasOpenOverlay()) {
+    clearGotoPending()
+    return
+  }
+
+  // g 之后的第二个键
+  if (gotoPending) {
+    const key = event.key.toLowerCase()
+    clearGotoPending()
+    const shortcut = GOTO_SHORTCUTS.find(row => row.key === key)
+    const item = shortcut ? findMenuItem(shortcut.itemKey) : undefined
+    if (item?.path && hasMinRole(authStore.user?.role, item.minRole)) {
+      event.preventDefault()
+      if (route.path !== item.path) router.push(item.path)
+    }
+    return
+  }
+
+  if (event.key === 'g' && !event.shiftKey && !event.repeat) {
+    gotoPending = true
+    // 1.2 秒内没按第二个键就作废，免得之后随手按个 t 被当成「跳到任务」
+    gotoTimer = window.setTimeout(clearGotoPending, 1200)
+    return
+  }
+
+  if (event.key === '?') {
+    event.preventDefault()
+    ui.toggleShortcutHelp()
+  }
 }
 
 async function loadPanelSettings() {
@@ -233,129 +384,97 @@ async function loadVersion() {
 </script>
 
 <template>
-  <el-container class="layout-container">
-    <!-- Desktop Sidebar -->
-    <aside v-if="!isMobile" class="layout-aside" :class="{ 'is-collapsed': isCollapsed }">
+  <div class="layout-container" :class="{ 'is-mobile': isMobile, 'is-collapsed': isCollapsed && !isMobile }">
+    <!-- Desktop Sidebar：浮岛（四周 12px）+ 侧栏玻璃令牌；收起 / 展开由外层 grid 列宽做弹簧过渡 -->
+    <aside v-if="!isMobile" class="layout-aside" :class="{ 'is-collapsed': isCollapsed }" aria-label="主导航">
       <!-- Logo -->
-      <div class="sidebar-logo" :class="{ 'is-collapsed': isCollapsed }">
-        <div class="logo-inner">
-          <div class="logo-icon-wrap">
-            <img :src="panelIconSrc" alt="logo" class="logo-icon" />
-          </div>
-          <template v-if="!isCollapsed">
-            <span class="logo-title">{{ panelTitle }}</span>
-            <span v-if="panelVersion" class="logo-version">v{{ panelVersion }}</span>
-          </template>
-        </div>
+      <div class="sidebar-logo">
+        <img :src="panelIconSrc" alt="logo" class="logo-icon" />
+        <span class="logo-title">{{ panelTitle }}</span>
+        <span v-if="panelVersion" class="logo-version">v{{ panelVersion }}</span>
       </div>
 
       <!-- Scrollable navigation area -->
-      <div class="sidebar-nav">
-        <el-menu
-          :default-active="activeMenu"
-          :collapse="isCollapsed"
-          :collapse-transition="false"
-          background-color="transparent"
-          @select="handleMenuSelect"
-        >
-          <el-menu-item
-            v-for="item in filteredWorkspaceItems"
-            :key="item.index"
-            :index="item.index"
-            @mouseenter="preloadPage(item.index)"
-            @focusin="preloadPage(item.index)"
+      <nav ref="navRef" class="sidebar-nav">
+        <span
+          class="nav-indicator"
+          :class="{ 'is-animated': indicatorAnimated, 'is-hidden': !indicator.visible }"
+          :style="{ transform: `translateY(${indicator.top}px)`, height: `${indicator.height}px` }"
+          aria-hidden="true"
+        />
+        <div v-for="group in visibleGroups" :key="group.key" class="nav-group">
+          <div class="nav-group-label dd-nav-group-title">{{ group.title }}</div>
+          <el-tooltip
+            v-for="item in group.items"
+            :key="item.key"
+            :content="item.title"
+            placement="right"
+            :disabled="!isCollapsed"
+            :show-after="120"
           >
-            <el-icon>
-              <component :is="item.icon" />
-              <!-- 折叠态的角标：#title 插槽整体不渲染，数字没地方放，退化成图标右上角一个方点。
-                   显隐纯靠 CSS 的 .el-menu--collapse 祖先判断，不用 isCollapsed —— 移动端
-                   isCollapsed 恒为 true，但抽屉里的菜单没传 :collapse，实际是展开的，用 JS 状态会误判。 -->
-              <span
-                v-if="badgeOf(item.index)"
-                class="menu-collapsed-dot"
-                :class="`is-${badgeOf(item.index)!.level}`"
-              />
-            </el-icon>
-            <template #title>
-              <span class="menu-title-text">{{ item.title }}</span>
+            <button
+              type="button"
+              class="nav-item"
+              :class="{ 'is-active': item.key === activeKey }"
+              :aria-current="item.key === activeKey ? 'page' : undefined"
+              :aria-label="item.title"
+              @click="handleMenuClick(item)"
+              @mouseenter="preloadPage(item.path)"
+              @focusin="preloadPage(item.path)"
+            >
+              <span class="nav-icon">
+                <el-icon :size="18"><component :is="item.icon" /></el-icon>
+                <!-- 收起态的角标：标题与数字都藏起来了，退化成图标右上角一个圆点（显隐纯靠 CSS 的 .is-collapsed） -->
+                <span
+                  v-if="badgeOf(item)"
+                  class="nav-collapsed-dot"
+                  :class="`is-${badgeOf(item)!.level}`"
+                />
+              </span>
+              <span class="nav-label">{{ item.title }}</span>
               <DdBadge
-                v-if="badgeOf(item.index)"
-                :value="badgeOf(item.index)!.count"
-                :dot="badgeOf(item.index)!.dot"
-                :level="badgeOf(item.index)!.level"
+                v-if="badgeOf(item)"
+                class="nav-badge"
+                :value="badgeOf(item)!.count"
+                :dot="badgeOf(item)!.dot"
+                :level="badgeOf(item)!.level"
                 :title="item.title"
               />
-            </template>
-          </el-menu-item>
-        </el-menu>
+            </button>
+          </el-tooltip>
+        </div>
+      </nav>
 
-        <!-- Admin section -->
-        <template v-if="filteredAdminItems.length > 0">
-          <div v-if="!isCollapsed" class="nav-section-label">管理后台</div>
-          <div v-else class="nav-section-divider"></div>
-          <el-menu
-            :default-active="activeMenu"
-            :collapse="isCollapsed"
-            :collapse-transition="false"
-            background-color="transparent"
-            @select="handleMenuSelect"
-          >
-            <el-menu-item
-              v-for="item in filteredAdminItems"
-              :key="item.index"
-              :index="item.index"
-              @mouseenter="preloadPage(item.index)"
-              @focusin="preloadPage(item.index)"
-            >
-              <el-icon>
-                <component :is="item.icon" />
-                <span
-                  v-if="badgeOf(item.index)"
-                  class="menu-collapsed-dot"
-                  :class="`is-${badgeOf(item.index)!.level}`"
-                />
-              </el-icon>
-              <template #title>
-                <span class="menu-title-text">{{ item.title }}</span>
-                <DdBadge
-                  v-if="badgeOf(item.index)"
-                  :value="badgeOf(item.index)!.count"
-                  :dot="badgeOf(item.index)!.dot"
-                  :level="badgeOf(item.index)!.level"
-                  :title="item.title"
-                />
-              </template>
-            </el-menu-item>
-          </el-menu>
-        </template>
-      </div>
+      <!-- 呆呆主题：四个小人趴在墙头 -->
+      <SidebarCritters v-if="showCritters" />
 
-      <!-- User card -->
-      <div class="sidebar-user" :class="{ 'is-collapsed': isCollapsed }">
-        <div class="user-card-inner" @click="router.push('/profile')">
+      <!-- User card + collapse toggle -->
+      <div class="sidebar-foot">
+        <button type="button" class="user-card" :title="authStore.user?.username || 'User'" @click="router.push('/profile')">
           <img
             v-if="authStore.user?.avatar_url"
             :src="authStore.user.avatar_url"
             alt=""
             class="user-avatar"
           />
-          <div v-else class="user-avatar user-avatar--placeholder">
+          <span v-else class="user-avatar user-avatar--placeholder">
             {{ (authStore.user?.username || 'U').charAt(0).toUpperCase() }}
-          </div>
-          <template v-if="!isCollapsed">
-            <div class="user-info">
-              <span class="user-name">{{ authStore.user?.username || 'User' }}</span>
-              <span class="user-role">{{ authStore.user?.role === 'admin' ? '管理员' : '用户' }}</span>
-            </div>
-          </template>
-        </div>
+          </span>
+          <span class="user-info">
+            <span class="user-name">{{ authStore.user?.username || 'User' }}</span>
+            <span class="user-role">{{ authStore.user?.role === 'admin' ? '管理员' : '用户' }}</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          class="sidebar-collapse-btn"
+          :title="isCollapsed ? '展开菜单' : '收起菜单'"
+          :aria-label="isCollapsed ? '展开菜单' : '收起菜单'"
+          @click="toggleSidebar"
+        >
+          <el-icon :size="18"><component :is="isCollapsed ? Expand : Fold" /></el-icon>
+        </button>
       </div>
-
-      <!-- Collapse toggle -->
-      <button class="sidebar-collapse-btn" @click="toggleSidebar">
-        <el-icon><component :is="isCollapsed ? Expand : Fold" /></el-icon>
-        <span v-if="!isCollapsed" class="collapse-text">收起菜单</span>
-      </button>
     </aside>
 
     <!-- Mobile Drawer
@@ -372,118 +491,75 @@ async function loadVersion() {
       :show-close="false"
     >
       <div class="sidebar-logo mobile-logo">
-        <div class="logo-inner">
-          <div class="logo-icon-wrap">
-            <img :src="panelIconSrc" alt="logo" class="logo-icon" />
-          </div>
-          <span class="logo-title">{{ panelTitle }}</span>
-          <span v-if="panelVersion" class="logo-version">v{{ panelVersion }}</span>
+        <img :src="panelIconSrc" alt="logo" class="logo-icon" />
+        <span class="logo-title">{{ panelTitle }}</span>
+        <span v-if="panelVersion" class="logo-version">v{{ panelVersion }}</span>
+      </div>
+
+      <!-- 抽屉里不做滑动指示条：抽屉每次打开都是新画面，当前项直接给静态选中底色 -->
+      <nav class="sidebar-nav mobile-nav is-static">
+        <div v-for="group in visibleGroups" :key="group.key" class="nav-group">
+          <div class="nav-group-label dd-nav-group-title">{{ group.title }}</div>
+          <button
+            v-for="item in group.items"
+            :key="item.key"
+            type="button"
+            class="nav-item"
+            :class="{ 'is-active': item.key === activeKey }"
+            :aria-current="item.key === activeKey ? 'page' : undefined"
+            @click="handleMenuClick(item)"
+          >
+            <span class="nav-icon">
+              <el-icon :size="18"><component :is="item.icon" /></el-icon>
+            </span>
+            <span class="nav-label">{{ item.title }}</span>
+            <DdBadge
+              v-if="badgeOf(item)"
+              class="nav-badge"
+              :value="badgeOf(item)!.count"
+              :dot="badgeOf(item)!.dot"
+              :level="badgeOf(item)!.level"
+              :title="item.title"
+            />
+          </button>
         </div>
-      </div>
+      </nav>
 
-      <div class="sidebar-nav mobile-nav">
-        <el-menu
-          :default-active="activeMenu"
-          background-color="transparent"
-          @select="handleMenuSelect"
-        >
-          <el-menu-item
-            v-for="item in filteredWorkspaceItems"
-            :key="item.index"
-            :index="item.index"
-            @mouseenter="preloadPage(item.index)"
-            @focusin="preloadPage(item.index)"
-          >
-            <el-icon>
-              <component :is="item.icon" />
-              <!-- 折叠态的角标：#title 插槽整体不渲染，数字没地方放，退化成图标右上角一个方点。
-                   显隐纯靠 CSS 的 .el-menu--collapse 祖先判断，不用 isCollapsed —— 移动端
-                   isCollapsed 恒为 true，但抽屉里的菜单没传 :collapse，实际是展开的，用 JS 状态会误判。 -->
-              <span
-                v-if="badgeOf(item.index)"
-                class="menu-collapsed-dot"
-                :class="`is-${badgeOf(item.index)!.level}`"
-              />
-            </el-icon>
-            <template #title>
-              <span class="menu-title-text">{{ item.title }}</span>
-              <DdBadge
-                v-if="badgeOf(item.index)"
-                :value="badgeOf(item.index)!.count"
-                :dot="badgeOf(item.index)!.dot"
-                :level="badgeOf(item.index)!.level"
-                :title="item.title"
-              />
-            </template>
-          </el-menu-item>
-        </el-menu>
-
-        <template v-if="filteredAdminItems.length > 0">
-          <div class="nav-section-label">管理后台</div>
-          <el-menu
-            :default-active="activeMenu"
-            background-color="transparent"
-            @select="handleMenuSelect"
-          >
-            <el-menu-item
-              v-for="item in filteredAdminItems"
-              :key="item.index"
-              :index="item.index"
-              @mouseenter="preloadPage(item.index)"
-              @focusin="preloadPage(item.index)"
-            >
-              <el-icon>
-                <component :is="item.icon" />
-                <span
-                  v-if="badgeOf(item.index)"
-                  class="menu-collapsed-dot"
-                  :class="`is-${badgeOf(item.index)!.level}`"
-                />
-              </el-icon>
-              <template #title>
-                <span class="menu-title-text">{{ item.title }}</span>
-                <DdBadge
-                  v-if="badgeOf(item.index)"
-                  :value="badgeOf(item.index)!.count"
-                  :dot="badgeOf(item.index)!.dot"
-                  :level="badgeOf(item.index)!.level"
-                  :title="item.title"
-                />
-              </template>
-            </el-menu-item>
-          </el-menu>
-        </template>
-      </div>
-
-      <div class="sidebar-user">
-        <div class="user-card-inner" @click="router.push('/profile'); drawerVisible = false">
+      <div class="sidebar-foot">
+        <button type="button" class="user-card" @click="router.push('/profile'); drawerVisible = false">
           <img
             v-if="authStore.user?.avatar_url"
             :src="authStore.user.avatar_url"
             alt=""
             class="user-avatar"
           />
-          <div v-else class="user-avatar user-avatar--placeholder">
+          <span v-else class="user-avatar user-avatar--placeholder">
             {{ (authStore.user?.username || 'U').charAt(0).toUpperCase() }}
-          </div>
-          <div class="user-info">
+          </span>
+          <span class="user-info">
             <span class="user-name">{{ authStore.user?.username || 'User' }}</span>
             <span class="user-role">{{ authStore.user?.role === 'admin' ? '管理员' : '用户' }}</span>
-          </div>
-        </div>
+          </span>
+        </button>
       </div>
     </el-drawer>
 
     <!-- Main content area -->
-    <el-container class="layout-main-wrap">
+    <div class="layout-main-wrap">
       <!-- Header -->
       <header class="layout-header">
         <div class="header-left">
-          <button class="header-toggle-btn" @click="toggleSidebar">
+          <!-- 桌面端收起按钮在侧栏底部；这里只给移动端开抽屉 -->
+          <button
+            v-if="isMobile"
+            type="button"
+            class="header-toggle-btn dd-glass"
+            aria-label="打开导航"
+            @click="toggleSidebar"
+          >
             <el-icon :size="18"><Operation /></el-icon>
           </button>
-          <nav class="header-breadcrumb">
-            <span class="breadcrumb-sep">›</span>
+          <nav class="header-breadcrumb dd-glass" aria-label="当前位置">
             <span class="breadcrumb-section">{{ breadcrumb.section }}</span>
             <template v-if="breadcrumb.title">
               <span class="breadcrumb-sep">›</span>
@@ -492,38 +568,107 @@ async function loadVersion() {
           </nav>
         </div>
 
-        <div class="header-center"></div>
-
         <div class="header-right">
+          <!-- 1. 搜索胶囊：打开命令面板。移动端只剩图标 -->
           <button
-            class="header-icon-btn theme-toggle"
-            :title="themeTitle"
-            :aria-label="themeTitle"
-            @click="themeStore.toggleTheme"
+            type="button"
+            class="header-search dd-glass"
+            :aria-label="`搜索与快速操作（${paletteKbd}）`"
+            @click="ui.openPalette()"
           >
-            <el-icon :size="18"><component :is="themeIcon" /></el-icon>
+            <el-icon :size="16" class="search-icon"><Search /></el-icon>
+            <span class="search-placeholder">搜索任务、脚本、变量，或输入操作…</span>
+            <kbd class="search-kbd">{{ paletteKbd }}</kbd>
           </button>
-          <el-dropdown trigger="click">
-            <div class="header-user">
-              <img
-                v-if="authStore.user?.avatar_url"
-                :src="authStore.user.avatar_url"
-                alt=""
-                class="header-user-avatar"
-              />
-              <div v-else class="header-user-avatar header-user-avatar--placeholder">
-                {{ (authStore.user?.username || 'U').charAt(0).toUpperCase() }}
+
+          <!-- 2. 运行中胶囊：为 0 时隐藏，点开运行中浮窗 -->
+          <button
+            v-if="runningCount > 0"
+            type="button"
+            class="header-runcap dd-glass"
+            :class="{ 'is-open': ui.dockOpen }"
+            :aria-label="`${runningCount} 个任务运行中`"
+            :aria-expanded="ui.dockOpen"
+            @click="ui.toggleDock()"
+          >
+            <span class="runcap-dot" aria-hidden="true" />
+            <span class="runcap-num">{{ runningCount }}</span>
+            <span class="runcap-label">个运行中</span>
+          </button>
+
+          <!-- 3~6. 明暗 / 主题工坊 / 通知铃 / 用户，收在同一个胶囊里 -->
+          <div class="header-tools dd-glass">
+            <button
+              type="button"
+              class="header-icon-btn theme-toggle"
+              :title="themeTitle"
+              :aria-label="themeTitle"
+              @click="themeStore.toggleTheme"
+            >
+              <el-icon :size="18"><component :is="themeIcon" /></el-icon>
+            </button>
+
+            <button
+              type="button"
+              class="header-icon-btn"
+              title="主题工坊"
+              aria-label="主题工坊"
+              @click="ui.openStudio()"
+            >
+              <el-icon :size="18"><Brush /></el-icon>
+            </button>
+
+            <el-popover
+              v-model:visible="ui.attentionOpen"
+              trigger="click"
+              placement="bottom-end"
+              width="min(380px, calc(100vw - 24px))"
+              :show-arrow="false"
+              popper-class="dd-attention-popper"
+            >
+              <template #reference>
+                <button
+                  type="button"
+                  class="header-icon-btn"
+                  :title="attentionCount ? `需要关注 · ${attentionCount} 项` : '需要关注'"
+                  :aria-label="attentionCount ? `需要关注，${attentionCount} 项` : '需要关注'"
+                >
+                  <el-icon :size="18"><Bell /></el-icon>
+                  <span v-if="attentionCount" class="bell-count">{{ attentionCountText }}</span>
+                </button>
+              </template>
+              <div class="attention-pop">
+                <div class="attention-pop__head">
+                  <span class="attention-pop__title">需要关注</span>
+                  <span v-if="attentionCount" class="attention-pop__count">{{ attentionCount }} 项</span>
+                </div>
+                <AttentionList compact />
               </div>
-              <span v-if="!isMobile" class="header-user-name">{{ authStore.user?.username || 'User' }}</span>
-            </div>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="router.push('/profile')">个人设置</el-dropdown-item>
-                <el-dropdown-item v-if="canAccessAdmin" @click="router.push('/admin/settings')">系统设置</el-dropdown-item>
-                <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+            </el-popover>
+
+            <el-dropdown trigger="click">
+              <div class="header-user" tabindex="0">
+                <img
+                  v-if="authStore.user?.avatar_url"
+                  :src="authStore.user.avatar_url"
+                  alt=""
+                  class="header-user-avatar"
+                />
+                <div v-else class="header-user-avatar header-user-avatar--placeholder">
+                  {{ (authStore.user?.username || 'U').charAt(0).toUpperCase() }}
+                </div>
+                <span v-if="!isMobile" class="header-user-name">{{ authStore.user?.username || 'User' }}</span>
+              </div>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="router.push('/profile')">个人设置</el-dropdown-item>
+                  <el-dropdown-item v-if="canAccessAdmin" @click="router.push('/admin/settings')">系统设置</el-dropdown-item>
+                  <el-dropdown-item @click="ui.openShortcutHelp()">快捷键</el-dropdown-item>
+                  <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </div>
       </header>
 
@@ -539,351 +684,396 @@ async function loadVersion() {
           </router-view>
         </div>
       </main>
-    </el-container>
-  </el-container>
+    </div>
+
+    <!-- 全站浮层：各挂一次，开关都在 stores/ui.ts（handoff §8「MainLayout 挂载点」）。
+         放在外壳根上、侧栏与内容区之外：侧栏带 backdrop-filter，会成为 position:fixed 后代的包含块。
+         外面包一层零尺寸的绝对定位容器：外壳是 grid，浮层组件的根节点万一是普通流元素，会多占出一行把布局挤坏 -->
+    <div class="layout-overlays">
+      <CommandPalette />
+      <ThemeStudio />
+      <RunningDock />
+      <ShortcutHelpDialog />
+    </div>
+  </div>
 </template>
 
 <style scoped lang="scss">
 // ==================== 全屏外壳 ====================
-// 桌面与移动端一致：外壳直接铺满视口，无留白、无圆角、无阴影、无外描边。
+// v4.0：外壳是两列 grid（侧栏列 + 内容列），收起 / 展开只改列宽，用 --dd-spring-soft 做弹簧过渡。
+// 底色透明：背景由 App.vue 的 AppBackdrop（position:fixed; z-index:-1）提供，外壳和内容区都不能再铺实色。
 // overflow: hidden 用于把内部滚动锁在 layout-main / route-shell 里，不让整页产生滚动条。
 // 注意：内部滚动链（layout-main / route-shell / dd-*-page）保持不动。
 .layout-container {
+  // 侧栏列宽：展开 244px（浮岛本体 232px + 左侧 12px 外边距），收起 84px（本体 72px）
+  --dd-shell-aside-w: 244px;
+  // 顶栏胶囊统一高度（桌面 40px、移动端 36px），左右两侧所有胶囊与按钮都按它对齐
+  --dd-header-chip-height: 40px;
+
+  display: grid;
+  grid-template-columns: var(--dd-shell-aside-w) minmax(0, 1fr);
   margin: 0;
   height: 100dvh;
-  background: var(--el-bg-color);
   overflow: hidden;
+  transition: grid-template-columns 0.6s var(--dd-spring-soft);
+
+  &.is-collapsed {
+    --dd-shell-aside-w: 84px;
+  }
+
+  // 移动端没有桌面侧栏（抽屉不占列）
+  &.is-mobile {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+// 浮层挂载点：绝对定位的 grid 子项不占格子；零尺寸、不带 transform / filter，不会成为 fixed 浮层的包含块
+.layout-overlays {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
 }
 
 // ==================== Sidebar ====================
+// 浮岛：四周留 12px（右侧由内容区自己的左内边距给），读侧栏排版级令牌（_layout.scss，素白覆盖）。
+// 侧栏里没有原地渲染的弹窗（菜单气泡与下拉都 teleport 到 body），所以可以放心带 backdrop-filter。
 .layout-aside {
-  width: 220px;
+  min-width: 0;
+  height: calc(100% - 24px);
+  margin: 12px 0 12px 12px;
   display: flex;
   flex-direction: column;
-  background: var(--el-bg-color);
-  border-right: 1px solid var(--el-border-color-light);
-  // 宽度过渡吃令牌（原来写死 0.25s，绕过了减少动效的降级）。
-  // 去掉了原来的 will-change: width：width 不是合成器能加速的属性，
-  // will-change 对它没有任何收益，只会让浏览器常驻一层额外的合成层。
-  transition: width var(--dd-motion-normal) var(--dd-ease-standard);
   overflow: hidden;
+  background: var(--dd-sidebar-bg);
+  border: var(--dd-border-width) solid var(--dd-border);
+  border-radius: var(--dd-sidebar-radius);
+  box-shadow: var(--dd-sidebar-shadow);
+  -webkit-backdrop-filter: blur(var(--dd-sidebar-blur)) saturate(150%);
+  backdrop-filter: blur(var(--dd-sidebar-blur)) saturate(150%);
   z-index: 10;
+}
 
-  &.is-collapsed {
-    width: 64px;
+// 玻璃关闭（模糊为 0 / 低端设备）与系统「降低透明度」：不模糊。这是开关分支，不是主题分支
+html[data-dd-glass="off"] .layout-aside {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .layout-aside {
+    background: var(--dd-surface-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
+}
+
+// 收起时这些文字只淡出、不抽掉：列宽在做弹簧过渡，文字被侧栏的 overflow:hidden 裁掉即可，避免中途跳动。
+// 角标（DdBadge）不在这里：它根节点上有自己的弹出过渡，这里写 transition 会把那条压掉
+.logo-title,
+.logo-version,
+.nav-label,
+.nav-group-label,
+.user-info {
+  transition: opacity 0.3s var(--dd-ease-standard);
 }
 
 // Logo
 .sidebar-logo {
-  height: 60px;
-  display: flex;
-  align-items: center;
-  padding: 8px 10px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--el-border-color-light);
-  // 去装饰渐变，用与侧栏一致的纯色底，靠底部 1px 分隔线划分区域
-  background: var(--el-bg-color);
-
-  &.is-collapsed {
-    justify-content: center;
-    padding: 8px;
-  }
-}
-
-.logo-inner {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 10px;
-  border-radius: var(--dd-radius-control);
-  background: var(--el-bg-color);
-  border: 1px solid color-mix(in srgb, var(--el-color-primary) 10%, var(--el-border-color-lighter));
-  transition: border-color var(--dd-motion-fast) var(--dd-ease-standard);
-  width: 100%;
-  min-height: 42px;
-
-  // hover 只加深描边，不再叠阴影
-  &:hover {
-    border-color: color-mix(in srgb, var(--el-color-primary) 18%, var(--el-border-color-lighter));
-  }
-}
-
-.is-collapsed .logo-inner {
-  width: 40px;
-  min-height: 40px;
-  padding: 6px;
-  justify-content: center;
-}
-
-.logo-icon-wrap {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--dd-radius-control);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  padding: 16px 16px 12px 20px;
   flex-shrink: 0;
-  // 纯色底 + 1px 品牌色描边，去掉渐变、内高光与外投影，hover 也不再上浮
-  background: var(--el-bg-color);
-  border: 1px solid color-mix(in srgb, var(--el-color-primary) 18%, transparent);
+  white-space: nowrap;
+  transition: padding 0.6s var(--dd-spring-soft);
 }
 
 .logo-icon {
-  width: 16px;
-  height: 16px;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: var(--dd-radius-control);
+  transition: transform 0.6s var(--dd-spring);
+}
+
+// 悬停时 logo 轻轻歪一下头：只在丰富档
+html[data-dd-motion="rich"] .sidebar-logo:hover .logo-icon {
+  transform: rotate(-8deg) scale(1.08);
 }
 
 .logo-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
+  font-family: var(--dd-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--dd-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+// 版本徽标：主色墨色字 + 主色淡底（handoff §7：直接读令牌，不再靠 global.scss 的暗色补丁）
 .logo-version {
   flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: var(--dd-radius-control);
+  padding: 2px 7px;
+  border-radius: var(--dd-radius-pill);
   font-family: var(--dd-font-mono);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: var(--el-color-primary-dark-2);
-  background: color-mix(in srgb, var(--el-color-primary) 10%, white);
-  border: 1px solid color-mix(in srgb, var(--el-color-primary) 18%, transparent);
+  color: var(--dd-accent-ink);
+  background: var(--dd-accent-soft);
+  border: 1px solid var(--dd-accent-ring);
 }
 
 // Navigation
 .sidebar-nav {
   flex: 1;
+  min-height: 0;
+  // 指示条按 offsetTop 定位，参照物就是这里
   position: relative;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 6px 0;
+  padding: 0 10px 10px;
+  scrollbar-width: none;
 
   &::-webkit-scrollbar {
-    width: 3px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: transparent;
-    // 3px 宽的细 thumb 属于天然胶囊，吃 pill 档：直角模式仍是细方条，圆角模式变胶囊条
-    border-radius: var(--dd-radius-pill);
-  }
-
-  &:hover::-webkit-scrollbar-thumb {
-    background: var(--el-border-color);
+    display: none;
   }
 }
 
-// 收起态：Element Plus 把菜单项内容包进 tooltip 触发层，其默认 padding: 0 20px 会把
-// 图标整体右推，导致与已居中的 logo 不在同一竖直轴上。清掉左右内距并居中，让收起态
-// 导航图标与 logo / 用户头像 / 收起按钮统一居中对齐。
-.sidebar-nav :deep(.el-menu--collapse .el-menu-item .el-menu-tooltip__trigger) {
-  padding-left: 0;
-  padding-right: 0;
-  justify-content: center;
-}
-
-// ==================== 菜单角标 ====================
-// 展开态：标题占满剩余宽度，把角标顶到菜单项最右侧对齐成一列。
-// .el-menu-item 本身就是 flex 容器（EP 的默认样式），这里只需要给标题 flex: 1。
-.menu-title-text {
-  flex: 1;
-  min-width: 0;
-  // 菜单标题都很短，正常不会溢出；但面板标题可被用户改，留一手省略而不是撑破侧栏
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-// 收起态：#title 插槽整体不渲染，数字角标跟着消失，只在图标右上角留一个圆点。
-// 定位上下文用 el-icon 自己（下面给它 position: relative），
-// 而不是依赖 .el-menu-tooltip__trigger —— 那是 EP 的内部实现，位置和定位属性都可能变。
-.sidebar-nav :deep(.el-menu-item .el-icon) {
-  position: relative;
-}
-
-.menu-collapsed-dot {
-  // 默认不显示：只有菜单真的处于收起态（EP 给 ul 挂 .el-menu--collapse）才亮出来。
-  // 用 CSS 祖先判断而不是 v-if="isCollapsed"：移动端 isCollapsed 恒为 true，
-  // 但抽屉里的 el-menu 没传 :collapse，实际是展开的——用 JS 状态会在移动端多冒一个点。
-  display: none;
-}
-
-.sidebar-nav :deep(.el-menu--collapse) .menu-collapsed-dot {
-  display: block;
-  position: absolute;
-  // el-icon 是 18px 字号的 24px 方框，贴右上角但留 1px 不要压到图标笔画上
-  top: -1px;
-  right: -3px;
-  width: 7px;
-  height: 7px;
-  // 圆形承载语义：这是「有未读/异常」的状态角标点，圆点是通用可供性，
-  // 方块会被误认成图标本身的一部分。两种圆角模式下都保持圆形，不吃 --dd-radius-* 令牌。
-  border-radius: 50%;
-  background: var(--el-color-danger);
-  // 描边取侧栏底色，让圆点从图标上"浮"出来又不用阴影。
-  // 侧栏底色是 --el-bg-color（见 .layout-aside），暗色下自动跟着变。
-  border: 1.5px solid var(--el-bg-color);
-}
-
-.sidebar-nav :deep(.el-menu--collapse) .menu-collapsed-dot.is-primary {
-  background: var(--el-color-primary);
-}
-
-.sidebar-nav :deep(.el-menu--collapse) .menu-collapsed-dot.is-warning {
-  background: var(--el-color-warning);
-}
-
-.nav-section-label {
-  padding: 16px 20px 6px;
+// 分组标题。模板上另挂了一个公开类 .dd-nav-group-title（无样式），给主题工坊的自定义 CSS 片段
+// 「隐藏分组标题」当稳定钩子用；改这里的类名时别动那个公开类
+.nav-group-label {
+  height: 34px;
+  padding: 14px 12px 6px;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--el-text-color-placeholder);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--dd-text-3);
+  white-space: nowrap;
+  overflow: hidden;
   user-select: none;
 }
 
-.nav-section-divider {
-  height: 1px;
-  margin: 8px 16px;
-  background: var(--el-border-color-lighter);
-}
-
-// Quick Environments
-.sidebar-envs {
-  flex-shrink: 0;
-  padding: 0 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
-  margin-top: 4px;
-}
-
-.envs-header {
+.nav-item {
+  position: relative;
+  // 压在指示条（z-index 0）之上
+  z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 4px 4px;
-}
-
-.envs-title {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--el-text-color-placeholder);
-  text-transform: uppercase;
-}
-
-.envs-add-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: var(--dd-radius-control);
-  border: 1px solid var(--el-border-color-lighter);
+  gap: 12px;
+  width: 100%;
+  height: 40px;
+  margin: 0 0 2px;
+  padding: 0 10px 0 15px;
+  border: none;
+  border-radius: var(--dd-nav-item-radius);
   background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  color: var(--dd-text-2);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
   cursor: pointer;
-  color: var(--el-text-color-placeholder);
   transition:
-    background-color var(--dd-motion-fast) var(--dd-ease-standard),
     color var(--dd-motion-fast) var(--dd-ease-standard),
-    border-color var(--dd-motion-fast) var(--dd-ease-standard);
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    padding 0.6s var(--dd-spring-soft);
 
-  &:hover {
-    border-color: var(--el-color-primary);
-    color: var(--el-color-primary);
-    background: var(--el-color-primary-light-9);
+  &:hover:not(.is-active) {
+    color: var(--dd-text);
+    background: var(--dd-surface-3);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--dd-accent-ring);
+    outline-offset: -2px;
+  }
+
+  // 选中项：底色由滑动指示条给，这里只改字色与字重（读排版级令牌，素白是正文色）
+  &.is-active {
+    color: var(--dd-nav-active-fg);
+    font-weight: 600;
   }
 }
 
-.envs-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-bottom: 8px;
+.nav-icon {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
 }
 
-.env-item {
+.nav-label {
+  flex: 1;
+  min-width: 0;
+  // 菜单标题都很短，正常不会溢出；留一手省略而不是撑破侧栏
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-badge {
+  flex-shrink: 0;
+}
+
+// 滑动指示条：底色 / 圆角 / 左侧竖条宽度全读 --dd-nav-* 令牌。
+// 素白主题给的竖条宽是 0、底色是灰色药丸，所以不需要按主题名写任何分支。
+.nav-indicator {
+  position: absolute;
+  top: 0;
+  left: 10px;
+  right: 10px;
+  z-index: 0;
+  border-radius: var(--dd-nav-item-radius);
+  background: var(--dd-nav-active-bg);
+  pointer-events: none;
+  transition: opacity 0.2s var(--dd-ease-standard);
+
+  // 第一次定位之后才带上弹簧，避免一进页面就从顶上滑下来
+  &.is-animated {
+    transition:
+      transform 0.55s var(--dd-spring),
+      height 0.55s var(--dd-spring),
+      opacity 0.2s var(--dd-ease-standard);
+  }
+
+  &.is-hidden {
+    opacity: 0;
+  }
+
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 9px;
+    bottom: 9px;
+    width: var(--dd-nav-indicator-width);
+    border-radius: var(--dd-radius-pill);
+    background: linear-gradient(var(--dd-accent), var(--dd-accent-2));
+  }
+}
+
+// 收起态：图标在 72px 的浮岛里居中（10px 列表内边距 + 17px 项内边距 + 18px 图标 + 17px + 10px）
+.layout-aside.is-collapsed {
+  .sidebar-logo {
+    padding-left: 20px;
+  }
+
+  .nav-item {
+    padding-left: 17px;
+  }
+
+  .logo-title,
+  .logo-version,
+  .nav-label,
+  .nav-badge,
+  .user-info {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  // 分组标题收成一道 14px 的间隔
+  .nav-group-label {
+    height: 14px;
+    padding: 0;
+    opacity: 0;
+  }
+
+  .nav-collapsed-dot {
+    display: block;
+  }
+
+  .sidebar-foot {
+    flex-direction: column;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  // 用户卡只剩头像：名字那一栏收成 0 宽，头像才能在 72px 的浮岛里居中
+  .user-card {
+    gap: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .user-info {
+    flex: 0 0 0;
+    width: 0;
+    overflow: hidden;
+  }
+}
+
+// 收起态的角标圆点（展开态不显示）
+.nav-collapsed-dot {
+  display: none;
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  width: 7px;
+  height: 7px;
+  // 圆形承载语义：这是「有未读/异常」的状态角标点，两种圆角模式下都保持圆形，不吃 --dd-radius-* 令牌。
+  border-radius: 50%;
+  background: var(--dd-err);
+  // 描边取实色卡底，让圆点从图标上"浮"出来又不用阴影（侧栏底可能是半透明，所以不用侧栏底色）
+  border: 1.5px solid var(--dd-surface-solid);
+
+  &.is-primary {
+    background: var(--dd-accent);
+  }
+
+  &.is-warning {
+    background: var(--dd-warn);
+  }
+}
+
+// 抽屉（移动端）：没有滑动指示条，当前项直接给静态选中底色与竖条
+.sidebar-nav.is-static .nav-item.is-active {
+  background: var(--dd-nav-active-bg);
+
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 9px;
+    bottom: 9px;
+    width: var(--dd-nav-indicator-width);
+    border-radius: var(--dd-radius-pill);
+    background: linear-gradient(var(--dd-accent), var(--dd-accent-2));
+  }
+}
+
+// 侧栏底部：用户卡 + 收起按钮
+.sidebar-foot {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 6px;
+  gap: 6px;
+  padding: 10px;
+  border-top: 1px solid var(--dd-border);
+}
+
+.user-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: none;
   border-radius: var(--dd-radius-control);
+  background: transparent;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   // hover 只换底色
   &:hover {
-    background: var(--el-fill-color-light);
-  }
-}
-
-.env-dot {
-  width: 7px;
-  height: 7px;
-  // 7×7 的状态色点属于天然胶囊：pill 档下正好是圆点，直角档保持现有方点观感
-  border-radius: var(--dd-radius-pill);
-  flex-shrink: 0;
-}
-
-.env-info {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.env-name {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--el-text-color-primary);
-  line-height: 1.3;
-}
-
-.env-key {
-  font-size: 10px;
-  color: var(--el-text-color-placeholder);
-  font-family: var(--dd-font-mono);
-}
-
-// User card
-.sidebar-user {
-  flex-shrink: 0;
-  padding: 8px 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
-
-  &.is-collapsed {
-    padding: 8px;
-    display: flex;
-    justify-content: center;
-  }
-}
-
-.user-card-inner {
-  display: flex;
-  position: relative;
-  overflow: hidden;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--dd-radius-control);
-  cursor: pointer;
-  transition: background-color var(--dd-motion-fast) var(--dd-ease-standard);
-
-  // hover 只换底色：去掉上浮阴影与顶部白色高光扫过（::after 装饰层已整体移除）
-  &:hover {
-    background: var(--el-fill-color-light);
-  }
-
-  .is-collapsed & {
-    padding: 6px;
-    justify-content: center;
+    background: var(--dd-surface-3);
   }
 }
 
@@ -897,12 +1087,13 @@ async function loadVersion() {
   flex-shrink: 0;
 }
 
+// 首字母头像：与实心主按钮同一对颜色（handoff §7，14 套配色都 ≥ 4.5:1）
 .user-avatar--placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--el-color-primary);
-  color: #fff;
+  background: var(--dd-btn-primary-bg);
+  color: var(--dd-btn-primary-fg);
   font-size: 14px;
   font-weight: 700;
 }
@@ -911,75 +1102,71 @@ async function loadVersion() {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  white-space: nowrap;
 }
 
 .user-name {
   font-size: 13px;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .user-role {
   font-size: 11px;
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
   line-height: 1.3;
 }
 
-// Collapse button
 .sidebar-collapse-btn {
   flex-shrink: 0;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 40px;
-  margin: 4px 12px 10px;
+  border: none;
   border-radius: var(--dd-radius-control);
-  border: 1px solid var(--el-border-color-lighter);
   background: transparent;
+  color: var(--dd-text-2);
   cursor: pointer;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
   transition:
     background-color var(--dd-motion-fast) var(--dd-ease-standard),
-    color var(--dd-motion-fast) var(--dd-ease-standard),
-    border-color var(--dd-motion-fast) var(--dd-ease-standard);
+    color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    background: var(--el-fill-color-light);
-    color: var(--el-color-primary);
-    border-color: var(--el-color-primary-light-7);
+    background: var(--dd-surface-3);
+    color: var(--dd-text);
   }
 }
 
-.collapse-text {
-  font-size: 12px;
-  white-space: nowrap;
-}
-
 // ==================== Header ====================
+// 顶栏本身透明，只有一颗颗玻璃胶囊（.dd-glass 提供半透明底 + 模糊，玻璃关闭时自动退回实色）
 .layout-header {
-  height: 60px;
+  height: 68px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 0 20px;
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-light);
+  gap: 12px;
+  padding: 12px 20px 4px;
   position: sticky;
   top: 0;
   z-index: 20;
   flex-shrink: 0;
-  // 顶栏左右两块「胶囊」（面包屑、右侧工具区）与左上角菜单按钮的统一高度（v3.3.1，issue #143 O2）。
-  // 原来面包屑靠 padding + 行高撑出约 36px、右侧工具区被 34px 按钮与 38px 用户区撑到约 46px，
-  // 两块高度差 10px、底色还差一档；统一定高后两端（桌面与移动端）都对齐。
-  // 全局 * { box-sizing: border-box }，height 已包含 padding。
-  --dd-header-chip-height: 36px;
+}
+
+// 顶栏所有胶囊的共同外观：边框、圆角、阴影都读主题令牌
+.header-toggle-btn,
+.header-breadcrumb,
+.header-search,
+.header-runcap,
+.header-tools {
+  height: var(--dd-header-chip-height);
+  border: var(--dd-border-width) solid var(--dd-border);
+  border-radius: var(--dd-radius-pill);
+  box-shadow: var(--dd-shadow-card);
 }
 
 .header-left {
@@ -990,101 +1177,88 @@ async function loadVersion() {
 }
 
 .header-toggle-btn {
-  // 与旁边的面包屑胶囊等高（O2），圆角吃「按钮」角色令牌（桌面 = control 档，移动端 rounded 为 16px）
   width: var(--dd-header-chip-height);
-  height: var(--dd-header-chip-height);
-  border-radius: var(--dd-radius-button);
-  border: 1px solid var(--el-border-color-lighter);
-  background: transparent;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   cursor: pointer;
-  color: var(--el-text-color-regular);
-  // 只过渡 hover 真正会变的三个属性并吃令牌：原来的 all 0.2s 连尺寸变化也一起过渡，
-  // 写死的时长还绕过了「减少动效」的降级（顶栏另外两处同理）。
-  transition:
-    background-color var(--dd-motion-fast) var(--dd-ease-standard),
-    color var(--dd-motion-fast) var(--dd-ease-standard),
-    border-color var(--dd-motion-fast) var(--dd-ease-standard);
-  flex-shrink: 0;
+  color: var(--dd-text-2);
+  transition: color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    background: var(--el-fill-color-light);
-    color: var(--el-color-primary);
-    border-color: var(--el-color-primary-light-7);
+    color: var(--dd-text);
   }
 }
 
 .header-breadcrumb {
   display: flex;
-  // 定高而不是靠 padding + 行高撑：与 .header-right 同一个高度令牌，两块胶囊才能严格等高（O2）
-  height: var(--dd-header-chip-height);
-  padding: 0 10px;
-  border-radius: var(--dd-radius-button);
-  background: color-mix(in srgb, var(--el-fill-color-light) 76%, transparent);
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
   min-width: 0;
+  padding: 0 14px;
+  font-size: 13px;
+  color: var(--dd-text-2);
 }
 
 .breadcrumb-sep {
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
   font-weight: 300;
   font-size: 15px;
 }
 
 .breadcrumb-section {
   white-space: nowrap;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .breadcrumb-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   letter-spacing: 0.1px;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
   font-weight: 600;
 }
 
-.header-center {
-  flex: 1;
-  max-width: 480px;
-  display: flex;
-  justify-content: center;
-}
-
-.header-search {
+.header-right {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: var(--dd-radius-control);
-  background: var(--el-fill-color-light);
-  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+// 1. 搜索胶囊
+.header-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: clamp(200px, 26vw, 360px);
+  padding: 0 7px 0 14px;
+  font: inherit;
+  text-align: left;
+  color: var(--dd-text-3);
   cursor: pointer;
   transition:
-    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    color var(--dd-motion-fast) var(--dd-ease-standard),
     border-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
-    background: var(--el-fill-color);
-    border-color: var(--el-border-color-lighter);
+    color: var(--dd-text-2);
+    border-color: var(--dd-border-strong);
   }
 }
 
 .search-icon {
-  color: var(--el-text-color-placeholder);
   flex-shrink: 0;
 }
 
 .search-placeholder {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
-  color: var(--el-text-color-placeholder);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1094,73 +1268,135 @@ async function loadVersion() {
   flex-shrink: 0;
   padding: 2px 6px;
   border-radius: var(--dd-radius-control);
-  font-size: 11px;
+  border: 1px solid var(--dd-border-strong);
+  background: var(--dd-surface-2);
+  color: var(--dd-text-2);
   font-family: var(--dd-font-mono);
-  color: var(--el-text-color-placeholder);
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  line-height: 1.2;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
-.header-right {
+// 2. 运行中胶囊
+.header-runcap {
   display: flex;
-  // 与面包屑同高同底色（O2）：原来 82% 比面包屑的 76% 深一档，两块并排时像两种控件。
-  // padding 2px + 内部 32px 的按钮 / 用户区，正好填满 36px。
-  height: var(--dd-header-chip-height);
-  padding: 2px;
-  border-radius: var(--dd-radius-button);
-  background: color-mix(in srgb, var(--el-fill-color-light) 76%, transparent);
   align-items: center;
   gap: 6px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--dd-text);
+  cursor: pointer;
+  transition: border-color var(--dd-motion-fast) var(--dd-ease-standard);
+
+  &:hover,
+  &.is-open {
+    border-color: var(--dd-accent-ring);
+  }
+}
+
+.runcap-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  // 状态灯：天然正圆
+  border-radius: 50%;
+  background: var(--dd-info);
+
+  // 呼吸扩散的光圈（关闭档由全局去掉动画）
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--dd-info);
+    animation: dd-runcap-ping 1.6s var(--dd-ease-standard) infinite;
+  }
+}
+
+@keyframes dd-runcap-ping {
+  from {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+.runcap-num {
+  font-variant-numeric: tabular-nums;
+}
+
+// 3~6. 工具胶囊：明暗 / 主题工坊 / 铃铛 / 用户
+.header-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 3px;
 }
 
 .header-icon-btn {
-  // 32px：放进 36px 的胶囊里上下各留 2px；rounded 移动端配 16px 圆角正好是正圆
+  // 放进 40px 的胶囊里上下各留 3px；按钮本身是正圆（图标按钮天然胶囊）
   width: 32px;
   height: 32px;
-  border-radius: var(--dd-radius-button);
+  flex-shrink: 0;
+  border-radius: var(--dd-radius-pill);
   border: none;
   background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   cursor: pointer;
-  color: var(--el-text-color-regular);
+  color: var(--dd-text-2);
   transition:
     background-color var(--dd-motion-fast) var(--dd-ease-standard),
     color var(--dd-motion-fast) var(--dd-ease-standard);
   position: relative;
 
   &:hover {
-    background: var(--el-fill-color-light);
-    color: var(--el-color-primary);
+    background: var(--dd-surface-3);
+    color: var(--dd-text);
   }
 }
 
-// 主题切换按钮的 hover 反馈与其他 header 图标按钮一致（换底色），不再额外做上浮 + 放大
-
-// `.notification-dot` 已删除：它是零引用的死代码（全库只有这一处样式定义，
-// 模板里从来没用过），而且背景写死 #f56c6c，暗色下不跟随令牌。
-// 菜单角标现在由上面的 .menu-collapsed-dot 承担，取色走 --el-color-danger。
+// 铃铛角标：实心危险色底 + 状态色上的文字色（实心状态色那一对令牌）
+.bell-count {
+  position: absolute;
+  top: 1px;
+  right: -1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--dd-radius-pill);
+  background: var(--dd-err-solid);
+  color: var(--dd-on-status);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
 
 .header-user {
   display: flex;
-  position: relative;
-  overflow: hidden;
   align-items: center;
   gap: 8px;
-  // 与 .header-icon-btn 同高 32px（O2）：原来 padding 5px 10px + 28px 头像约 38px，把右侧胶囊撑到 46px。
-  // 左侧只留 2px，让头像贴着 hover 底的左缘；移动端不显示用户名时见下方媒体查询收成 32×32。
   height: 32px;
-  padding: 2px 8px 2px 2px;
-  border-radius: var(--dd-radius-button);
+  padding: 2px 10px 2px 2px;
+  border-radius: var(--dd-radius-pill);
   cursor: pointer;
   transition: background-color var(--dd-motion-fast) var(--dd-ease-standard);
   outline: none;
 
-  // hover 只换底色：去掉上浮阴影与顶部白色高光扫过（::after 装饰层已整体移除）
-  &:hover {
-    background: var(--el-fill-color-light);
+  // hover 只换底色
+  &:hover,
+  &:focus-visible {
+    background: var(--dd-surface-3);
   }
 }
 
@@ -1168,7 +1404,6 @@ async function loadVersion() {
   width: 28px;
   height: 28px;
   // 圆形承载语义：同 .user-avatar，头像本身按圆形构图，直角硬切会裁掉边缘内容。
-  // 两种圆角模式下都保持圆形，不吃 --dd-radius-* 令牌。
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -1178,8 +1413,8 @@ async function loadVersion() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--el-color-primary);
-  color: #fff;
+  background: var(--dd-btn-primary-bg);
+  color: var(--dd-btn-primary-fg);
   font-size: 12px;
   font-weight: 700;
 }
@@ -1187,16 +1422,39 @@ async function loadVersion() {
 .header-user-name {
   font-size: 13px;
   font-weight: 500;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
   white-space: nowrap;
+}
+
+// 铃铛弹出层的内容（slot 内容归本组件作用域，scoped 能命中；外层 .el-popover 由 EP 自己画）
+.attention-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attention-pop__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 2px 0;
+}
+
+.attention-pop__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dd-text);
+}
+
+.attention-pop__count {
+  font-size: 12px;
+  color: var(--dd-text-3);
 }
 
 // ==================== Main ====================
 .layout-main-wrap {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  width: 0;
   height: 100%;
   min-width: 0;
   min-height: 0;
@@ -1209,8 +1467,8 @@ async function loadVersion() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 20px;
-  background: var(--el-bg-color-page);
+  // 顶部 12px：顶栏已经自带下内边距，再留 20px 会显得松
+  padding: 12px 20px 20px;
 }
 
 .route-shell {
@@ -1241,20 +1499,32 @@ async function loadVersion() {
   }
 }
 
+// 中等宽度：搜索胶囊只留图标与快捷键提示
+@media screen and (max-width: 1180px) and (min-width: 769px) {
+  .header-search {
+    width: auto;
+  }
+
+  .search-placeholder {
+    display: none;
+  }
+}
+
 @media screen and (max-height: 820px) and (min-width: 769px) {
   // 矮屏：外壳本身已铺满视口，这里只收紧 header / main 的内边距，
   // 给内容腾出更多垂直空间
   .layout-header {
-    height: 52px;
-    padding: 0 16px;
+    height: 60px;
+    padding: 10px 16px 2px;
   }
 
   .layout-main {
-    padding: 14px 16px;
+    padding: 10px 16px 14px;
   }
 }
 
 // ==================== Page transition ====================
+// 不支持 View Transitions（或动效关闭）时的切页动画；支持时由 <html> 上的 dd-vt 类关掉（styles/motion.scss）。
 // 切页：新页面淡入并从下方 8px 升起，旧页面纯淡出（#132，v3.2.8）。
 // 原来是 180ms + scale 0.992 + decelerate：那条曲线前段极陡，肉眼可见的变化只有头 50~70ms，
 // 0.992 的缩放在 1200px 宽的内容区上两边各只动约 5px，再叠上 80ms 的离场，观感接近瞬切。
@@ -1306,8 +1576,9 @@ async function loadVersion() {
 }
 
 // ==================== Mobile drawer ====================
+// 抽屉底色由 EP 的 --el-bg-color（实色 overlay）给；这里只排版
 .mobile-logo {
-  border-bottom: 1px solid var(--el-border-color-light);
+  padding: 16px 16px 8px;
 }
 
 .mobile-nav {
@@ -1316,17 +1587,21 @@ async function loadVersion() {
 
 // ==================== Mobile responsive ====================
 @media screen and (max-width: 768px) {
+  .layout-container {
+    --dd-header-chip-height: 36px;
+  }
+
   // 外壳在桌面端也已全屏铺满，这里不需要再复位；只调整内部间距与滚动行为，drawer 行为不变
   .layout-header {
-    height: 54px;
-    padding: 0 12px;
-    gap: 8px;
+    height: 56px;
+    padding: 10px 12px 2px;
+    gap: 6px;
   }
 
   .layout-main {
     overflow-y: auto;
     // 🔴 F1（v3.3.1 #143 → v3.3.3 #148）：这个滚动容器在移动端【禁止】带任何会形成层叠上下文的属性——
-    //   z-index、transform、filter、opacity 动画、will-change、contain、isolation 一律不许加，
+    //   z-index、transform、filter、opacity 动画、will-change、contain、isolation、backdrop-filter 一律不许加，
     //   也不许加回 -webkit-overflow-scrolling: touch。
     // 原因：本项目的 el-dialog / el-drawer 默认【不 teleport】（EP 2.13.5 appendToBody 默认 false），
     //   遮罩（position:fixed）原地渲染在 .layout-main 里面。iOS WebKit 有个至今未修的缺陷（bug 160953）：
@@ -1377,19 +1652,54 @@ async function loadVersion() {
     }
   }
 
-  .header-center {
-    display: none;
-  }
-
+  // 面包屑只留当前页标题，给右侧按钮让位
   .header-breadcrumb {
+    padding: 0 12px;
     font-size: 12px;
   }
 
-  .header-right {
-    gap: 2px;
+  .breadcrumb-section,
+  .breadcrumb-sep {
+    display: none;
   }
 
-  // 移动端不显示用户名，只剩 28px 头像：四周各 2px，收成与主题按钮一样的 32×32
+  .header-right {
+    gap: 6px;
+  }
+
+  // 搜索收成一个圆形图标按钮
+  .header-search {
+    width: var(--dd-header-chip-height);
+    padding: 0;
+    justify-content: center;
+  }
+
+  .search-placeholder,
+  .search-kbd {
+    display: none;
+  }
+
+  // 运行中胶囊只留圆点与数字
+  .header-runcap {
+    padding: 0 11px;
+  }
+
+  .runcap-label {
+    display: none;
+  }
+
+  .header-tools {
+    gap: 0;
+    padding: 0 2px;
+  }
+
+  // 36px 的胶囊里放 32px 按钮
+  .header-icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  // 移动端不显示用户名，只剩 28px 头像：四周各 2px，收成与图标按钮一样的 32×32
   .header-user {
     padding: 2px;
   }

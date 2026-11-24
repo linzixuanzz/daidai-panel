@@ -8,6 +8,7 @@ import type {
 import {
   LOG_STATUS_ABORTED,
   LOG_STATUS_FAILED,
+  LOG_STATUS_RUNNING,
   LOG_STATUS_SUCCESS,
   TASK_STATUS_DISABLED,
   TASK_STATUS_ENABLED,
@@ -1312,6 +1313,286 @@ export function buildSystemBadges(): Record<string, number> {
       dep.status === 'queued' || dep.status === 'installing' || dep.status === 'removing'
     ).length,
   }
+}
+
+// ---------------------------------------------------------------------------
+// v4.0 洞察接口：需要关注 / 未来调度 / 健康画像 / 最近 N 次 / 运行中
+// ---------------------------------------------------------------------------
+// 五个接口的响应体都【没有】外层 data（与服务端一致，见 web/src/api/task.ts、api/system.ts 的类型）。
+// 同样遵守本文件「只算不写死」：全部从 tasks / logs / subscriptions / deps 现算，
+// 访客在演示站里运行、停止任务之后，这几块会跟着变。
+
+/** 服务端 clampQueryInt 的等价物：缺省或解析失败用默认值，越界夹到区间内（不报 400） */
+export function clampQueryInt(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const value = Number.parseInt(raw ?? '', 10)
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
+/** 已结束的执行（成功 / 失败 / 已终止）；运行中的那条不算 */
+function isFinishedLog(log: DemoTaskLog) {
+  return log.status === LOG_STATUS_SUCCESS || log.status === LOG_STATUS_FAILED || log.status === LOG_STATUS_ABORTED
+}
+
+/** 本地日期 YYYY-MM-DD（健康画像按天分桶用，服务端是面板时区的 2006-01-02） */
+function localDateKey(ms: number) {
+  const date = new Date(ms)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/** 秒数保留两位小数，同服务端 roundInsight */
+function roundInsight(value: number) {
+  return Math.round(value * 100) / 100
+}
+
+// 服务端 attentionErrorKeywords 的同一份清单（server/service/system_attention.go）
+const ATTENTION_ERROR_KEYWORDS = [
+  'error', 'exception', 'traceback', 'fail', 'fatal', 'timeout', 'timed out', 'denied', 'refused', 'not found',
+  '错误', '异常', '失败', '超时', '拒绝', '找不到', '不存在',
+]
+
+/** 服务端 PickAttentionDetail 的等价物：从末尾往前找第一条像错误的非空行，没有就用最后一条非空行，≤120 字 */
+function pickAttentionDetail(text: string): string {
+  const lines = text.split('\n')
+  let lastNonEmpty = ''
+  let picked = ''
+  for (let i = lines.length - 1; i >= 0 && !picked; i -= 1) {
+    const line = (lines[i] ?? '').replace(/\r$/, '').trim()
+    if (!line || line.startsWith('=== ')) continue
+    if (!lastNonEmpty) lastNonEmpty = line
+    const lower = line.toLowerCase()
+    if (ATTENTION_ERROR_KEYWORDS.some((keyword) => lower.includes(keyword))) picked = line
+  }
+  const result = picked || lastNonEmpty
+  return result.length <= 120 ? result : `${result.slice(0, 119)}…`
+}
+
+/**
+ * GET /system/attention，口径照抄 server/handler/system_attention.go（演示账号是管理员，四类全量）：
+ *   - task_failing：未禁用、最近 3 条已结束日志全是失败（最多回看 10 条，满 10 写「10 次以上」）；
+ *   - subscription_failed：订阅 status = 1；
+ *   - dependency_failed：依赖 status = failed；
+ *   - disk_high：演示站的健康检查报的是「已用 32.1%」，不到 85%，不出。
+ * 排序 err → warn → info，同级按时间倒序，再按 key。update_available 由前端自己合并，这里不出。
+ */
+export function buildAttention(): { items: Array<Record<string, unknown>> } {
+  const current = db()
+  const items: Array<{ key: string; type: string; level: string; title: string; detail: string; target: { kind: string; id: number }; atMs: number }> = []
+
+  for (const task of current.tasks) {
+    if (task.status === TASK_STATUS_DISABLED) continue
+    // logs 是新 → 旧排好的
+    const finished = current.logs.filter((log) => log.task_id === task.id && isFinishedLog(log)).slice(0, 10)
+    let consecutive = 0
+    for (const log of finished) {
+      if (log.status !== LOG_STATUS_FAILED) break
+      consecutive += 1
+    }
+    if (consecutive < 3) continue
+    const latest = finished[0]!
+    const detail = pickAttentionDetail(buildLogContent(latest))
+    items.push({
+      key: `task_failing:${task.id}`,
+      type: 'task_failing',
+      level: 'err',
+      title: consecutive >= 10 ? `${task.name} · 连续失败 10 次以上` : `${task.name} · 连续失败 ${consecutive} 次`,
+      detail: detail ? `最近一次：${detail}`.slice(0, 120) : '',
+      target: { kind: 'task', id: task.id },
+      atMs: new Date(latest.ended_at ?? latest.started_at).getTime(),
+    })
+  }
+
+  for (const sub of current.subscriptions) {
+    if (sub.status !== 1) continue
+    const latestLog = current.subLogs
+      .filter((log) => log.subscription_id === sub.id)
+      .sort((left, right) => right.id - left.id)[0]
+    items.push({
+      key: `subscription_failed:${sub.id}`,
+      type: 'subscription_failed',
+      level: 'warn',
+      title: `订阅「${sub.name}」拉取失败`,
+      detail: latestLog ? pickAttentionDetail(latestLog.content) : '',
+      target: { kind: 'subscription', id: sub.id },
+      atMs: new Date(sub.last_pull_at ?? sub.updated_at).getTime(),
+    })
+  }
+
+  for (const dep of current.deps) {
+    if (dep.status !== 'failed') continue
+    items.push({
+      key: `dependency_failed:${dep.id}`,
+      type: 'dependency_failed',
+      level: 'warn',
+      title: `依赖「${dep.name}」安装失败（${dep.type}）`,
+      // 与 GET /deps/:id/status 的 log 同一句，两处对得上
+      detail: '演示环境不保留安装日志',
+      target: { kind: 'dependency', id: dep.id },
+      atMs: new Date(dep.updated_at).getTime(),
+    })
+  }
+
+  const levelRank: Record<string, number> = { err: 0, warn: 1, info: 2 }
+  items.sort((left, right) =>
+    (levelRank[left.level] ?? 9) - (levelRank[right.level] ?? 9)
+    || right.atMs - left.atMs
+    || (left.key < right.key ? -1 : left.key > right.key ? 1 : 0)
+  )
+
+  return {
+    items: items.slice(0, 20).map(({ atMs, ...item }) => ({ ...item, at: new Date(atMs).toISOString() })),
+  }
+}
+
+/**
+ * GET /tasks/upcoming，口径照抄 service.BuildUpcomingRuns：
+ * 未禁用（含运行中）且按 cron 调度的任务，在 [from, from + hours) 内的触发时刻，Unix 秒。
+ * 多条 cron（换行分隔）合并去重；每个任务最多 1440 个点。演示数据离 5000 点的总截断很远，不做截断。
+ */
+export function buildUpcoming(params: Record<string, string>): Record<string, unknown> {
+  const hours = clampQueryInt(params['hours'], 24, 1, 48)
+  const from = Math.floor(Date.now() / 1000) * 1000
+  const to = from + hours * 60 * 60 * 1000
+  const hourly = new Array<number>(hours).fill(0)
+  const tasks: Array<{ id: number; name: string; times: number[] }> = []
+
+  for (const task of db().tasks) {
+    if (task.status === TASK_STATUS_DISABLED || task.task_type !== 'cron' || !task.cron_expression.trim()) continue
+    // cron 精确到分钟，窗口里最多 hours × 60 个点
+    const perLine = Math.min(1440, hours * 60)
+    const points = new Set<number>()
+    for (const line of splitCronExpressions(task.cron_expression)) {
+      for (const at of nextRunTimes(line, from, perLine)) {
+        const ms = new Date(at).getTime()
+        if (ms < to) points.add(ms)
+      }
+    }
+    const times = [...points].sort((left, right) => left - right).slice(0, 1440)
+    if (times.length === 0) continue
+    for (const ms of times) {
+      hourly[Math.floor((ms - from) / (60 * 60 * 1000))]! += 1
+    }
+    tasks.push({ id: task.id, name: task.name, times: times.map((ms) => Math.floor(ms / 1000)) })
+  }
+
+  return { from: Math.floor(from / 1000), to: Math.floor(to / 1000), tasks, hourly }
+}
+
+/**
+ * GET /tasks/:id/health，口径照抄 service.BuildTaskHealth：
+ * 最近 days 天（含今天，按本地日期）已结束的执行；没跑的天补 0；成功率不算已终止；
+ * P90 用最近秩法；recent 是最近 20 次，旧 → 新。
+ */
+export function buildTaskHealth(taskId: number, params: Record<string, string>): Record<string, unknown> {
+  const days = clampQueryInt(params['days'], 91, 7, 180)
+  const todayStart = startOfLocalDay(Date.now())
+  // 往前推 days-1 天要按日历日推（夏令时的一天不一定是 24 小时），同服务端 AddDate
+  const startDate = new Date(todayStart)
+  startDate.setDate(startDate.getDate() - (days - 1))
+  const start = startDate.getTime()
+
+  const dayRows: Array<{ date: string; total: number; failed: number; avg_duration: number }> = []
+  const dayIndex = new Map<string, number>()
+  const durationSum: number[] = []
+  const durationCount: number[] = []
+  for (let i = 0; i < days; i += 1) {
+    const date = new Date(start)
+    date.setDate(date.getDate() + i)
+    const key = localDateKey(date.getTime())
+    dayIndex.set(key, i)
+    dayRows.push({ date: key, total: 0, failed: 0, avg_duration: 0 })
+    durationSum.push(0)
+    durationCount.push(0)
+  }
+
+  // logs 是新 → 旧排好的
+  const rows = db().logs.filter((log) =>
+    log.task_id === taskId && isFinishedLog(log) && new Date(log.started_at).getTime() >= start
+  )
+
+  let success = 0
+  let failed = 0
+  let totalDuration = 0
+  let totalDurationCount = 0
+  const samples: number[] = []
+  const recent: Array<{ status: number; duration: number | null; started_at: string }> = []
+  for (const log of rows) {
+    if (log.status === LOG_STATUS_SUCCESS) success += 1
+    else if (log.status === LOG_STATUS_FAILED) failed += 1
+    if (log.duration != null) {
+      totalDuration += log.duration
+      totalDurationCount += 1
+      if (samples.length < 2000) samples.push(log.duration)
+    }
+    const index = dayIndex.get(localDateKey(new Date(log.started_at).getTime()))
+    if (index !== undefined) {
+      dayRows[index]!.total += 1
+      if (log.status === LOG_STATUS_FAILED) dayRows[index]!.failed += 1
+      if (log.duration != null) {
+        durationSum[index]! += log.duration
+        durationCount[index]! += 1
+      }
+    }
+    if (recent.length < 20) recent.push({ status: log.status, duration: log.duration, started_at: log.started_at })
+  }
+
+  dayRows.forEach((row, index) => {
+    if (durationCount[index]! > 0) row.avg_duration = roundInsight(durationSum[index]! / durationCount[index]!)
+  })
+  samples.sort((left, right) => left - right)
+  const p90 = samples.length > 0 ? samples[Math.max(0, Math.ceil(0.9 * samples.length) - 1)]! : 0
+
+  return {
+    days: dayRows,
+    stats: {
+      runs: rows.length,
+      success_rate: success + failed > 0 ? Math.round((success / (success + failed)) * 1000) / 10 : 0,
+      avg_duration: totalDurationCount > 0 ? roundInsight(totalDuration / totalDurationCount) : 0,
+      p90_duration: roundInsight(p90),
+    },
+    recent: recent.reverse(),
+  }
+}
+
+/**
+ * GET /tasks/recent-runs 的计算部分（ids 的解析与 400 在 adapter 里）。
+ * 每个任务最近 limit 次已结束的执行，旧 → 新；没日志的任务给空数组；键是 id 的字符串形式。
+ */
+export function buildRecentRuns(ids: number[], limit: number): { runs: Record<string, Array<{ status: number; duration: number | null }>> } {
+  const runs: Record<string, Array<{ status: number; duration: number | null }>> = {}
+  for (const id of ids) {
+    runs[String(id)] = db().logs
+      .filter((log) => log.task_id === id && isFinishedLog(log))
+      .slice(0, limit)
+      .reverse()
+      .map((log) => ({ status: log.status, duration: log.duration }))
+  }
+  return { runs }
+}
+
+/**
+ * GET /tasks/running，口径照抄 service.ListRunningTasks：
+ * 运行中的任务按 id 升序；log_id / started_at 取它最近 3 条日志里运行中的那条，找不到时 log_id 为 null、
+ * started_at 回落到 last_run_at。与任务列表、仪表板「运行中」、侧栏角标读的是同一个 status，数字一定对得上。
+ */
+export function buildRunningTasks(): { items: Array<Record<string, unknown>> } {
+  const current = db()
+  const items = current.tasks
+    .filter((task) => task.status === TASK_STATUS_RUNNING)
+    .sort((left, right) => left.id - right.id)
+    .map((task) => {
+      const runningLog = current.logs
+        .filter((log) => log.task_id === task.id)
+        .slice(0, 3)
+        .find((log) => log.status === LOG_STATUS_RUNNING)
+      return {
+        task_id: task.id,
+        name: task.name,
+        log_id: runningLog ? runningLog.id : null,
+        started_at: runningLog ? runningLog.started_at : task.last_run_at,
+      }
+    })
+  return { items }
 }
 
 // ---------------------------------------------------------------------------

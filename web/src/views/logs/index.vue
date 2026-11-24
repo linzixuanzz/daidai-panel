@@ -821,7 +821,7 @@ onBeforeUnmount(() => {
          日期范围筛选在移动端不渲染，进入移动端时的清空见 watch(isMobile)。
          这一支用不着桌面那套「左槽叠放」：移动端是普通文档流，工具栏高度变了也不会挤压列表，
          而第一行两种形态同为 32px 高、外边距相同，切换批量态时下面的内容也不会跳。 -->
-    <div v-if="isMobile" class="logs-mobile-toolbar">
+    <div v-if="isMobile" class="logs-mobile-toolbar dd-rise" style="--dd-i: 0">
       <div v-if="canOperateLogs && selectedIds.length > 0" class="dd-mobile-batch-bar dd-scroll-row">
         <el-button @click="toggleSelectAll(!allSelectedOnPage)">{{ allSelectedOnPage ? '取消全选' : '全选' }}</el-button>
         <el-button type="danger" :icon="Delete" @click="handleBatchDelete">删除</el-button>
@@ -860,7 +860,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- ======= Toolbar（桌面） ======= -->
-    <div v-else class="toolbar">
+    <div v-else class="toolbar dd-rise" style="--dd-i: 0">
       <!-- 左槽是【恒在】的容器，勾选时只切换它内部显示哪一支：批量条原来挂在 toolbar__right 里，
            一出现就把整条工具栏顶成两行、表格跟着下移。
            这里两支【对有操作权限的账号都常驻 DOM】、在同一个 1×1 网格里叠放，只用 visibility 切换显示：
@@ -935,7 +935,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- ======= Mobile Card Layout ======= -->
-    <div v-if="isMobile" class="dd-mobile-list" v-loading="loading">
+    <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 1" v-loading="loading">
       <div
         v-for="row in logs"
         :key="row.id"
@@ -998,7 +998,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- ======= Desktop Table ======= -->
-    <div v-else class="table-card">
+    <div v-else class="table-card dd-spot dd-rise" style="--dd-i: 1">
       <el-table
         v-loading="loading"
         :data="logs"
@@ -1270,7 +1270,8 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .logs-page {
-  --logs-accent: #22c55e;
+  // 成功色改读主题令牌（原来写死 #22c55e）
+  --logs-accent: var(--dd-ok);
   --logs-border-soft: color-mix(in srgb, var(--el-border-color-light) 85%, transparent);
   --logs-surface: var(--el-bg-color);
 
@@ -1390,7 +1391,7 @@ onBeforeUnmount(() => {
 
   &.active {
     background: var(--el-bg-color);
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     font-weight: 600;
   }
 }
@@ -1620,9 +1621,10 @@ onBeforeUnmount(() => {
   // 这是「成功 / 失败 / 运行中」的状态 chip，天然胶囊 → pill 档（与 global.scss 的 .dd-status-chip 同档）
   border-radius: var(--dd-radius-pill);
 
-  &--success { background: color-mix(in srgb, var(--logs-accent) 14%, transparent); color: color-mix(in srgb, var(--logs-accent) 80%, var(--el-text-color-primary)); }
-  &--danger { background: color-mix(in srgb, var(--el-color-danger) 14%, transparent); color: var(--el-color-danger); }
-  &--warning { background: color-mix(in srgb, var(--el-color-warning) 14%, transparent); color: var(--el-color-warning); }
+  // 浅色状态底上的文字一律用墨色令牌（状态色直接当字在部分主题里不到 4.5:1）
+  &--success { background: color-mix(in srgb, var(--dd-ok) 14%, transparent); color: var(--dd-ok-ink); }
+  &--danger { background: color-mix(in srgb, var(--dd-err) 14%, transparent); color: var(--dd-err-ink); }
+  &--warning { background: color-mix(in srgb, var(--dd-warn) 14%, transparent); color: var(--dd-warn-ink); }
   &--info { background: var(--el-fill-color); color: var(--el-text-color-secondary); }
 }
 
@@ -1775,9 +1777,9 @@ onBeforeUnmount(() => {
   }
 
   &:hover {
-    color: #fff;
-    background: var(--el-color-danger);
-    border-color: var(--el-color-danger);
+    color: var(--dd-on-status);
+    background: var(--dd-err-solid);
+    border-color: var(--dd-err-solid);
   }
 
   &:focus-visible {
@@ -1882,7 +1884,7 @@ onBeforeUnmount(() => {
 }
 
 .detail-status-item--live {
-  color: var(--el-color-warning);
+  color: var(--dd-warn-ink);
 
   &::before {
     content: '● ';
@@ -1975,31 +1977,7 @@ onBeforeUnmount(() => {
 }
 
 // ===== 入场动画 =====
-// 与定时任务页统一：只对卡片级容器（工具条 / 表格卡 / 移动列表）做克制的淡入上移 + 轻微错落；
-// 不给表格每一行或每张移动卡做 stagger。时长走令牌，prefers-reduced-motion 时令牌自动降为 1ms 即等效关闭。
-// 移动端工具栏（.logs-mobile-toolbar）是桌面 .toolbar 在手机上的替身，同样算「工具条」这一级。
-@keyframes dd-logs-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.toolbar,
-.logs-mobile-toolbar,
-.table-card,
-.dd-mobile-list {
-  animation: dd-logs-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) both;
-}
-
-// 轻微错落：工具条先入，表格卡/移动列表略晚
-.table-card,
-.dd-mobile-list {
-  animation-delay: 60ms;
-}
+// v4.0 起改用全局 .dd-rise（styles/motion.scss，受动效档位控制）：模板里给工具条（含移动端替身 .logs-mobile-toolbar）、
+// 表格卡、移动列表挂类，内联 --dd-i 控制错落。不给表格每一行或每张移动卡做 stagger。
 
 </style>

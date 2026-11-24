@@ -420,12 +420,12 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
   cursor: pointer;
 
   &:hover {
-    border-color: rgba(59, 130, 246, 0.35);
+    border-color: color-mix(in srgb, var(--dd-accent) 35%, transparent);
     background: var(--el-fill-color-light);
   }
 
   &.is-active {
-    border-color: rgba(59, 130, 246, 0.48);
+    border-color: color-mix(in srgb, var(--dd-accent) 48%, transparent);
     background: color-mix(in srgb, var(--el-color-primary) 6%, var(--el-bg-color));
   }
 

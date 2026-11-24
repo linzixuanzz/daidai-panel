@@ -74,8 +74,8 @@ const isMultiLine = computed(() => normalizedExpressions.value.length > 1)
   margin-top: 1px;
   // 18×18 的序号角标，属于天然胶囊那一类 → pill 档（圆角模式下正好是个圆序号）
   border-radius: var(--dd-radius-pill);
-  background: color-mix(in srgb, var(--el-color-primary) 10%, white);
-  color: var(--el-color-primary);
+  background: color-mix(in srgb, var(--dd-accent) 10%, var(--dd-surface-solid));
+  color: var(--dd-accent-ink);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
@@ -88,9 +88,10 @@ const isMultiLine = computed(() => normalizedExpressions.value.length > 1)
   padding: 6px 10px;
   // 表格单元格里的 cron 小代码块，尺寸接近输入框 → control 档（不是整块日志面板，不用 surface）
   border-radius: var(--dd-radius-control);
-  background: color-mix(in srgb, var(--el-fill-color-light) 82%, white);
-  border: 1px solid var(--el-border-color-lighter);
-  color: var(--el-text-color-secondary);
+  // 底色不再混 white：暗色主题下会被顶成一块亮斑，上面的浅色字读不清（v4.0 巡检的低对比度项）
+  background: var(--dd-surface-3);
+  border: 1px solid var(--dd-border);
+  color: var(--dd-text);
   font-family: var(--dd-font-mono);
   font-size: 12px;
   line-height: 1.5;
@@ -107,6 +108,6 @@ const isMultiLine = computed(() => normalizedExpressions.value.length > 1)
 }
 
 .task-cron-list--multi .task-cron-list__code {
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
 }
 </style>

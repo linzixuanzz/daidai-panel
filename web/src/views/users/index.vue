@@ -261,7 +261,7 @@ function getRoleName(role: string) {
 
 <template>
   <div ref="pageRootRef" class="users-page dd-fixed-page dd-page-hide-heading">
-    <div class="page-header">
+    <div class="page-header dd-rise" style="--dd-i: 0">
       <div>
         <h2 class="page-title-with-icon"><el-icon><User /></el-icon><span>用户管理</span></h2>
         <p class="page-subtitle">管理系统内所有用户的权限和角色，控制用户对系统各功能的访问权限</p>
@@ -273,7 +273,7 @@ function getRoleName(role: string) {
       </div>
     </div>
 
-    <div class="toolbar">
+    <div class="toolbar dd-rise" style="--dd-i: 1">
       <div class="toolbar__left">
         <!-- 角色分段控件带计数：不用切过去也知道每个角色下有几个人。
              计数是「统计型」而非「提醒型」，所以开 show-zero ——「观察者 0」是有信息量的
@@ -308,7 +308,7 @@ function getRoleName(role: string) {
       </div>
     </div>
 
-    <div v-if="isMobile" class="dd-mobile-list">
+    <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 2">
       <div v-for="row in pagedUsers" :key="row.id" class="dd-mobile-card">
         <div class="dd-mobile-card__header">
           <div class="dd-mobile-card__title-wrap">
@@ -357,7 +357,7 @@ function getRoleName(role: string) {
       <el-empty v-if="!loading && pagedUsers.length === 0" description="暂无用户" />
     </div>
 
-    <div v-else class="table-card">
+    <div v-else class="table-card dd-spot dd-rise" style="--dd-i: 2">
       <el-table :data="pagedUsers" v-loading="loading" style="width: 100%" :header-cell-style="{ background: 'var(--el-fill-color-light)', color: 'var(--el-text-color-regular)', fontWeight: 600, fontSize: '13px' }">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="username" label="用户名" min-width="150">
@@ -420,7 +420,7 @@ function getRoleName(role: string) {
       </el-table>
     </div>
 
-    <div class="pagination-bar">
+    <div class="pagination-bar dd-rise" style="--dd-i: 3">
       <span class="pagination-total">共 {{ total }} 条数据</span>
       <el-pagination
         v-model:current-page="page"
@@ -524,7 +524,7 @@ function getRoleName(role: string) {
     background-color var(--dd-motion-fast) var(--dd-ease-standard);
   white-space: nowrap;
   &:hover { color: var(--el-text-color-primary); }
-  &.active { background: var(--el-bg-color); color: var(--el-color-primary); font-weight: 600; }
+  &.active { background: var(--el-bg-color); color: var(--dd-accent-ink); font-weight: 600; }
 }
 
 // 表格卡：1px 边框划分层次，不再用阴影浮起（dd-fixed-page 下的 flex + 内部滚动由全局规则接管）
@@ -538,9 +538,9 @@ function getRoleName(role: string) {
 .user-avatar {
   // 用户头像：形状承载语义（圆形=头像/身份标识），两种圆角模式下都固定正圆，不吃 --dd-radius-* 令牌
   width: 36px; height: 36px; border-radius: 50%;
-  // 底色保持品牌纯色（原为渐变，扁平化时已去掉，此处不恢复）
-  background: var(--el-color-primary);
-  color: #fff; display: flex; align-items: center; justify-content: center;
+  // 底色保持品牌纯色（原为渐变，扁平化时已去掉，此处不恢复）；读主按钮令牌，素白主题下随之变成黑底白字 / 白底黑字
+  background: var(--dd-btn-primary-bg);
+  color: var(--dd-btn-primary-fg); display: flex; align-items: center; justify-content: center;
   font-weight: 600; font-size: 14px; flex-shrink: 0;
 }
 .user-name-info { display: flex; align-items: center; gap: 8px; }

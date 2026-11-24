@@ -193,7 +193,7 @@ function handleApply() {
 
 .random-field-hint {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
   line-height: 1.6;
 
   code {
@@ -204,11 +204,11 @@ function handleApply() {
   }
 
   &.is-warning {
-    color: var(--el-color-warning);
+    color: var(--dd-warn-ink);
   }
 
   &.is-error {
-    color: var(--el-color-danger);
+    color: var(--dd-err-ink);
   }
 }
 
@@ -221,7 +221,7 @@ function handleApply() {
 
 .random-preview-empty {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .random-preview-item {
@@ -230,7 +230,7 @@ function handleApply() {
   gap: 10px;
   flex-wrap: wrap;
   padding: 6px 10px;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--dd-border);
   // 预览列表里的一行卡片 → surface 档
   border-radius: var(--dd-radius-surface);
   background: var(--el-fill-color-lighter);
@@ -239,12 +239,12 @@ function handleApply() {
 .preview-expr {
   font-family: var(--dd-font-mono);
   font-size: 12px;
-  color: var(--el-text-color-primary);
+  color: var(--dd-text);
 }
 
 .preview-desc {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .random-footer {

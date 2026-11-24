@@ -318,7 +318,7 @@ function handleClose() {
 
       <div class="file-content" v-loading="contentLoading">
         <div v-if="!selectedFile" class="content-placeholder">
-          <el-icon :size="48" color="var(--el-text-color-placeholder)"><Document /></el-icon>
+          <el-icon :size="48" color="var(--dd-text-3)"><Document /></el-icon>
           <span>选择文件查看内容</span>
         </div>
         <pre v-else ref="contentTextRef" class="content-text dd-log-surface" v-html="renderedFileHtml || '(空文件)'"></pre>
@@ -365,7 +365,7 @@ function handleClose() {
 
 .file-list-summary {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .file-list {
@@ -373,7 +373,7 @@ function handleClose() {
   width: 100%;
   flex: 1;
   min-height: 0;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--dd-border-strong);
   // 文件列表容器 → surface 档（自身是滚动容器，内部行会被圆角裁掉，不会溢出到角外）
   border-radius: var(--dd-radius-surface);
   overflow-y: auto;
@@ -385,7 +385,7 @@ function handleClose() {
   align-items: center;
   padding: 10px 12px;
   cursor: pointer;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--dd-border);
   transition: background 0.2s;
 
   &:hover {
@@ -393,8 +393,8 @@ function handleClose() {
   }
 
   &.active {
-    background: var(--el-color-primary-light-9);
-    border-left: 3px solid var(--el-color-primary);
+    background: color-mix(in srgb, var(--dd-accent) 10%, var(--dd-surface-solid));
+    border-left: 3px solid var(--dd-accent);
   }
 
   &:last-child {
@@ -426,12 +426,12 @@ function handleClose() {
 
 .file-size {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-text-2);
 }
 
 .file-content {
   flex: 1;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--dd-border-strong);
   // 日志正文面板 → surface 档
   border-radius: var(--dd-radius-surface);
   overflow: hidden;
@@ -445,7 +445,7 @@ function handleClose() {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
   gap: 12px;
 }
 
@@ -470,7 +470,7 @@ function handleClose() {
 .empty-hint {
   padding: 40px 20px;
   text-align: center;
-  color: var(--el-text-color-placeholder);
+  color: var(--dd-text-3);
 }
 
 @media (max-width: 768px) {

@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
@@ -13,6 +14,7 @@ import {
   shouldWarmMonaco,
   warmMonaco,
 } from '@/utils/monacoWarmup'
+import { motionLevel } from '@/utils/motion'
 import { getCachedPanelTitle, loadPanelSettings } from '@/utils/panelSettings'
 
 const roleLevel: Record<string, number> = {
@@ -374,6 +376,80 @@ router.afterEach((to) => {
   const title = to.meta.title as string | undefined
   const panelTitle = getCachedPanelTitle()
   document.title = title ? `${panelTitle} - ${title}` : panelTitle
+})
+
+// ============================================================================
+// 切页 View Transitions（v4.0，design §2.2）
+// ----------------------------------------------------------------------------
+// 时序：beforeResolve（所有守卫与懒加载的路由组件都已就绪，不会在过渡里等网络）→ startViewTransition 截旧画面 →
+//       在它的更新回调里放行导航 → afterEach + nextTick（新页面已经渲染进 DOM）→ 结束更新回调，浏览器截新画面做动画。
+// 过渡期间 <html> 挂 dd-vt-page：内容区（.route-shell）只在这时才有 view-transition-name: dd-main（styles/motion.scss），
+// 常驻命名会让它自成层叠上下文，把移动端原地渲染的弹窗关进去。
+// MainLayout 的 page-shell 进出场由 <html> 上的 dd-vt 类关掉（applyMotionPreference 维护），两套切页动画不叠加。
+//
+// 只在下面这些条件都满足时才做，否则照常切页（不支持的浏览器、关闭动效、首次进入、登录页进出都走老路）：
+//   - 浏览器支持 document.startViewTransition，页面在前台；
+//   - 动效档位不是 off（subtle 档只淡入淡出，见 motion.scss）；
+//   - 新旧路由都在主布局里（matched 长度 > 1，即 MainLayout 的子路由），且路径真的变了（只改 query 不算）。
+// 任何一步出意外都直接放行导航：宁可没有动画，也不能卡住切页。
+// ============================================================================
+let finishPageTransition: (() => void) | null = null
+
+router.beforeResolve((to, from) => {
+  if (
+    typeof document === 'undefined'
+    || typeof document.startViewTransition !== 'function'
+    || document.visibilityState === 'hidden'
+    || motionLevel() === 'off'
+    || from.matched.length < 2
+    || to.matched.length < 2
+    || to.path === from.path
+  ) {
+    return
+  }
+
+  // 上一次过渡还没收尾（极快的连续点击）：先把它结束掉，再开新的
+  finishPageTransition?.()
+  finishPageTransition = null
+
+  return new Promise<void>((allowNavigation) => {
+    const root = document.documentElement
+    root.classList.add('dd-vt-page')
+    let transition: ViewTransition
+    try {
+      transition = document.startViewTransition(() => new Promise<void>((domUpdated) => {
+        // 兜底：afterEach 万一没来（理论上不会，导航失败也会触发 afterEach），1.5 秒后自己结束，
+        // 不让页面一直停在「冻结截图」上
+        const timer = window.setTimeout(() => {
+          if (finishPageTransition === done) finishPageTransition = null
+          domUpdated()
+        }, 1500)
+        const done = () => {
+          window.clearTimeout(timer)
+          domUpdated()
+        }
+        finishPageTransition = done
+        allowNavigation()
+      }))
+    } catch {
+      root.classList.remove('dd-vt-page')
+      allowNavigation()
+      return
+    }
+    const cleanup = () => root.classList.remove('dd-vt-page')
+    transition.finished.then(cleanup, cleanup)
+    // 过渡被跳过（同时切了主题、页面切到后台）时 ready 会 reject，吞掉即可：更新回调照样会执行
+    transition.ready.catch(() => {})
+  })
+})
+
+router.afterEach(async () => {
+  const done = finishPageTransition
+  if (!done) return
+  finishPageTransition = null
+  // 等 Vue 把新路由渲染进 DOM 再让浏览器截新画面
+  await nextTick()
+  done()
 })
 
 // chunk 加载失败（多半是面板升级后浏览器手里还是旧页面，旧文件名已被删除）→ 自动刷新一次，并直接落到

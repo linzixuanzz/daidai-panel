@@ -75,7 +75,7 @@ const releaseNotesHtml = computed(() => {
 </script>
 
 <template>
-  <el-card shadow="never" class="hero-card">
+  <el-card shadow="never" class="hero-card dd-spot dd-rise" style="--dd-i: 0">
     <div class="hero-layout">
       <div class="hero-section-title">产品与版本</div>
 
@@ -240,8 +240,9 @@ const releaseNotesHtml = computed(() => {
 }
 
 .hero-section-title {
-  font-size: 15px;
-  font-weight: 700;
+  // 卡片标题字号 / 字重读排版级令牌
+  font-size: var(--dd-card-title-size);
+  font-weight: var(--dd-card-title-weight);
   color: var(--el-text-color-primary);
   margin-bottom: 20px;
 }
@@ -305,7 +306,7 @@ const releaseNotesHtml = computed(() => {
 .hero-version-value {
   font-size: 18px;
   font-weight: 700;
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   font-family: 'Inter', var(--dd-font-ui), sans-serif;
 
   &--tech {
@@ -467,7 +468,7 @@ pre.release-notes-content {
     padding: 1px 5px;
     border-radius: var(--dd-radius-control);
     background: var(--el-fill-color);
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     font-family: var(--dd-font-mono);
     font-size: 12px;
     word-break: break-all;
@@ -497,7 +498,7 @@ pre.release-notes-content {
   }
 
   :deep(a) {
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     text-decoration: underline;
     text-underline-offset: 2px;
   }

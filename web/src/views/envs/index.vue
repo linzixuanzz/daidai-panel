@@ -1249,7 +1249,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
            - 导出的下拉菜单（Shell / JS / Python 预览与导入）：手机上「导出」直接下载 JSON；
            - 遮蔽模式切换：沿用本机存的那一档（与同一浏览器的桌面端共用，默认「自动」），每行的小眼睛照样能临时揭示。
          外面包一层 .env-mobile-toolbar 只为挂入场动画：两支来回切换时外层不重建，动画不会在每次勾选时重放。 -->
-    <div v-if="isMobile" class="env-mobile-toolbar">
+    <div v-if="isMobile" class="env-mobile-toolbar dd-rise" style="--dd-i: 0">
       <!-- 批量栏：全选 → 批量按钮（图标 + 短文字）→ 取消放最后；不显示「已选 N 项」，勾了几张卡一眼就能数。
            横向滑动、隐藏滚动条（dd-scroll-row），7 颗按钮在窄屏上放不下时左右划。
            按钮形态沿用桌面批量区：禁用 = danger plain、删除 = 实心 danger，两者之间隔着改名 / 分组两个中性按钮。 -->
@@ -1298,7 +1298,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
         />
       </div>
     </div>
-    <div v-else class="toolbar">
+    <div v-else class="toolbar dd-rise" style="--dd-i: 0">
       <!-- 左槽是恒在的容器（flex:1 + 固定高度下限），内部的「筛选区」与「批量区」两支【都常驻 DOM】，
            叠放在同一个 1×1 网格格子里，只用 visibility 切换显示：勾一下就让批量按钮就地显形，
            筛选控件同一帧立即隐藏（transition 只列了 opacity，visibility 是即时生效的，
@@ -1422,7 +1422,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
     </div>
 
     <div v-if="isMobile" class="env-mobile-scroll">
-      <div class="dd-mobile-list env-mobile-list">
+      <div class="dd-mobile-list env-mobile-list dd-rise" style="--dd-i: 1">
         <div
           v-for="row in filteredEnvList"
           :key="row.id"
@@ -1578,7 +1578,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
       </el-empty>
     </div>
 
-    <div v-else class="table-card">
+    <div v-else class="table-card dd-spot dd-rise" style="--dd-i: 1">
       <el-table
         ref="tableRef"
         :data="filteredEnvList"
@@ -2056,7 +2056,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
 
   &.active {
     background: var(--el-bg-color);
-    color: var(--el-color-primary);
+    color: var(--dd-accent-ink);
     border-color: var(--el-border-color-lighter);
     font-weight: 600;
   }
@@ -2395,7 +2395,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
 .env-mobile-drag-handle:active {
   cursor: grabbing;
   background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   border-color: var(--el-color-primary-light-7);
 }
 
@@ -2411,8 +2411,8 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
 
 // 置顶移动卡（特有元素）：只保留置顶语义的橙色左缘标识，不再叠加环境光阴影
 .env-card--pinned {
-  border-color: rgba(245, 166, 35, 0.28);
-  box-shadow: inset 4px 0 0 #f5a623;
+  border-color: color-mix(in srgb, var(--dd-warn) 28%, transparent);
+  box-shadow: inset 4px 0 0 var(--dd-warn);
 }
 
 /* ---- Cell Styles ---- */
@@ -2467,7 +2467,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
   flex: 0 1 auto;
   font-family: var(--dd-font-mono);
   font-size: 13px;
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2507,19 +2507,20 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
   font-weight: 700;
 }
 
+// 置顶标签：v4.0 起改读警告色令牌（浅底 + 墨色字），跟着主题明暗走，不再是一枚固定的金色贴纸
 .pinned-chip {
-  color: #8a4b00;
-  background: #ffd66b;
-  border: 1px solid rgba(196, 118, 0, 0.28);
+  color: var(--dd-warn-ink);
+  background: color-mix(in srgb, var(--dd-warn) 15%, var(--dd-surface-solid));
+  border: 1px solid color-mix(in srgb, var(--dd-warn) 30%, transparent);
 }
 
-// 重要标签（APP #16）：紫色是语义识别色（同置顶金色，design-system §1 硬规则 1 允许写死），
-// 本页别处没用过紫色。和置顶一样明暗两态不变（一枚浅色贴纸）：字 #6d28d9 压浅紫底约 6:1，过 AA。
+// 重要标签（APP #16）：紫色是语义识别色，主题令牌里没有紫色，所以只保留色相 #8b5cf6，
+// 底色 / 字色按墨色同一公式和主题的表面色、正文色混合，明暗两面自动成立。
 // 颜色之外还有锁图标 +「重要」两个字，不只靠颜色传达状态。
 .important-chip {
-  color: #6d28d9;
-  background: #ede9fe;
-  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: color-mix(in srgb, #8b5cf6 55%, var(--dd-text));
+  background: color-mix(in srgb, #8b5cf6 14%, var(--dd-surface-solid));
+  border: 1px solid color-mix(in srgb, #8b5cf6 35%, transparent);
 }
 
 .env-value-text,
@@ -2585,7 +2586,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
 
   // 类名刻意不叫 is-plain：那是 EP 给 plain 按钮的状态类，.el-button.is-plain 会改掉 hover / focus 时的边框与底色
   &.is-unmasked {
-    color: var(--el-color-warning);
+    color: var(--dd-warn-ink);
   }
 }
 
@@ -2607,7 +2608,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
   flex-shrink: 0;
   // 图标 14px，和第一行 20px 行高垂直居中
   margin-top: 3px;
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   // 不是当前项也要占位，三项的文字才能左对齐
   visibility: hidden;
 }
@@ -2629,7 +2630,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
 }
 
 .env-mask-option.is-active .env-mask-option__label {
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink);
   font-weight: 600;
 }
 
@@ -2812,11 +2813,11 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
 // 同时它仍然【输给】EP 的行 hover（`.el-table__body tr.hover-row > td.el-table__cell` = 0,3,2），
 // 所以置顶行悬停仍会正常变成 hover 底色，与改动前一致。
 :deep(.el-table .env-row-pinned > td) {
-  background: color-mix(in srgb, #ffd66b 12%, var(--el-table-tr-bg-color));
+  background: color-mix(in srgb, var(--dd-warn) 10%, var(--el-table-tr-bg-color));
 }
 
 :deep(.env-row-pinned > td:first-child) {
-  box-shadow: inset 4px 0 0 #f5a623;
+  box-shadow: inset 4px 0 0 var(--dd-warn);
 }
 
 /* ---- Export Dialog ---- */
@@ -2884,33 +2885,8 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
 }
 
 // ===== 入场动画 =====
-// 与定时任务页/执行日志页/订阅页统一：只对卡片级容器（工具条 / 表格卡 / 移动列表）做克制的淡入上移 + 轻微错落；
-// 不给表格每一行或每张移动卡做 stagger；骨架屏/桌面空态（.env-desktop-state）不参与入场，避免与其自身加载/空态冲突。
-// 时长走令牌，prefers-reduced-motion 时令牌自动降为 1ms 即等效关闭。
-@keyframes dd-envs-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-// 移动端工具栏挂在外层 .env-mobile-toolbar 上：批量栏与搜索栏在它里面 v-if 切换，外层不重建，动画只在进页时跑一次
-.toolbar,
-.env-mobile-toolbar,
-.table-card,
-.dd-mobile-list {
-  animation: dd-envs-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) both;
-}
-
-// 轻微错落：工具条先入，表格卡/移动列表略晚
-.table-card,
-.dd-mobile-list {
-  animation-delay: 60ms;
-}
+// v4.0 起改用全局 .dd-rise（styles/motion.scss，受动效档位控制）：模板里给工具条 / 表格卡 / 移动列表挂类，
+// 内联 --dd-i 控制错落（工具条 0、表格卡 / 移动列表 1）。不给表格每一行或每张移动卡做 stagger。
 </style>
 
 <style lang="scss">

@@ -565,8 +565,8 @@ const themeTitle = computed(() => {
 <template>
   <div class="login-page" @mousemove="handleMouseMove">
     <div class="theme-toggle">
-      <!-- 只改 :icon / :title，别动这里的 DOM 结构：暗色样式挂在下方【非 scoped】style 块的
-           `html.dark .theme-toggle .theme-toggle-btn` 上，换成原生 button 会让那段选择器失配 -->
+      <!-- 只改 :icon / :title，别动这里的 DOM 结构：下方【非 scoped】style 块里「玻璃关闭」那条
+           `.login-page .theme-toggle .theme-toggle-btn` 按这个层级匹配，换成原生 button 会让选择器失配 -->
       <el-button
         :icon="themeIcon"
         text
@@ -802,9 +802,9 @@ const themeTitle = computed(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  /* 纯色底，去掉渐变与辉光 */
-  background: #1677ff;
+  /* 纯色底，去掉渐变与辉光；与实心主按钮同一对令牌（素白主题是黑底白字） */
+  color: var(--dd-btn-primary-fg);
+  background: var(--dd-btn-primary-bg);
   flex-shrink: 0;
 }
 
@@ -850,7 +850,7 @@ const themeTitle = computed(() => {
   transition: color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &--error {
-    color: var(--el-color-danger);
+    color: var(--dd-err-ink);
     font-weight: 600;
   }
 }
@@ -861,23 +861,10 @@ const themeTitle = computed(() => {
   gap: 8px;
 }
 
-/* 提交按钮：纯色底，去掉渐变与辉光，hover 只加深底色；圆角吃控件档令牌 */
+/* 提交按钮：颜色交给 EP 主按钮（已接 --dd-btn-primary-* 令牌），这里只管尺寸；圆角吃控件档令牌 */
 .totp-submit-btn {
   border-radius: var(--dd-radius-control);
   padding: 0 18px;
-  background: #1677ff;
-  border: none;
-
-  &:hover,
-  &:focus {
-    background: #1565d8;
-    border: none;
-  }
-
-  &:disabled {
-    background: var(--el-color-info-light-5);
-    opacity: 0.6;
-  }
 }
 
 .login-page {
@@ -885,11 +872,11 @@ const themeTitle = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #eef1f5;
+  /* v4.0：整页不铺底色，让 App.vue 的 AppBackdrop（主题背景层）透出来 */
+  background: transparent;
   padding: 24px;
   overflow: hidden;
   position: relative;
-  transition: background var(--dd-motion-slow) var(--dd-ease-standard);
 }
 
 .theme-toggle {
@@ -898,29 +885,31 @@ const themeTitle = computed(() => {
   right: 24px;
   z-index: 10;
 
-  /* 主题切换：普通图标按钮（原 circle），hover 只换底色不上浮；圆角吃控件档令牌 */
+  /* 主题切换：玻璃图标按钮，hover 只换底色不上浮；颜色全读主题令牌，明暗两面自动成立 */
   .theme-toggle-btn {
     width: 44px;
     height: 44px;
     padding: 0;
     border-radius: var(--dd-radius-control);
     font-size: 20px;
-    color: #666;
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(0, 0, 0, 0.06);
+    color: var(--dd-text-2);
+    background: var(--dd-surface);
+    -webkit-backdrop-filter: blur(var(--dd-glass-blur)) saturate(150%);
+    backdrop-filter: blur(var(--dd-glass-blur)) saturate(150%);
+    border: var(--dd-border-width) solid var(--dd-border);
+    box-shadow: var(--dd-shadow-card);
     transition:
-      color 0.3s,
-      background-color 0.3s,
-      border-color 0.3s;
+      color var(--dd-motion-fast) var(--dd-ease-standard),
+      background-color var(--dd-motion-fast) var(--dd-ease-standard);
 
     &:hover {
-      background: rgba(255, 255, 255, 0.9);
+      color: var(--dd-text);
+      background: var(--dd-surface-3);
     }
   }
 }
 
-/* 登录卡：1px 边框划分层次，不再用投影浮起；圆角吃表面档令牌 */
+/* 登录卡：主题卡片的边框 / 阴影 / 玻璃模糊（aurora 等主题是半透明玻璃卡，背后的极光透过来）；圆角吃表面档令牌 */
 .login-container {
   display: flex;
   width: 940px;
@@ -928,7 +917,10 @@ const themeTitle = computed(() => {
   min-height: 560px;
   border-radius: var(--dd-radius-surface);
   overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width) solid var(--dd-border);
+  box-shadow: var(--dd-shadow-card);
+  -webkit-backdrop-filter: blur(var(--dd-glass-blur)) saturate(150%);
+  backdrop-filter: blur(var(--dd-glass-blur)) saturate(150%);
   // 时长/缓动改吃令牌：原来写死 0.6s ease-out，是全站少数几个绕过
   // prefers-reduced-motion 降级的动效之一（那段补丁压不到写死的值）。
   animation: loginSlideUp var(--dd-motion-slow) var(--dd-ease-decelerate);
@@ -945,10 +937,10 @@ const themeTitle = computed(() => {
   }
 }
 
-/* 插画区底色：纯色（原为上下渐变）；插画本身在 Characters.vue，不受影响 */
+/* 插画区底色：卡片底上叠一层很淡的主色，和右侧表单区分开；插画本身在 Characters.vue，不受影响 */
 .login-left {
   flex: 1;
-  background: #f7fafc;
+  background: color-mix(in srgb, var(--dd-accent) 6%, var(--dd-surface));
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -973,7 +965,7 @@ const themeTitle = computed(() => {
 
 .login-right {
   flex: 1;
-  background: #fff;
+  background: var(--dd-surface);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -986,7 +978,7 @@ const themeTitle = computed(() => {
   align-items: center;
   justify-content: center;
   padding: 60px 0;
-  color: #8c8c8c;
+  color: var(--dd-text-3);
   font-size: 14px;
 }
 
@@ -1027,16 +1019,17 @@ const themeTitle = computed(() => {
   }
 
   h2 {
+    font-family: var(--dd-font-head);
     font-size: 28px;
     font-weight: 700;
-    color: #1f1f1f;
+    color: var(--dd-text);
     margin: 0 0 8px;
     transition: color var(--dd-motion-slow) var(--dd-ease-standard);
   }
 
   p {
     font-size: 14px;
-    color: #8c8c8c;
+    color: var(--dd-text-3);
     margin: 0;
     transition: color var(--dd-motion-slow) var(--dd-ease-standard);
   }
@@ -1053,51 +1046,30 @@ const themeTitle = computed(() => {
     margin-bottom: 18px;
   }
 
-  /* inset 1px 是 Element Plus 输入框的边框实现（功能性，非装饰阴影），保留；
-     只去掉聚焦时外扩的 3px 辉光。圆角吃控件档令牌 */
+  /* 输入框的描边 / 悬停 / 聚焦颜色交给 EP（已映射到主题令牌），这里只管高度与圆角 */
   :deep(.el-input__wrapper) {
     border-radius: var(--dd-radius-control);
     height: 46px;
-    box-shadow: 0 0 0 1px #e0e0e0 inset;
-    transition: box-shadow var(--dd-motion-normal) var(--dd-ease-standard);
-
-    &:hover {
-      box-shadow: 0 0 0 1px #1890ff inset;
-    }
-
-    &.is-focus {
-      box-shadow: 0 0 0 1px #1890ff inset;
-    }
   }
 }
 
 .pwd-toggle {
   cursor: pointer;
-  color: #8c8c8c;
+  color: var(--dd-text-3);
   transition: color var(--dd-motion-normal) var(--dd-ease-standard);
 
   &:hover {
-    color: #1890ff;
+    color: var(--dd-accent-ink);
   }
 }
 
-/* 登录按钮：纯色底，hover 只加深底色，不上浮不加投影；圆角吃控件档令牌 */
+/* 登录按钮：颜色交给 EP 主按钮（已接 --dd-btn-primary-* 令牌，素白主题是黑底白字），这里只管尺寸；圆角吃控件档令牌 */
 .login-btn {
   width: 100%;
   height: 46px;
   border-radius: var(--dd-radius-control);
   font-weight: 600;
   font-size: 15px;
-  background: #1f1f1f;
-  border: none;
-  transition:
-    color 0.3s,
-    background-color 0.3s,
-    border-color 0.3s;
-
-  &:hover {
-    background: #333 !important;
-  }
 }
 
 /* 通行密钥登录（#175）：次要按钮，白底描边与主按钮的深色实底区分开；尺寸、圆角与主按钮一致 */
@@ -1145,8 +1117,7 @@ const themeTitle = computed(() => {
   text-align: center;
   margin-top: 16px;
   font-size: 12px;
-  color: #bfbfbf;
-  transition: color var(--dd-motion-slow) var(--dd-ease-standard);
+  color: var(--dd-text-3);
 }
 
 @media (max-width: 768px) {
@@ -1172,94 +1143,13 @@ const themeTitle = computed(() => {
 </style>
 
 <style lang="scss">
-html.dark {
-  .login-page {
-    background: #101828;
-  }
-
-  .theme-toggle .theme-toggle-btn {
-    color: #c0c0c0;
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.1);
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.15);
-      color: #ffd666;
-    }
-  }
-
-  .login-container {
-    border-color: var(--el-border-color-lighter);
-  }
-
-  .login-left {
-    background: #17212f;
-  }
-
-  .login-right {
-    background: #111827;
-  }
-
-  .login-loading {
-    color: #666;
-  }
-
-  .login-header {
-    h2 {
-      color: #e8e8ec;
-    }
-    p {
-      color: #6b6b80;
-    }
-  }
-
-  .login-form {
-    // 同亮色：inset 1px 是输入框边框实现，保留；聚焦不再外扩辉光
-    .el-input__wrapper {
-      background: #252540;
-      box-shadow: 0 0 0 1px #3a3a55 inset;
-
-      &:hover {
-        box-shadow: 0 0 0 1px #1890ff inset;
-      }
-
-      &.is-focus {
-        box-shadow: 0 0 0 1px #1890ff inset;
-      }
-    }
-
-    .el-input__inner {
-      color: #e0e0e8;
-
-      &::placeholder {
-        color: #555568;
-      }
-    }
-
-    .el-input__prefix .el-icon,
-    .el-input__suffix .el-icon {
-      color: #555568;
-    }
-  }
-
-  .pwd-toggle {
-    color: #555568;
-
-    &:hover {
-      color: #36cfc9;
-    }
-  }
-
-  .login-btn {
-    background: #1890ff;
-
-    &:hover {
-      background: #1677ff !important;
-    }
-  }
-
-  .login-version {
-    color: #4a4a60;
+/* v4.0：原来这里是一整段 html.dark 写死颜色的暗色补丁。登录页改读主题令牌后明暗两面由令牌自己切，补丁删除。
+   只剩「玻璃关闭」这个开关分支：模糊为 0 时登录卡与主题按钮不再 backdrop-filter（--dd-surface 已被换成实色）。 */
+html[data-dd-glass="off"] {
+  .login-page .login-container,
+  .login-page .theme-toggle .theme-toggle-btn {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
 </style>

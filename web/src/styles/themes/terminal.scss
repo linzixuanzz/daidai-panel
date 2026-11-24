@@ -1,0 +1,107 @@
+// ============================================================================
+// 主题：终端（terminal）
+// ----------------------------------------------------------------------------
+// 暗色取自效果演示第 2 节；亮色是新设计：米白纸底 + 墨绿等宽字，扫描线改极淡。
+// 明暗两版都全局等宽：--dd-font-ui / --dd-font-head 都指向 --dd-font-mono。
+// 写法约定见 classic.scss 文件头。
+// ============================================================================
+
+html[data-dd-theme="terminal"] {
+  color-scheme: light;
+  --dd-font-ui: var(--dd-font-mono);
+  --dd-bg: #f3f1e7;
+  --dd-surface: rgba(252, 251, 245, 0.92);
+  --dd-surface-solid: #fbfaf3;
+  --dd-surface-2: rgba(16, 94, 52, 0.04);
+  --dd-surface-3: rgba(16, 94, 52, 0.08);
+  --dd-overlay: #fdfcf7;
+  --dd-border: rgba(16, 94, 52, 0.18);
+  --dd-border-strong: rgba(16, 94, 52, 0.36);
+  --dd-border-width: 1px;
+  --dd-text: #0d3b22;
+  --dd-text-2: #2f5e43;
+  --dd-text-3: #46684f;
+  --dd-accent: #0f7a3e;
+  --dd-accent-2: #0e7490;
+  --dd-on-accent: #f3fff7;
+  --dd-on-status: #ffffff;
+  --dd-ok: #15803d;
+  --dd-warn: #a16207;
+  --dd-err: #be123c;
+  --dd-info: #0e7490;
+  --dd-chart-ok: var(--dd-accent);
+  --dd-glass-blur: 4px;
+  --dd-shadow-card: 0 0 0 1px rgba(16, 94, 52, 0.05), 0 8px 24px -16px rgba(16, 94, 52, 0.3);
+  --dd-shadow-card-hover: 0 0 0 1px rgba(16, 94, 52, 0.08), 0 12px 30px -16px rgba(16, 94, 52, 0.38);
+  --dd-shadow-shell: 0 0 0 1px rgba(16, 94, 52, 0.05), 0 10px 28px -18px rgba(16, 94, 52, 0.3);
+  --dd-text-glow: none;
+  --dd-theme-radius-control: 2px;
+  --dd-theme-radius-surface: 3px;
+  --dd-theme-radius-pill: 3px;
+  --dd-theme-radius-control-mobile: 3px;
+  --dd-theme-radius-surface-mobile: 4px;
+  --dd-bg-blob-1: #bbf7d0;
+  --dd-bg-blob-2: #a7f3d0;
+  --dd-bg-blob-3: #a5f3fc;
+  --dd-bg-blob-4: #d9f99d;
+  --dd-bg-blob-opacity: 0.12;
+  --dd-bg-grid-opacity: 0.35;
+  --dd-bg-grid-line: rgba(16, 94, 52, 0.07);
+  --dd-bg-noise-opacity: 0.05;
+  --dd-bg-noise-blend: multiply;
+  // 亮底上的扫描线只留一点纹理，否则像屏幕坏了
+  --dd-bg-scan-opacity: 0.1;
+  --dd-font-head: var(--dd-font-mono);
+}
+
+html.dark[data-dd-theme="terminal"] {
+  color-scheme: dark;
+  --dd-font-ui: var(--dd-font-mono);
+  --dd-bg: #030705;
+  --dd-surface: rgba(6, 14, 10, 0.84);
+  --dd-surface-solid: #050c08;
+  --dd-surface-2: rgba(60, 255, 143, 0.035);
+  --dd-surface-3: rgba(60, 255, 143, 0.08);
+  --dd-overlay: rgba(4, 12, 8, 0.97);
+  --dd-border: rgba(60, 255, 143, 0.16);
+  --dd-border-strong: rgba(60, 255, 143, 0.34);
+  --dd-border-width: 1px;
+  --dd-text: #c8ffd9;
+  --dd-text-2: #86d9a6;
+  --dd-text-3: #62b585;
+  --dd-accent: #3cff8f;
+  --dd-accent-2: #00e5ff;
+  --dd-on-accent: #02140a;
+  --dd-on-status: #02140a;
+  --dd-ok: #3cff8f;
+  --dd-warn: #ffd166;
+  --dd-err: #ff5c7a;
+  --dd-info: #00e5ff;
+  --dd-chart-ok: var(--dd-accent);
+  // 复位亮色块里的实心色覆盖（亮色块在暗色下同样匹配，这里不写就会漏过来；暗色下状态色本身就够亮）
+  --dd-ok-solid: var(--dd-ok);
+  --dd-warn-solid: var(--dd-warn);
+  --dd-err-solid: var(--dd-err);
+  --dd-btn-primary-bg: var(--dd-accent);
+  --dd-glass-blur: 4px;
+  --dd-shadow-card: 0 0 0 1px rgba(60, 255, 143, 0.04), 0 0 34px -14px rgba(60, 255, 143, 0.4);
+  --dd-shadow-card-hover: 0 0 0 1px rgba(60, 255, 143, 0.08), 0 0 40px -12px rgba(60, 255, 143, 0.5);
+  --dd-shadow-shell: 0 0 0 1px rgba(60, 255, 143, 0.04), 0 0 34px -14px rgba(60, 255, 143, 0.4);
+  --dd-text-glow: 0 0 14px rgba(60, 255, 143, 0.55);
+  --dd-theme-radius-control: 2px;
+  --dd-theme-radius-surface: 3px;
+  --dd-theme-radius-pill: 3px;
+  --dd-theme-radius-control-mobile: 3px;
+  --dd-theme-radius-surface-mobile: 4px;
+  --dd-bg-blob-1: #065f46;
+  --dd-bg-blob-2: #064e3b;
+  --dd-bg-blob-3: #0e7490;
+  --dd-bg-blob-4: #14532d;
+  --dd-bg-blob-opacity: 0.35;
+  --dd-bg-grid-opacity: 0.55;
+  --dd-bg-grid-line: rgba(60, 255, 143, 0.07);
+  --dd-bg-noise-opacity: 0.06;
+  --dd-bg-noise-blend: screen;
+  --dd-bg-scan-opacity: 0.55;
+  --dd-font-head: var(--dd-font-mono);
+}
