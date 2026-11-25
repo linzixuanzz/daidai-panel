@@ -46,9 +46,9 @@ defineProps<{
 @use './config-card-shared.scss' as *;
 
 .stats-card {
-  // 扁平化：无阴影，层次只靠 1px 描边表达；卡片本体属容器类表面 → surface 档
+  // 扁平化：描边宽走主题令牌；卡片本体属容器类表面 → surface 档
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
   height: 100%;
 }
 
@@ -83,7 +83,8 @@ defineProps<{
   font-size: 24px;
   font-weight: 700;
   color: var(--el-text-color-primary);
-  font-family: 'Inter', var(--dd-font-ui), sans-serif;
+  // --dd-font-ui 优先，避免 Inter 压掉 terminal 主题等宽数字
+  font-family: var(--dd-font-ui), 'Inter', sans-serif;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.01em;

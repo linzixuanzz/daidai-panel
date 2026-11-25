@@ -1432,9 +1432,8 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
             'env-card--disabled': !row.enabled
           }"
         >
-          <!-- 首行：拖拽手柄 → 复选框 → 状态灯 → 变量名 →「重要」标签 → 分组 / 置顶小标签 → 右上角「···」。
-               手机上不再有「只看这个变量名」的放大镜：变量名筛选在移动端整体不提供（见移动端工具栏的注释），
-               留着它，点一下就会造出一个手机上看不见、也关不掉的变量名筛选。桌面表格那颗照旧。 -->
+          <!-- 首行：拖拽手柄 → 复选框 → 状态灯 → 变量名 →「重要」标签 → 右上角「···」。
+               分组 / 置顶标签移至首行下方的独立次行，避免长变量名把标签区压成几像素的空胶囊碎片。 -->
           <div class="dd-mobile-card__head">
             <button
               v-if="sortableEnabled"
@@ -1461,39 +1460,38 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
                  同挂 .env-name 是为了沿用等宽字体、主题色与禁用卡的降档规则；字号由卡片作用域里的覆盖交还给 16px。
                  单行省略，:title 挂全名。 -->
             <span class="env-name dd-mobile-card__name" :title="row.name">{{ row.name }}</span>
-            <!-- 「重要」标签（APP #16）刻意放在下面的标签组【外面】、紧跟变量名：标签组 flex-basis 是 0，
-                 变量名一长它就被挤成 0 宽、整组裁掉；置顶还有左缘橙条兜底，「重要」没有别的视觉通道，
-                 所以它自己 flex-shrink:0 常驻，宁可让变量名早一点出省略号。 -->
+            <!-- 「重要」标签（APP #16）常驻首行紧跟变量名，确保无需扫读次行即可识别高危删除提醒 -->
             <span v-if="row.important" class="important-chip" title="重要变量：删除时会再确认一次">
               <el-icon><Lock /></el-icon>
               重要
             </span>
-            <!-- 没有分组时什么都不显示（不再写灰字「未分组」）；置顶除了这枚标签，卡片左缘还有橙色色条。 -->
-            <div
-              v-if="row.groups.length > 0 || isTopPinned(row)"
-              class="dd-mobile-card__head-tags env-card__tags"
-            >
-              <span
-                v-for="group in row.groups"
-                :key="group"
-                class="group-pill"
-                :style="getGroupBadgeStyle(group)"
-                :title="group"
-              >
-                <span class="group-dot" />
-                <span class="group-pill__text">{{ group }}</span>
-              </span>
-              <span v-if="isTopPinned(row)" class="pinned-chip">
-                <el-icon><Top /></el-icon>
-                置顶
-              </span>
-            </div>
             <!-- 「···」菜单与桌面操作列的 ▾ 同一份 buildEnvActionItems / onEnvAction：复制同名变量、置顶 / 取消置顶、标为重要 / 取消重要、删除 -->
             <DdMoreMenu
               :items="buildEnvActionItems(row)"
               :aria-label="`${row.name} 的更多操作`"
               @command="(key: string) => onEnvAction(key, row)"
             />
+          </div>
+
+          <!-- 标题下方次行：分组与置顶标签，允许自然换行，保证每枚标签完整显示、绝不露出残缺空皮 -->
+          <div
+            v-if="row.groups.length > 0 || isTopPinned(row)"
+            class="env-card__tags"
+          >
+            <span
+              v-for="group in row.groups"
+              :key="group"
+              class="group-pill"
+              :style="getGroupBadgeStyle(group)"
+              :title="group"
+            >
+              <span class="group-dot" />
+              <span class="group-pill__text">{{ group }}</span>
+            </span>
+            <span v-if="isTopPinned(row)" class="pinned-chip">
+              <el-icon><Top /></el-icon>
+              置顶
+            </span>
           </div>
 
           <!-- 字段区：标签与值横排，先「备注」再「值」。「更新时间」在卡片上不再显示（桌面表格仍有这一列）。 -->
@@ -1601,7 +1599,8 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
                           浏览器实测 1280×900、侧栏展开：230 时既置顶又重要的行变量名只剩约 29px、可见 2 个字符，
                           加宽 66px 后与只置顶的行看到的字符数相当（约 11 个）。
              不补回来的话名称的可见宽度会净减同样多，长变量名的省略号会提前出现。 -->
-        <el-table-column prop="name" label="名称" min-width="296">
+        <!-- v4.0.1 略微精简弹性列最小宽度，避免 1440px 展开侧栏时总最小宽超过可视区出现多余横滚 -->
+        <el-table-column prop="name" label="名称" min-width="240">
           <template #default="{ row }">
             <div class="env-name-wrap">
               <!-- 状态圆点：独立的「状态」列已删除，启用/禁用状态改由这枚圆点表达
@@ -1664,7 +1663,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
              为它把列加宽 22px 的话，宽屏下 EP 会按四个弹性列的 min-width 比例重新分剩余宽度，名称 / 备注 / 分组三列都跟着变，不值得。
              表头多了模式切换：cell padding 24 +「值」13 + gap 8 + 触发按钮
              （锁 14 + EP 给图标后文字的 6 + 4 字 × 12 + 箭头前 2 + 箭头 12 + padding 2×2 = 86）≈ 131px，也装得下。 -->
-        <el-table-column prop="value" label="值" min-width="280">
+        <el-table-column prop="value" label="值" min-width="220">
           <template #header>
             <div class="env-value-header">
               <span>值</span>
@@ -1726,12 +1725,12 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="remarks" label="备注" min-width="180">
+        <el-table-column prop="remarks" label="备注" min-width="140">
           <template #default="{ row }">
             <span class="env-remarks-text" :title="row.remarks || ''">{{ row.remarks || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="group" label="分组" min-width="180" align="center">
+        <el-table-column prop="group" label="分组" min-width="140" align="center">
           <template #default="{ row }">
             <div v-if="row.groups.length > 0" class="group-pill-list group-pill-list--table">
               <span
@@ -1755,7 +1754,7 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
         <!-- 原来这里是一整列「状态」（92px：switch + 启用/禁用文字），已删除：
              状态由名称列前的圆点表达、切换由操作列的「启用 / 禁用」按钮执行，一处状态一处开关。
              筛选口径不变，仍由工具栏的 .status-tabs（全部 / 已启用 / 已禁用）承担。 -->
-        <el-table-column label="更新时间" width="168" align="center">
+        <el-table-column label="更新时间" width="156" align="center">
           <template #default="{ row }">
             <span class="time-text">{{ formatDateTime(row.updated_at) }}</span>
           </template>
@@ -1765,23 +1764,9 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
              改成 Split Button：主体是最常用且可逆的「编辑」，其余收进菜单，
              删除标红并用分隔线隔开，置顶/取消置顶靠 visible 互斥。
 
-             列宽 172（v3.2.0 从 110 重算，与定时任务页取同一个值）：
-             EP 的 .el-table .cell 是 padding:0 12px + overflow:hidden，可用内容宽 = 172 - 24 = 148px。
-             这一格现在是两个元素：左边 Split Button（编辑 ▾），右边外置的「禁用 / 启用」普通按钮。
-             实测口径（size="small"，浏览器量出来的，不是估的）：
-               主体 = 中文字数 × 12（字宽）+ 22（EP small 的 padding 5px 11px）+ 2（边框）
-               caret = 32，且【不受 size 影响】：EP 的 el-dropdown 根节点只挂 `el-dropdown` + `is-disabled`，
-                 不带 size 修饰类，`.el-dropdown--small .el-dropdown__caret-button{width:24px}` 根本匹配不上。
-                 ⚠️ 本文件旧注释按那条规则算成 24px，是错的（会系统性偏小约 14px），此处一并订正 ——
-                 别再照 24px 把列宽收窄回去。
-               el-button-group 组内相邻按钮还有 -1px 的负边距
-             「编辑」= 2×12+22+2 = 48 → 48+32-1 = 79px；「禁用」/「启用」同为 2 字 = 48px；
-             中间 gap 4px（.action-btns 已把 EP 的 `.el-button + .el-button` 外边距清零，间距只由 gap 决定，
-             不会两份叠加）。合计 79 + 4 + 48 = 131px，148 - 131 = 17px 余量。
-             按钮组一旦超出可用宽，.cell 就会变成可滚动容器，点右边的按钮时整行会被滚偏且不复位。
-
+             列宽 168（可用内容宽 144px，按钮组实测 131px，仍有 13px 余量）。
              fixed="right"：与定时任务页一致，窄窗口横向滚动时操作列常驻可见。 -->
-        <el-table-column label="操作" width="172" fixed="right" align="center">
+        <el-table-column label="操作" width="168" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-btns">
               <DdSplitButton
@@ -1988,6 +1973,11 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
     gap: 10px;
     // 与左区第一行对齐的另一半：撑到同样的 39px，内部 center 让 32px 的按钮落在同一条中线上
     min-height: 39px;
+
+    // 清零 EP 默认相邻按钮 12px 左外边距，防止与 gap 叠加拉宽右区、挤压左槽换行
+    :deep(.el-button + .el-button) {
+      margin-left: 0;
+    }
   }
 
   // 三个输入控件：定宽 → 可伸缩。
@@ -2076,6 +2066,11 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
   // 不补这个下限它就贴在网格行顶端、中心线只有 16px，勾选后整排批量按钮会比右侧按钮高 3.5px。
   // 39px 本来就是左槽的 min-height，补上不会改变左槽高度，高度不变式照旧成立。
   min-height: 39px;
+
+  // 清零 EP 默认相邻按钮 12px 左外边距，防止 6 颗批量按钮叠出双倍间距在 1280~1440px 永久撑成双行
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 // 勾选数：纯文字级提示，用次级色，不跟旁边那排实体按钮抢视觉重量
@@ -2160,23 +2155,8 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
 }
 
 /* ---- Table internals ---- */
-:deep(.el-table) {
-  // 边框统一走令牌，明暗自动适配（原写死浅灰会在暗色串色）
-  --el-table-border-color: var(--el-border-color-lighter);
-
-  .el-table__header-wrapper th {
-    border-bottom: 1px solid var(--el-border-color-light);
-  }
-
-  .el-table__row td {
-    border-bottom: 1px solid var(--el-border-color-lighter);
-  }
-
-  .el-table__cell {
-    padding: 12px 0;
-  }
-}
-
+// 表线颜色与常规行高统一交由全局 global.scss + _switches.scss 的密度变量控制，
+// 不在页面局部写死 --el-table-border-color 与 12px 单元格内边距，释放 v4.0 密度切换能力。
 :deep(.env-table--compact .el-table__cell) {
   padding-top: 8px;
   padding-bottom: 8px;
@@ -2300,17 +2280,15 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
   font-size: 16px;
 }
 
-// 名称右侧的分组 / 置顶小标签组（与 .dd-mobile-card__head-tags 同挂，这里只改两处）：
-//   - 名称优先：flex-basis 取 0，只分名称用剩的宽度。全局那条是 0 1 auto，会和名称按各自内容宽等比例一起缩，
-//     分组一多，变量名就被砍得只剩几个字；变量名才是认卡片的依据，分组是次要信息。
-//   - 放不下的整枚隐藏：flex-wrap + 定高 20px + overflow:hidden，挤不下的标签整枚换到第二行、被高度裁掉，
-//     不会出现半截标签，也不会把首行撑高；只剩第一枚都放不下时，靠 .group-pill 基态的 max-width:100% 收成带省略号的短标签。
-//   不做「+N」计数：它本身也要占宽，而且点开看全部分组有编辑弹窗。
+// 标题下方的分组 / 置顶标签独立次行：允许自然换行、不锁死 20px 高度，
+// 避免在首行被长变量名挤成 5~15px 的空胶囊碎片，保证每枚标签完整展示。
 .env-card__tags {
-  flex: 1 1 0;
+  display: flex;
   flex-wrap: wrap;
-  align-content: flex-start;
-  height: 20px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  min-width: 0;
 }
 
 // 分组标签在卡片里收成 el-tag size="small" 的尺寸（20px 高、左右 7px、字重 500），与其它页卡片首行的状态标签同一规格。
@@ -2662,6 +2640,14 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
   border: 1px solid hsl(var(--group-hue) 72% 78% / 0.7);
 }
 
+// 暗色模式覆写：高明度浅底在深色表格上刺眼串色，改为高明度字色 + 低明度半透底 + 柔和边框，
+// 与紧邻的 .important-chip / .pinned-chip 视觉融合。注意：scoped 里直接写 html.dark，禁止 :global(html.dark)（会被 SFC 编译器丢弃后半段）。
+html.dark .group-pill {
+  color: hsl(var(--group-hue) 78% 78%);
+  background: hsl(var(--group-hue) 45% 22% / 0.55);
+  border-color: hsl(var(--group-hue) 55% 58% / 0.32);
+}
+
 .group-pill-list {
   display: flex;
   flex-wrap: wrap;
@@ -2697,6 +2683,10 @@ function handleStatusFilter(value: '' | 'enabled' | 'disabled') {
   border-radius: 2px;
   background: hsl(var(--group-hue) 72% 48%);
   flex-shrink: 0;
+}
+
+html.dark .group-dot {
+  background: hsl(var(--group-hue) 78% 64%);
 }
 
 // 环境变量状态灯：名称前的 8×8 圆点，绿 = 已启用 / 红 = 已禁用（桌面表格与移动卡片同用）。

@@ -70,12 +70,12 @@ const imageStyle = computed(() => {
   inset: 0;
   background: var(--dd-bg-image) center / cover no-repeat;
 
-  // 压一层底色，背景图再花哨，上面的卡片边缘与文字也不至于被吃掉
+  // 压一层底色（52%），背景图再花哨，未包卡片的页面标题与边缘文字也清晰可读
   &::after {
     content: "";
     position: absolute;
     inset: 0;
-    background: color-mix(in srgb, var(--dd-bg) 35%, transparent);
+    background: color-mix(in srgb, var(--dd-bg) 52%, transparent);
   }
 }
 

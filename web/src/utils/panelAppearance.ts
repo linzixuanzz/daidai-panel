@@ -87,10 +87,10 @@ function parseColor(color?: string) {
       return Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b) ? null : { r, g, b }
     }
     if (hex.length === 6 || hex.length === 8) {
-      const offset = hex.length === 8 ? 2 : 0
-      const r = Number.parseInt(hex.slice(offset, offset + 2), 16)
-      const g = Number.parseInt(hex.slice(offset + 2, offset + 4), 16)
-      const b = Number.parseInt(hex.slice(offset + 4, offset + 6), 16)
+      // CSS 8 位十六进制标准是 #RRGGBBAA（不是 Android 的 #AARRGGBB），RGB 始终从偏移 0 开始
+      const r = Number.parseInt(hex.slice(0, 2), 16)
+      const g = Number.parseInt(hex.slice(2, 4), 16)
+      const b = Number.parseInt(hex.slice(4, 6), 16)
       return Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b) ? null : { r, g, b }
     }
   }
@@ -248,6 +248,9 @@ export function applyPanelAppearance(settings?: PanelAppearanceSettings | null) 
   root.style.setProperty('--dd-log-text-color', getReadableTextColor(logBackground) || getDefaultLogTextColor(isDark))
   root.style.setProperty('--dd-log-theme-mode', isDark ? 'dark' : 'light')
   root.style.setProperty('--dd-log-bg-image', toCSSImageValue(effective?.log_background_image))
+  // 供 global.scss 切换浅底/深底两套 ANSI 调色板，以及有背景图时叠加半透明可读遮罩
+  root.setAttribute('data-dd-log-tone', isDarkColor(logBackground) ? 'dark' : 'light')
+  root.setAttribute('data-dd-log-has-image', effective?.log_background_image?.trim() ? '1' : '0')
 
   // 圆角刻度：本次带了合法值就更新，没带就沿用上一次的（理由见 lastAppliedShape）
   applyPanelShapeStyle(effective?.panel_shape_style)
@@ -475,7 +478,19 @@ export function applyThemeMode(raw?: string | null): ThemeMode {
     'dark',
     next === 'dark' || (next === 'system' && systemPrefersDark()),
   )
+  syncThemeColorMeta()
   return next
+}
+
+/** 同步 <meta name="theme-color"> 到当前生效的 --dd-bg，让移动端状态栏与 PWA 顶栏随 14 套主题实时变色 */
+function syncThemeColorMeta() {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+  if (!meta) return
+  const bg = window.getComputedStyle(document.documentElement).getPropertyValue('--dd-bg').trim()
+  if (bg) {
+    meta.setAttribute('content', bg)
+  }
 }
 
 // ============================================================================
@@ -803,7 +818,17 @@ export function applyThemeAppearance(): ResolvedAppearance {
   root.setAttribute('data-dd-theme', resolved.preset)
   root.setAttribute('data-dd-bg', resolved.background)
   root.setAttribute('data-dd-density', resolved.density)
-  root.setAttribute('data-dd-glass', resolved.blur === 0 ? 'off' : 'on')
+  // 区分「用户显式设为 0 / 低端降级（disabled）」与「主题默认卡片模糊为 0（off，如素白仍保留侧栏玻璃）」
+  const local = readLocalAppearance()
+  const explicitBlur = local.blur ?? siteAppearance.blur
+  const motionPreference = readMotionPreference()
+  const lowEndDisabled = explicitBlur === null && motionPreference === 'system' && isLowEndDevice()
+  const glassState = explicitBlur === 0 || lowEndDisabled
+    ? 'disabled'
+    : resolved.blur === 0
+      ? 'off'
+      : 'on'
+  root.setAttribute('data-dd-glass', glassState)
 
   if (resolved.accent) {
     root.style.setProperty('--dd-accent', resolved.accent)
@@ -818,15 +843,21 @@ export function applyThemeAppearance(): ResolvedAppearance {
     const whiteContrast = 1.05 / (luminance + 0.05)
     const darkContrast = (luminance + 0.05) / 0.0556
     root.style.setProperty('--dd-on-accent', whiteContrast >= darkContrast ? '#ffffff' : '#111111')
+    // 极光暗 / 经典明暗 / 呆呆亮四个主题块为微调默认对比度写死了 --dd-btn-primary-bg；
+    // 用户选了自定义主色（且非素白黑白主按钮）时必须同步覆写，否则主按钮静置不变色、悬停闪色，亮主色还会变黑字压深底。
+    if (resolved.preset !== 'clean') {
+      root.style.setProperty('--dd-btn-primary-bg', resolved.accent)
+    } else {
+      root.style.removeProperty('--dd-btn-primary-bg')
+    }
   } else {
     root.style.removeProperty('--dd-accent')
     root.style.removeProperty('--dd-on-accent')
+    root.style.removeProperty('--dd-btn-primary-bg')
   }
 
   // 只有「本机 / 全站 / 低端降级」给了值才写内联；否则移除，露出主题块里的默认值
-  const local = readLocalAppearance()
-  const explicitBlur = local.blur ?? siteAppearance.blur
-  if (explicitBlur !== null || resolved.blur === 0) {
+  if (explicitBlur !== null || lowEndDisabled) {
     root.style.setProperty('--dd-glass-blur', `${resolved.blur}px`)
   } else {
     root.style.removeProperty('--dd-glass-blur')
@@ -834,6 +865,11 @@ export function applyThemeAppearance(): ResolvedAppearance {
 
   applyPanelShapeStyle()
   applyCustomCss()
+  syncThemeColorMeta()
+  // 通知已挂载的代码编辑器按最新主题/字体令牌刷新主题（不覆盖用户自定义底色）
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PANEL_APPEARANCE_CHANGE_EVENT))
+  }
   return resolved
 }
 

@@ -125,12 +125,53 @@ function saveLayout() {
   }
 }
 
-/** 实际渲染的卡片：编辑态全部显示（隐藏的半透明，方便再打开），平时只渲染可见的 */
-const renderedCards = computed(() =>
-  layout.value.order
+/**
+ * 实际渲染的卡片与动态栅格跨度：
+ * - 编辑态全部显示（隐藏的半透明，方便再打开），保持卡片原始跨度便于理解 12 栏位置；
+ * - 常规态只渲染可见卡片，按 12 栏逐行装箱：若某行因隐藏邻卡只剩不足 12 栏的空洞，
+ *   把剩余列宽回填给该行卡片（单卡直接拉满 12 栏，双卡按余量补齐），避免隐藏单卡留下明显空白。
+ */
+const renderedCards = computed(() => {
+  const cards = layout.value.order
     .filter((id) => editing.value || !layout.value.hidden.includes(id))
-    .map((id) => CARD_DEFS.find((c) => c.id === id)!),
-);
+    .map((id) => CARD_DEFS.find((c) => c.id === id)!);
+
+  if (editing.value) {
+    return cards.map((card) => ({ ...card, renderSpan: card.span as number }));
+  }
+
+  // 按顺序拆成若干不超过 12 栏的行，逐行把空余栏位平摊回当前行卡片
+  const result: Array<(typeof CARD_DEFS)[number] & { renderSpan: number }> = [];
+  let row: Array<(typeof CARD_DEFS)[number] & { renderSpan: number }> = [];
+  let rowSum = 0;
+
+  const flushRow = () => {
+    if (row.length === 0) return;
+    let remain = 12 - rowSum;
+    if (remain > 0) {
+      // 单卡直接拉满 12 栏；多卡时依次轮询补列，保持相对比例且不留空洞
+      let i = 0;
+      while (remain > 0) {
+        row[i % row.length]!.renderSpan += 1;
+        remain -= 1;
+        i += 1;
+      }
+    }
+    result.push(...row);
+    row = [];
+    rowSum = 0;
+  };
+
+  for (const card of cards) {
+    if (rowSum + card.span > 12) {
+      flushRow();
+    }
+    row.push({ ...card, renderSpan: card.span });
+    rowSum += card.span;
+  }
+  flushRow();
+  return result;
+});
 
 function toggleCardHidden(id: CardId, visible: boolean) {
   const hidden = layout.value.hidden.filter((h) => h !== id);
@@ -914,8 +955,8 @@ onBeforeUnmount(() => {
         v-for="(card, index) in renderedCards"
         :key="card.id"
         class="dash-item dd-rise"
-        :class="[`dash-span-${card.span}`, `dash-item--${card.id}`, { 'is-hidden': layout.hidden.includes(card.id) }]"
-        :style="{ '--dd-i': index }"
+        :class="[`dash-span-${card.renderSpan}`, `dash-item--${card.id}`, { 'is-hidden': layout.hidden.includes(card.id) }]"
+        :style="{ '--dd-i': index, '--dash-span': card.renderSpan }"
       >
         <!-- 编辑态浮条：把手 + 名称 + 显隐开关 -->
         <div v-if="editing" class="dash-edit-bar">
@@ -1086,7 +1127,10 @@ onBeforeUnmount(() => {
             <h3 class="dash-card__title"><el-icon class="dash-card__icon"><WarningFilled /></el-icon>需要关注</h3>
             <span class="dash-card__sub">{{ attention.count ? `${attention.count} 项` : "全部处理完了" }}</span>
           </header>
-          <AttentionList :limit="screenMode ? 6 : 0" />
+          <!-- 限制列表区最大高度并内部滚动，防止多条关注把同行「执行趋势」卡拉长留出大块空白 -->
+          <div class="dash-attention-body">
+            <AttentionList :limit="screenMode ? 6 : 0" />
+          </div>
         </article>
 
         <!-- ===== 未来 24 小时 ===== -->
@@ -1138,7 +1182,11 @@ onBeforeUnmount(() => {
             </div>
             <div>
               <span>网络 ↓ / ↑</span>
-              <b>{{ formatBytes(sysInfo.net_rx_speed) }}/s · {{ formatBytes(sysInfo.net_tx_speed) }}/s</b>
+              <!-- 下行/上行拆成独立短项允许换行，1440px 四栏窄卡下不再截断上行速率 -->
+              <b class="res-meta__speeds">
+                <span>↓ {{ formatBytes(sysInfo.net_rx_speed) }}/s</span>
+                <span>↑ {{ formatBytes(sysInfo.net_tx_speed) }}/s</span>
+              </b>
             </div>
           </div>
         </article>
@@ -1242,10 +1290,14 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--dd-gap);
+  // 预留外围缓冲留白，防止 daidai 硬投影、hover 上移与编辑态虚线框被滚动容器裁切或引发横滚条
+  padding: 4px 6px 8px 4px;
   color: var(--dd-text);
 
   &.is-screen {
     --dash-scale: 1.25;
+    // 大屏模式下为右上角 fixed 时钟预留顶部避让空间，绝不遮挡首行右侧 KPI 卡片头
+    padding-top: 56px;
   }
 }
 
@@ -1301,6 +1353,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  grid-column: span var(--dash-span, 12);
 
   > .dash-card {
     flex: 1;
@@ -1309,8 +1362,13 @@ onBeforeUnmount(() => {
 
 .dash-span-4 { grid-column: span 4; }
 .dash-span-5 { grid-column: span 5; }
+.dash-span-6 { grid-column: span 6; }
 .dash-span-7 { grid-column: span 7; }
 .dash-span-8 { grid-column: span 8; }
+.dash-span-9 { grid-column: span 9; }
+.dash-span-10 { grid-column: span 10; }
+.dash-span-11 { grid-column: span 11; }
+.dash-span-12 { grid-column: span 12; }
 
 // ============ 卡片 ============
 .dash-card {
@@ -1322,8 +1380,8 @@ onBeforeUnmount(() => {
   border-radius: var(--dd-radius-card);
   box-shadow: var(--dd-shadow-card);
   transition:
-    box-shadow 0.45s var(--dd-ease-standard),
-    transform 0.55s var(--dd-spring, var(--dd-ease-standard));
+    box-shadow var(--dd-motion-normal) var(--dd-ease-standard),
+    transform var(--dd-motion-normal) var(--dd-spring, var(--dd-ease-standard));
 
   &:hover {
     box-shadow: var(--dd-shadow-card-hover);
@@ -1333,7 +1391,8 @@ onBeforeUnmount(() => {
 .dash-card__head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px 10px;
   min-height: 30px;
   margin-bottom: 14px;
   min-width: 0;
@@ -1401,6 +1460,13 @@ onBeforeUnmount(() => {
 
 .dash-seg {
   flex: none;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 
   .dd-seg-btn {
     padding: 4px 10px;
@@ -1453,8 +1519,9 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 4px 10px;
   border-radius: var(--dd-radius-pill);
-  background: var(--dd-accent-soft);
-  border: 1px solid var(--dd-accent-ring);
+  // 高不透明实底混色：盖住 Hero 左上角紫色渐变光晕，确保素白 clean 等全部主题对比度 ≥ 4.5:1
+  background: color-mix(in srgb, var(--dd-surface-solid) 84%, var(--dd-accent));
+  border: var(--dd-border-width, 1px) solid var(--dd-accent-ring);
   color: var(--dd-accent-ink);
   font-size: fs(12px);
   font-weight: 600;
@@ -1562,7 +1629,7 @@ html[data-dd-motion="rich"] .dash-hero__wave {
   .ring-value {
     stroke: url(#dash-health-grad);
     stroke-dasharray: 100;
-    transition: stroke-dashoffset 1.6s var(--dd-ease-emphasized);
+    transition: stroke-dashoffset var(--dd-motion-slow) var(--dd-ease-emphasized);
     filter: drop-shadow(0 0 6px var(--dd-accent-ring));
   }
 }
@@ -1622,6 +1689,11 @@ html[data-dd-motion="rich"] .dash-hero__wave {
   gap: var(--dd-gap);
 }
 
+// 隐藏总览卡后 KPI 卡片独享整行 12 栏时，桌面端改 4 列一排铺开，视觉更均衡
+.dash-item--kpis.dash-span-12 .dash-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .dash-kpi {
   display: flex;
   flex-direction: column;
@@ -1660,13 +1732,15 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
 .dash-kpi__row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   margin-top: 6px;
   min-width: 0;
 }
 
 .dash-kpi__num {
-  font-size: fs(30px);
+  // 随视口平滑缩放，配合上方 flex-wrap 彻底避免 KPI 涨跌徽章在窄卡里被裁切
+  font-size: calc(clamp(22px, 2vw, 30px) * var(--dash-scale, 1));
   line-height: 1.15;
   font-weight: 700;
   letter-spacing: -0.5px;
@@ -1770,7 +1844,7 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
   gap: 8px;
   margin-top: 10px;
   padding-top: 12px;
-  border-top: 1px dashed var(--dd-border);
+  border-top: 1px dashed var(--dd-divider, var(--dd-border));
 }
 
 .trend-summary__bar {
@@ -1782,7 +1856,7 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
 
   span {
     height: 100%;
-    transition: width 0.4s var(--dd-ease-standard);
+    transition: width var(--dd-motion-normal) var(--dd-ease-standard);
   }
 }
 
@@ -1813,6 +1887,14 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
 .trend-summary .is-success { background: var(--dd-chart-ok); }
 .trend-summary .is-failed { background: var(--dd-err); }
 .trend-summary .is-aborted { background: var(--dd-warn); }
+
+// ============ 需要关注 ============
+// 封顶 360px 并内部滚动，防止关注项过多时把同行左侧「执行趋势」卡撑出巨幅空白
+.dash-attention-body {
+  max-height: 360px;
+  overflow-y: auto;
+  min-height: 0;
+}
 
 // ============ 系统资源 ============
 .res-rings {
@@ -1848,8 +1930,8 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
   .ring-value {
     stroke-dasharray: 100;
     transition:
-      stroke-dashoffset 1s var(--dd-ease-emphasized),
-      stroke 0.4s var(--dd-ease-standard);
+      stroke-dashoffset var(--dd-motion-slow) var(--dd-ease-emphasized),
+      stroke var(--dd-motion-normal) var(--dd-ease-standard);
   }
 
   b {
@@ -1857,7 +1939,10 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
     inset: 0;
     display: grid;
     place-content: center;
-    font-size: fs(16px);
+    // 用 clamp 收敛环内数字字号，避免 100.0% 在 4 栏窄卡圆环内碰边
+    font-size: calc(clamp(12px, 1vw, 15px) * var(--dash-scale, 1));
+    line-height: 1;
+    letter-spacing: -0.3px;
     font-weight: 700;
     color: var(--dd-text);
     font-variant-numeric: tabular-nums;
@@ -1885,7 +1970,7 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
     padding: 10px 12px;
     border-radius: var(--dd-radius-surface);
     background: var(--dd-surface-2);
-    border: 1px solid var(--dd-border);
+    border: var(--dd-border-width, 1px) solid var(--dd-border);
     font-size: fs(12px);
     color: var(--dd-text-3);
   }
@@ -1899,6 +1984,21 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  // 网速项允许在窄卡下自然折成两行展示 ↓ / ↑，不再在 1440px 下截断上行速率
+  .res-meta__speeds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.35;
+
+    span {
+      white-space: nowrap;
+    }
   }
 }
 
@@ -1978,8 +2078,8 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
   gap: 10px;
   min-height: 44px;
   padding: 0 4px;
-  border-bottom: 1px dashed var(--dd-border);
-  transition: background-color 0.6s var(--dd-ease-standard);
+  border-bottom: 1px dashed var(--dd-divider, var(--dd-border));
+  transition: background-color var(--dd-motion-normal) var(--dd-ease-standard);
 
   .feed-item:last-child & {
     border-bottom: 0;
@@ -2126,20 +2226,16 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
 }
 
 // ============ 编辑布局 ============
+// 改为文档流顶部条（不再 absolute 覆盖卡片顶部），彻底避免编辑态压挡卡片标题与 KPI 大数字
 .dash-edit-bar {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  right: 8px;
-  // 盖在卡片内容上面（卡片没有自成层叠上下文，这里给个小 z-index 即可）
-  z-index: 4;
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 8px;
   padding: 6px 10px;
   border-radius: var(--dd-radius-control);
   background: var(--dd-overlay);
-  border: 1px solid var(--dd-accent-ring);
+  border: var(--dd-border-width, 1px) solid var(--dd-accent-ring);
   box-shadow: var(--dd-shadow-popper);
   font-size: fs(12.5px);
   color: var(--dd-text);
@@ -2194,7 +2290,7 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
   padding: 6px 12px;
   border-radius: var(--dd-radius-pill);
   background: var(--dd-overlay);
-  border: 1px solid var(--dd-border);
+  border: var(--dd-border-width, 1px) solid var(--dd-border);
   box-shadow: var(--dd-shadow-popper);
 }
 
@@ -2249,12 +2345,11 @@ html:not([data-dd-motion="rich"]) .dash-hero__glow {
   animation: none;
 }
 
-// ============ 响应式（原型断点）============
-@media (max-width: 1100px) {
-  .dash-span-4,
-  .dash-span-5,
-  .dash-span-7,
-  .dash-span-8 {
+// ============ 响应式 ============
+// 12 栏降级断点由 1100px 提至 1280px：侧栏展开时 1101~1280px 窗口内容区不足 1040px，
+// 提前切单列可彻底避免 Hero / KPI / 资源 / 执行流被挤成窄卡
+@media (max-width: 1280px) {
+  .dash-bento .dash-item {
     grid-column: span 12;
   }
 
@@ -2276,7 +2371,8 @@ html:not([data-dd-motion="rich"]) .dash-hero__glow {
     flex-wrap: wrap;
   }
 
-  .dash-kpis {
+  .dash-kpis,
+  .dash-item--kpis.dash-span-12 .dash-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -2286,16 +2382,8 @@ html:not([data-dd-motion="rich"]) .dash-hero__glow {
     display: none;
   }
 
-  .dash-card__head {
-    flex-wrap: wrap;
-  }
-
   .dash-card__sub {
     display: none;
-  }
-
-  .dash-kpi__num {
-    font-size: fs(24px);
   }
 
   .dash-health-select {
@@ -2304,6 +2392,11 @@ html:not([data-dd-motion="rich"]) .dash-hero__glow {
 
   .feed-row__dur {
     display: none;
+  }
+
+  // 移动端释放时间列固定 72px 宽度，把空间让给任务名
+  .feed-row__time {
+    width: auto;
   }
 }
 </style>

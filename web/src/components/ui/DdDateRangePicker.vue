@@ -164,6 +164,8 @@ watch(
   display: inline-flex;
   flex-direction: column;
   gap: 6px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 // 横排：给列表页工具栏用。竖排会把整条 toolbar 撑成两行高。
@@ -177,6 +179,23 @@ watch(
 
 .dd-date-range__shortcuts {
   align-self: flex-start;
+  // 快捷分段保持单行不折行，窄屏或紧凑容器里平滑横向滚动
+  max-width: 100%;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  .dd-seg-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
 }
 
 .dd-date-range.is-inline .dd-date-range__shortcuts {
@@ -198,6 +217,7 @@ watch(
   .dd-date-range__shortcuts {
     // 窄屏放不下四个快捷项时允许横向滚动，而不是换行把工具栏顶高
     align-self: stretch;
+    width: 100%;
     overflow-x: auto;
   }
 

@@ -800,10 +800,14 @@ code {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  // 单栏/移动端父级高度不确定，fill-height 拿不到可撑满的高度，
-  // 这里给回改造前的 560px 下限（选择器带 .editor-card，特异性高于组件内的默认规则）
-  .editor-card :deep(.code-editor-wrapper) {
-    min-height: 560px;
+  // 单栏/移动端父级高度不确定，fill-height 拿不到可撑满的高度；
+  // 显式给出确定高度（同时压过 .code-editor-wrapper--fill 的 height: 100%），
+  // 让 CodeMirror 与 Monaco 一致保持内部滚动、搜索面板不随整页滚出视野。
+  .editor-card :deep(.code-editor-wrapper),
+  .editor-card :deep(.code-editor-wrapper.code-editor-wrapper--fill) {
+    flex: none;
+    height: clamp(480px, 65dvh, 680px);
+    min-height: 480px;
   }
 }
 

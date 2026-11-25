@@ -89,18 +89,19 @@ async function handleCopyMachineCode(code: string) {
 
 .mt-card {
   margin-top: 16px;
-  // 扁平化：无阴影，层次只靠 1px 描边表达（边框色走令牌，暗色下自动跟随）；卡片本体 → surface 档
+  // 扁平化：描边宽走主题令牌；卡片本体 → surface 档
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
 }
 
 .system-info-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
 }
 
 .si-item {
+  min-width: 0;
   padding: 8px 0;
 }
 
@@ -145,10 +146,18 @@ async function handleCopyMachineCode(code: string) {
   color: var(--dd-err-ink);
 }
 
+// 双列概览下卡片宽度偏窄，≤1440px 提前切 2 列并收紧 gap，避免内存/磁盘读数被压折行
+@media (max-width: 1440px) {
+  .system-info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 16px;
+  }
+}
+
 @media (max-width: 768px) {
   .system-info-grid {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 12px;
   }
 
   .si-item-wide {

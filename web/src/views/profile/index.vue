@@ -92,8 +92,8 @@ const sponsorRefreshInterval = 24 * 60 * 60 * 1000;
 const roleLabel = computed(() => {
   const role = authStore.user?.role;
   if (role === "admin") return "管理员";
-  if (role === "operator") return "运维用户";
-  return "只读用户";
+  if (role === "operator") return "操作员";
+  return "观察者";
 });
 
 const roleTagType = computed(() => {
@@ -632,7 +632,7 @@ onUnmounted(() => {
 <template>
   <div class="profile-page dd-scroll-page">
     <!-- ================= Hero ================= -->
-    <header class="profile-hero dd-glass">
+    <header class="profile-hero dd-glass dd-rise" style="--dd-i: 0">
       <div class="profile-hero-aura" aria-hidden="true"></div>
 
       <div class="profile-hero-main">
@@ -738,7 +738,7 @@ onUnmounted(() => {
     <!-- ================= Body: sidebar tabs + content ================= -->
     <div class="profile-body">
       <!-- Left sidebar tabs -->
-      <nav class="profile-sidebar dd-glass">
+      <nav class="profile-sidebar dd-glass dd-rise" style="--dd-i: 1">
         <button
           class="sidebar-tab"
           :class="{ active: activeTab === 'profile' }"
@@ -766,7 +766,7 @@ onUnmounted(() => {
       </nav>
 
       <!-- Right content area -->
-      <div class="profile-content">
+      <div class="profile-content dd-rise" style="--dd-i: 2">
         <!-- 三个 sidebar-tab 原本是整块硬替换，切换时旧面板凭空消失。
              这里包一层 out-in 过渡：旧面板先淡出，新面板再淡入上移。
              key 绑当前 tab 标识（不是索引），保证任意方向切换都会触发。
@@ -782,29 +782,31 @@ onUnmounted(() => {
               </span>
             </header>
             <div class="info-grid">
-              <div class="info-cell">
+              <div class="info-cell" :class="{ 'info-cell--editing': editingUsername }">
                 <span class="info-label">用户名</span>
                 <div
                   v-if="editingUsername"
-                  style="display: flex; align-items: center; gap: 8px"
+                  class="username-edit-row"
                 >
                   <el-input
                     v-model="newUsername"
                     size="small"
-                    style="width: 180px"
+                    class="username-edit-input"
                     placeholder="输入新用户名"
                     @keyup.enter="saveUsername"
                   />
-                  <el-button
-                    size="small"
-                    type="primary"
-                    :loading="usernameSaving"
-                    @click="saveUsername"
-                    >保存</el-button
-                  >
-                  <el-button size="small" @click="editingUsername = false"
-                    >取消</el-button
-                  >
+                  <div class="username-edit-actions">
+                    <el-button
+                      size="small"
+                      type="primary"
+                      :loading="usernameSaving"
+                      @click="saveUsername"
+                      >保存</el-button
+                    >
+                    <el-button size="small" @click="editingUsername = false"
+                      >取消</el-button
+                    >
+                  </div>
                 </div>
                 <span v-else class="info-value">
                   {{ authStore.user?.username || "-" }}
@@ -1173,7 +1175,7 @@ onUnmounted(() => {
       append-to-body
       destroy-on-close
     >
-      <SecurityPasskeyCard @changed="passkeyCount = $event" />
+      <SecurityPasskeyCard embedded @changed="passkeyCount = $event" />
     </el-dialog>
 
     <!-- ================= Setup 2FA dialog ================= -->
@@ -1264,6 +1266,9 @@ onUnmounted(() => {
      否则 scoped 选择器的特异度会压掉 .dd-glass 的底色与「降低透明度」时的实色兜底。 */
   --profile-accent: var(--dd-accent);
   --profile-border: var(--dd-border);
+  /* 内部行分隔线、边框与卡片外框解耦：素白（clean）亮色下 --dd-border 为 transparent，
+     内部分隔改走 --dd-divider 避免隐身 */
+  --profile-divider: var(--dd-divider, var(--dd-border-strong));
   --profile-surface: var(--dd-surface-solid);
   --profile-surface-muted: var(--dd-surface-2);
 
@@ -1273,46 +1278,10 @@ onUnmounted(() => {
   font-family: var(--dd-font-ui);
 }
 
-/* ================= 入场动画 =================
-   克制的淡入上移：hero 与卡片轻微错落进入。
-   时长用 --dd-motion-page、缓动用 --dd-ease-decelerate，
-   prefers-reduced-motion 时令牌被压到 1ms 自动降级。 */
-@keyframes dd-profile-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* 只对三个卡片级容器做，各自只播一次：
-   hero / 侧栏 / 内容区都是挂载后不再重建的稳定容器。
-   ——不再逐张卡片挂 rise-in：Tab 切换已经由下面的 .dd-profile-panel 过渡接管，
-   两者都是「opacity + translateY」，同时跑会叠加位移、且透明度相乘导致内容发灰。 */
-.profile-hero,
-.profile-sidebar,
-.profile-content {
-  animation: dd-profile-rise-in var(--dd-motion-page) var(--dd-ease-decelerate)
-    both;
-}
-
-/* 轻微错落：侧栏稍晚于 hero，内容区再略晚（增量均 ≤60ms） */
-.profile-sidebar {
-  animation-delay: 50ms;
-}
-
-.profile-content {
-  animation-delay: 90ms;
-}
-
 /* ================= Tab 面板切换过渡 =================
-   Transition 没有写 appear，所以首屏不播这段，只有真正点 Tab 才会触发，
-   与上面那次入场动画不会撞车。
-   进入用 decelerate（内容落位），离场用更短的 standard（尽快让位），
-   方向统一为「向下」，与全站 dd-*-rise-in 的语汇一致。 */
+   首次入场交由全局 .dd-rise（backwards 填充）控制；
+   Transition 未挂 appear，所以首屏不播这段，只有真正点 Tab 才会触发，不会与首屏入场撞车。
+   进入用 decelerate（内容落位），离场用更短的 standard（尽快让位）。 */
 .dd-profile-panel-enter-active {
   transition:
     opacity var(--dd-motion-normal) var(--dd-ease-decelerate),
@@ -1451,7 +1420,7 @@ onUnmounted(() => {
   justify-content: center;
   background: var(--profile-surface);
   /* 去阴影后靠 2px 描边与头像本体分隔 */
-  border: 2px solid var(--profile-border);
+  border: 2px solid var(--profile-divider);
   color: var(--dd-text-2);
   cursor: pointer;
   transition:
@@ -1479,7 +1448,7 @@ onUnmounted(() => {
      不是为了压 --dd-radius-*，令牌值仍随外观开关切换 */
   border-radius: var(--dd-radius-control) !important;
   color: var(--dd-err-ink) !important;
-  border: 1px solid var(--profile-border) !important;
+  border: 1px solid var(--profile-divider) !important;
   background: var(--profile-surface) !important;
 
   &:hover {
@@ -1492,13 +1461,16 @@ onUnmounted(() => {
 .profile-avatar-initial {
   position: relative;
   z-index: 1;
+  line-height: 1;
   letter-spacing: 0.5px;
 }
 
 .profile-avatar-ring {
   position: absolute;
-  inset: -4px;
-  /* 头像外圈环，与头像同心，必须跟随头像走白名单圆形，否则方环套圆头像会露出四角 */
+  /* 与 72×72 头像盒体齐平：原 inset: -4px 会在 overflow: hidden 内部造成 4px 溢出且环本身被裁切 */
+  inset: 0;
+  pointer-events: none;
+  /* 头像同心环，跟随头像走白名单圆形，否则方环套圆头像会露出四角 */
   border-radius: 50%;
   border: 2.5px solid var(--dd-accent-ring);
   z-index: 0;
@@ -1698,6 +1670,10 @@ onUnmounted(() => {
   font-size: var(--dd-card-title-size, 15px);
   font-weight: var(--dd-card-title-weight, 700);
   color: var(--dd-text);
+
+  > .el-icon {
+    display: var(--dd-card-title-icon-display);
+  }
 }
 
 /* 偏好卡片（界面主题 / 界面动效 / 日志查看）共用：标题右侧的作用范围说明 + 分段控件下方的说明文字。
@@ -1765,7 +1741,7 @@ onUnmounted(() => {
   flex-wrap: wrap;
   margin-top: 18px;
   padding-top: 16px;
-  border-top: 1px solid var(--profile-border);
+  border-top: 1px solid var(--profile-divider);
 }
 
 .pref-desc--inline {
@@ -1787,7 +1763,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 11px 0;
-  border-bottom: 1px dashed var(--profile-border);
+  border-bottom: 1px dashed var(--profile-divider);
   font-size: 13.5px;
 
   &:last-child {
@@ -1800,10 +1776,40 @@ onUnmounted(() => {
   }
 }
 
+.username-edit-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
+.username-edit-input {
+  width: 180px;
+  max-width: 100%;
+}
+
+.username-edit-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
 .info-label {
   color: var(--dd-text-2);
   font-size: 13px;
   letter-spacing: 0.2px;
+  flex-shrink: 0;
 }
 
 .info-value {
@@ -1830,7 +1836,7 @@ onUnmounted(() => {
     /* 每条提示是卡片内独立的内容块（带底色 + 描边），归容器类表面 → surface 档 */
     border-radius: var(--dd-radius-surface);
     background: var(--profile-surface-muted);
-    border: 1px solid var(--profile-border);
+    border: 1px solid var(--profile-divider);
     font-size: 12.5px;
     line-height: 1.6;
     color: var(--dd-text-2);
@@ -1951,7 +1957,7 @@ onUnmounted(() => {
   gap: 6px;
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid var(--profile-border);
+  border-top: 1px solid var(--profile-divider);
   font-size: 13px;
   color: var(--dd-text-2);
 }
@@ -2034,17 +2040,15 @@ onUnmounted(() => {
 }
 
 /* ================= Setup dialog ================= */
-:deep(.setup-2fa-dialog) {
-  .el-dialog {
-    /* 弹窗外壳是容器类表面 → surface 档 */
-    border-radius: var(--dd-radius-surface);
-    overflow: hidden;
-  }
+:deep(.el-dialog.setup-2fa-dialog) {
+  /* 弹窗外壳是容器类表面 → surface 档 */
+  border-radius: var(--dd-radius-surface);
+  overflow: hidden;
 
   .el-dialog__header {
     padding: 18px 22px 14px;
     margin: 0;
-    border-bottom: 1px solid var(--profile-border);
+    border-bottom: 1px solid var(--dd-divider, var(--dd-border-strong));
   }
 
   .el-dialog__body {
@@ -2070,8 +2074,9 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--dd-on-accent);
-  background: var(--dd-accent);
+  /* 走主按钮高对比成对令牌，确保 14 套配色全部 ≥ 4.5:1 */
+  color: var(--dd-btn-primary-fg);
+  background: var(--dd-btn-primary-bg);
 }
 
 .setup-dialog-title {
@@ -2115,8 +2120,9 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 700;
   font-family: var(--dd-font-mono);
-  color: var(--dd-on-accent);
-  background: var(--dd-accent);
+  /* 走主按钮高对比成对令牌，避免亮主色压白字对比度不足 */
+  color: var(--dd-btn-primary-fg);
+  background: var(--dd-btn-primary-bg);
 }
 
 .step-title {
@@ -2145,7 +2151,7 @@ onUnmounted(() => {
   border-radius: var(--dd-radius-surface);
   /* 唯一保留的写死颜色：二维码必须是白底深码，扫码软件才认得出（暗色主题下也一样），不跟主题走 */
   background: #fff;
-  border: 1px solid var(--profile-border);
+  border: 1px solid var(--dd-divider, var(--dd-border-strong));
 }
 
 .secret-box {
@@ -2153,7 +2159,7 @@ onUnmounted(() => {
   /* 密钥展示区是弹窗内的独立区块 → surface 档 */
   border-radius: var(--dd-radius-surface);
   background: var(--profile-surface-muted);
-  border: 1px dashed var(--profile-border);
+  border: 1px dashed var(--dd-divider, var(--dd-border-strong));
   text-align: center;
 
   code {
@@ -2186,6 +2192,10 @@ onUnmounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 /* ================= Mobile ================= */
@@ -2205,6 +2215,27 @@ onUnmounted(() => {
   .sidebar-tab {
     padding: 8px 14px;
     font-size: 13px;
+  }
+
+  /* 移动端行内编辑用户名改为纵向排布，输入框占满一行，防止按钮被 .profile-card 裁切 */
+  .info-cell--editing {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .username-edit-row {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .username-edit-input {
+    width: 100%;
+  }
+
+  .username-edit-actions {
+    justify-content: flex-end;
   }
 }
 

@@ -337,22 +337,37 @@
     </div>
 
     <div class="toolbar dd-rise" style="--dd-i: 3">
+      <!-- 按 design-system §4.2：左槽使用 1×1 网格叠放常规操作与批量栏，两支常驻 DOM、靠 visibility 切换，
+           勾选前后工具栏宽度与高度恒定不变，消除表格与右侧控件跳动。 -->
       <div class="toolbar__left">
-        <!-- 原来这里平铺 5 个按钮（新增依赖 / 刷新 / 批量重装 / 导出清单 / 镜像源设置），
-             主次不分、横着吃掉半条工具条。改成 Split Button：
-             主体是「新增依赖」——它只打开一个弹窗，是这 5 个里点错代价最小的一个；
-             其余 4 项收进菜单（后来又加了系统命令行、安装 Playwright 运行环境，菜单与移动端下拉共用）。
-             原按钮的 :loading 在菜单项里没有对应表达，
-             降级成 disabled（见 toolbarActionItems），避免刷新/导出进行中被重复点。 -->
-        <DdSplitButton
-          label="新增依赖"
-          :icon="Plus"
-          type="primary"
-          size="default"
-          :items="toolbarActionItems"
-          @click="openCreateDialog"
-          @command="onToolbarAction"
-        />
+        <div class="toolbar__filters" :class="{ 'is-swapped-out': selectedIds.length > 0 }">
+          <!-- 原来这里平铺 5 个按钮（新增依赖 / 刷新 / 批量重装 / 导出清单 / 镜像源设置），
+               主次不分、横着吃掉半条工具条。改成 Split Button：
+               主体是「新增依赖」——它只打开一个弹窗，是这 5 个里点错代价最小的一个；
+               其余 4 项收进菜单（后来又加了系统命令行、安装 Playwright 运行环境，菜单与移动端下拉共用）。
+               原按钮的 :loading 在菜单项里没有对应表达，
+               降级成 disabled（见 toolbarActionItems），避免刷新/导出进行中被重复点。 -->
+          <DdSplitButton
+            label="新增依赖"
+            :icon="Plus"
+            type="primary"
+            size="default"
+            :items="toolbarActionItems"
+            @click="openCreateDialog"
+            @command="onToolbarAction"
+          />
+        </div>
+        <div class="batch-actions" :class="{ 'is-swapped-out': selectedIds.length === 0 }">
+          <span class="batch-actions__count">已选 {{ selectedIds.length }} 项</span>
+          <el-button
+            :disabled="batchReinstallIds.length === 0"
+            @click="handleBatchReinstall"
+          >
+            批量重装
+          </el-button>
+          <el-button type="danger" @click="handleBatchDelete">批量卸载</el-button>
+          <el-button @click="clearSelection">取消选择</el-button>
+        </div>
       </div>
       <div class="toolbar__right">
         <el-select
@@ -414,19 +429,6 @@
           <el-option label="已取消" value="cancelled" />
           <el-option label="卸载中" value="removing" />
         </el-select>
-        <!-- 勾选后凭空冒出一个红按钮会把工具条右区顶一下。淡入淡出让它「浮现」出来，
-             而不是瞬间插进去。只做 opacity：按钮的宽度仍是即时占位的，
-             如果连宽度/高度一起过渡，工具条会在动画期间持续重排，整页跟着抖。 -->
-        <Transition name="dd-batch-fade">
-          <el-button
-            v-if="selectedIds.length > 0"
-            type="danger"
-            plain
-            @click="handleBatchDelete"
-          >
-            <el-icon><Delete /></el-icon> 批量卸载
-          </el-button>
-        </Transition>
       </div>
     </div>
     </template>
@@ -591,6 +593,7 @@
 
     <div v-else class="table-card dd-spot dd-rise" style="--dd-i: 4">
       <el-table
+        ref="depsTableRef"
         :data="paginatedDepsList"
         v-loading="loading"
         style="width: 100%"
@@ -700,7 +703,7 @@
         v-model:page-size="depsPageSize"
         :total="depsTotal"
         :page-sizes="[10, 20, 50, 100]"
-        layout="sizes, prev, pager, next, jumper"
+        :layout="isMobile ? 'prev, pager, next' : 'sizes, prev, pager, next, jumper'"
         @current-change="handlePageChange"
         @size-change="handlePageSizeChange"
       />
@@ -711,7 +714,10 @@
       width="500px"
       :fullscreen="dialogFullscreen"
     >
-      <el-form label-width="80px">
+      <el-form
+        :label-width="isMobile ? 'auto' : '80px'"
+        :label-position="isMobile ? 'top' : 'right'"
+      >
         <el-form-item label="类型">
           <el-radio-group v-model="createType">
             <el-radio value="nodejs">Node.js</el-radio>
@@ -746,15 +752,10 @@
           />
         </el-form-item>
         <el-form-item label="自动拆分">
-          <el-switch v-model="autoSplit" />
-          <span
-            style="
-              margin-left: 8px;
-              font-size: 12px;
-              color: var(--el-text-color-secondary);
-            "
-            >开启后自动按换行、空格、逗号拆分为多个依赖</span
-          >
+          <div class="auto-split-row">
+            <el-switch v-model="autoSplit" />
+            <span class="auto-split-row__hint">开启后自动按换行、空格、逗号拆分为多个依赖</span>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -769,6 +770,7 @@
       title="安装日志"
       width="70%"
       :fullscreen="dialogFullscreen"
+      class="dep-log-dialog"
     >
       <div class="log-dialog-toolbar">
         <div class="log-dialog-status">
@@ -846,7 +848,11 @@
       width="560px"
       :fullscreen="dialogFullscreen"
     >
-      <el-form label-width="110px" v-loading="mirrorLoading">
+      <el-form
+        :label-width="isMobile ? 'auto' : '110px'"
+        :label-position="isMobile ? 'top' : 'right'"
+        v-loading="mirrorLoading"
+      >
         <el-form-item label="Python (pip)">
           <el-input
             v-model="mirrorForm.pip_mirror"
@@ -2221,7 +2227,11 @@ function toggleSelectAllOnPage() {
     : paginatedDepsList.value.map((dep) => dep.id);
 }
 
+// 桌面表格实例：勾选态保存在 el-table 内部，「取消选择」与批量操作提交后需同步清空表格勾选
+const depsTableRef = ref<any>(null);
+
 function clearSelection() {
+  depsTableRef.value?.clearSelection?.();
   selectedIds.value = [];
 }
 
@@ -2235,7 +2245,7 @@ async function handleBatchDelete() {
     );
     await depsApi.batchDelete(selectedIds.value);
     ElMessage.success("批量卸载已提交");
-    selectedIds.value = [];
+    clearSelection();
     loadData();
   } catch (err: any) {
     if (err !== "cancel" && err?.toString() !== "cancel") {
@@ -2268,9 +2278,8 @@ async function handleBatchReinstall() {
     ElMessage.success(
       `已提交 ${batchReinstallIds.value.length} 个依赖顺序重装`,
     );
-    // 移动端提交后退出批量态，回到搜索那一行。桌面不清：el-table 里的勾选是它自己维护的，
-    // 只清 selectedIds 会让表格还打着勾、批量按钮却已失效，两边对不上。
-    if (isMobile.value) clearSelection();
+    // 批量重装提交后同步清空桌面表格与移动端的勾选态，回到常规工具栏
+    clearSelection();
     loadData();
   } catch (err: any) {
     if (err !== "cancel" && err?.toString() !== "cancel") {
@@ -2828,26 +2837,40 @@ onBeforeUnmount(() => {
 }
 
 // ---------- Toolbar ----------
-// 工具条：与定时任务页/执行日志页/订阅页/环境变量页对齐——上下统一间距、左右两区一行排布、gap 一致；
-// 本页工具条元素较多（版本选择/搜索/状态过滤），保持各自业务所需宽度，行内间距统一到 12px。
+// 工具条：按 design-system §4.2，左槽 1×1 网格叠放主操作与批量栏，勾选前后高度与宽度恒定不跳动。
 .toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin: 14px 0;
   gap: 12px;
   flex-wrap: wrap;
   &__left {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    min-width: 0;
+    min-height: 39px;
+  }
+  &__filters {
     display: flex;
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+    min-width: 0;
+    min-height: 39px;
   }
   &__right {
     display: flex;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+    min-height: 39px;
+
+    // 清零 EP 默认相邻按钮 12px 左外边距，间距统一由 gap 决定
+    :deep(.el-button + .el-button) {
+      margin-left: 0;
+    }
   }
   &__search {
     width: 240px;
@@ -2858,6 +2881,37 @@ onBeforeUnmount(() => {
   &__python-version {
     width: 150px;
   }
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 39px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
+.batch-actions__count {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.toolbar__filters,
+.batch-actions {
+  grid-area: 1 / 1;
+  min-width: 0;
+  transition: opacity var(--dd-motion-fast) var(--dd-ease-standard);
+}
+
+.is-swapped-out {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .python-runtime-option {
@@ -3082,22 +3136,20 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
 }
 
-:deep(.el-table) {
-  // 边框统一走令牌，明暗自动适配（原写死浅灰会在暗色串色）
-  --el-table-border-color: var(--el-border-color-lighter);
-  .el-table__header-wrapper th {
-    border-bottom: 1px solid var(--el-border-color-light);
-  }
-  .el-table__row td {
-    border-bottom: 1px solid var(--el-border-color-lighter);
-  }
-  .el-table__cell {
-    padding: 8px 0;
-  }
-  .el-table__fixed-right .el-table__cell {
-    padding-left: 4px;
-    padding-right: 4px;
-  }
+// 表线与常规表格行高交由全局 global.scss + _switches.scss 的密度变量统一接管，
+// 已移除局部 .el-table__cell { padding: 8px 0 } 与 EP1 废弃选择器 .el-table__fixed-right。
+
+.auto-split-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.auto-split-row__hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
 }
 
 // ---------- Mobile toolbar（v3.3.1，issue #143）----------
@@ -3159,6 +3211,25 @@ onBeforeUnmount(() => {
   word-break: break-all;
 }
 
+// 移动端全屏安装日志弹窗：解除 60vh 上限，改为 flex 撑满整个视口剩余高度
+:deep(.dep-log-dialog.is-fullscreen) {
+  .el-dialog__body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .log-dialog-toolbar {
+    flex-shrink: 0;
+  }
+
+  .log-content {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
 .log-dialog-toolbar {
   display: flex;
   align-items: center;
@@ -3200,18 +3271,6 @@ onBeforeUnmount(() => {
 
 .dd-status-switch-enter-from,
 .dd-status-switch-leave-to {
-  opacity: 0;
-}
-
-// ===== 批量操作按钮进出场 =====
-// 同样只做 opacity，不碰宽高——工具条是 flex 行，尺寸类过渡会让整条工具条持续重排。
-.dd-batch-fade-enter-active,
-.dd-batch-fade-leave-active {
-  transition: opacity var(--dd-motion-fast) var(--dd-ease-standard);
-}
-
-.dd-batch-fade-enter-from,
-.dd-batch-fade-leave-to {
   opacity: 0;
 }
 
@@ -3367,36 +3426,6 @@ onBeforeUnmount(() => {
 }
 
 // ===== 入场动画 =====
-// 与定时任务页/执行日志页/订阅页/环境变量页统一：只对卡片级容器
-// （Android 运行时卡 / 状态标签区 / 工具条（桌面 .toolbar、移动端 .deps-mobile-toolbar）/ 表格卡 / 移动列表）
-// 做克制的淡入上移 + 轻微错落；不给表格每一行或每张移动卡做 stagger。
-// 时长走令牌，prefers-reduced-motion 时令牌自动降为 1ms 即等效关闭。
-@keyframes dd-deps-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-// android-runtime-card 也是卡片级容器，而且是页面最上面那一块：原来它不参与入场，
-// 下面几块却都在淡入上移，视觉上像是「上半页没加载完」。
-// 它是异步的（loadAndroidStatus 返回后才 v-if 成立），补上入场后从「突然弹出」变成淡入。
-.android-runtime-card,
-.deps-tabs,
-.toolbar,
-.deps-mobile-toolbar,
-.table-card,
-.dd-mobile-list {
-  animation: dd-deps-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) both;
-}
-
-// 轻微错落：状态标签区/工具条先入，表格卡/移动列表略晚
-.table-card,
-.dd-mobile-list {
-  animation-delay: 60ms;
-}
+// v4.0.1 起删除本页手写的 dd-deps-rise-in 动画覆写，交由模板上的全局 .dd-rise（styles/motion.scss）
+// 统一管理入场动效与 subtle / off 动效分档。
 </style>

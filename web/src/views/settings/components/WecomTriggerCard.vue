@@ -416,8 +416,10 @@ onMounted(() => {
         <el-form-item label="绑定的开放 API 应用" required>
           <el-select v-model="triggerForm.open_app_id" placeholder="选择一个应用" style="width: 100%">
             <el-option v-for="app in appOptions" :key="app.value" :label="app.label" :value="app.value">
-              <span>{{ app.label }}</span>
-              <span class="option-scopes">{{ app.scopes || '未授权任何范围' }}{{ app.enabled ? '' : ' · 已禁用' }}</span>
+              <div class="option-row">
+                <span class="option-label">{{ app.label }}</span>
+                <span class="option-scopes">{{ app.scopes || '未授权任何范围' }}{{ app.enabled ? '' : ' · 已禁用' }}</span>
+              </div>
             </el-option>
           </el-select>
           <div class="field-hint">
@@ -478,6 +480,10 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .trigger-list {
@@ -488,10 +494,10 @@ onMounted(() => {
 .trigger-item {
   padding: 14px 16px;
   margin-bottom: 12px;
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--dd-border-strong));
   // 独立的信息块（四周留白、不贴边）→ surface 档
   border-radius: var(--dd-radius-surface);
-  background: var(--el-fill-color-blank);
+  background: var(--dd-surface-2, var(--el-fill-color-blank));
 
   &:last-child {
     margin-bottom: 0;
@@ -524,6 +530,10 @@ onMounted(() => {
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+
+    :deep(.el-button + .el-button) {
+      margin-left: 0;
+    }
   }
 
   &__meta {
@@ -572,10 +582,33 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
 }
 
+// 下拉选项左右分栏，替代 float: right 避免超长名称或权限范围重叠错行
+.option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+
+.option-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 // 下拉里应用名右侧的权限范围，灰一号色，不和应用名抢视线
 .option-scopes {
-  float: right;
-  margin-left: 16px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }

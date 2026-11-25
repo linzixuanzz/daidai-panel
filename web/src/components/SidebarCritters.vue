@@ -63,20 +63,20 @@ onBeforeUnmount(() => {
 <template>
   <div ref="rootRef" class="sidebar-critters" aria-hidden="true">
     <span class="critter critter--blue" style="--k: 0">
-      <span class="critter-eye" style="left: 10px; top: 14px"><i /></span>
-      <span class="critter-eye" style="left: 27px; top: 14px"><i /></span>
+      <span class="critter-eye" style="left: 8px; top: 13px"><i /></span>
+      <span class="critter-eye" style="left: 25px; top: 13px"><i /></span>
     </span>
     <span class="critter critter--black" style="--k: 1">
-      <span class="critter-eye" style="left: 6px; top: 12px"><i /></span>
-      <span class="critter-eye" style="left: 21px; top: 12px"><i /></span>
+      <span class="critter-eye" style="left: 5px; top: 12px"><i /></span>
+      <span class="critter-eye" style="left: 20px; top: 12px"><i /></span>
     </span>
     <span class="critter critter--yellow" style="--k: 2">
-      <span class="critter-eye" style="left: 9px; top: 16px"><i /></span>
-      <span class="critter-eye" style="left: 25px; top: 16px"><i /></span>
+      <span class="critter-eye" style="left: 8px; top: 15px"><i /></span>
+      <span class="critter-eye" style="left: 23px; top: 15px"><i /></span>
     </span>
     <span class="critter critter--orange" style="--k: 3">
-      <span class="critter-eye" style="left: 26px; top: 12px"><i /></span>
-      <span class="critter-eye" style="left: 56px; top: 12px"><i /></span>
+      <span class="critter-eye" style="left: 22px; top: 13px"><i /></span>
+      <span class="critter-eye" style="left: 47px; top: 13px"><i /></span>
     </span>
   </div>
 </template>
@@ -94,9 +94,10 @@ onBeforeUnmount(() => {
   flex: none;
   display: flex;
   align-items: flex-start;
+  justify-content: center;
   height: 58px;
   overflow: hidden;
-  padding: 0 0 0 18px;
+  padding: 0 8px;
   pointer-events: none;
 }
 
@@ -118,7 +119,10 @@ onBeforeUnmount(() => {
   }
 }
 
+// 4 只小人总宽 195px（46 + 32 + 41 + 76），在 232px 侧栏底宽里居中排布；
+// 负外边距按各小人右眼安全区精确收窄，保证相邻小人不遮挡任何一只眼睛（8 只眼全部完整露出）
 .critter--blue {
+  z-index: 1;
   width: 46px;
   height: 80px;
   margin-top: 4px;
@@ -127,30 +131,33 @@ onBeforeUnmount(() => {
 }
 
 .critter--black {
-  width: 36px;
+  z-index: 2;
+  width: 38px;
   height: 70px;
-  margin-top: 20px;
-  margin-left: -8px;
+  margin-top: 18px;
+  margin-left: -6px;
   background: var(--critter-black);
   border-radius: 9px 9px 0 0;
 }
 
 .critter--yellow {
-  width: 42px;
+  z-index: 3;
+  width: 44px;
   height: 62px;
-  margin-top: 14px;
-  margin-left: -8px;
+  margin-top: 10px;
+  margin-left: -3px;
   background: var(--critter-yellow);
   border-radius: 22px 22px 0 0;
 }
 
 .critter--orange {
-  width: 88px;
+  z-index: 4;
+  width: 82px;
   height: 46px;
   margin-top: 22px;
-  margin-left: -30px;
+  margin-left: -6px;
   background: var(--critter-orange);
-  border-radius: 44px 44px 0 0;
+  border-radius: 41px 41px 0 0;
 }
 
 .critter-eye {

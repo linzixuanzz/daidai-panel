@@ -138,18 +138,23 @@ function methodClass(method: string) {
 </script>
 
 <template>
-  <div class="api-docs-page dd-fixed-page">
+  <div class="api-docs-page dd-fixed-page dd-page-hide-heading">
     <div class="page-header dd-rise" style="--dd-i: 0">
       <h3 class="page-title">
         开发接口文档
       </h3>
+    </div>
+
+    <!-- 移动端顶部栏：.page-header 会被 dd-page-hide-heading 隐藏，
+         接口列表抽屉入口放在 page-header 之外，确保移动端依然可点开 -->
+    <div class="mobile-docs-bar">
       <el-button class="mobile-menu-btn" @click="mobileMenuOpen = true">
         <el-icon><Menu /></el-icon>
         接口列表
       </el-button>
     </div>
 
-    <el-drawer v-model="mobileMenuOpen" title="接口列表" direction="ltr" size="280px" :z-index="2000">
+    <el-drawer v-model="mobileMenuOpen" title="接口列表" direction="ltr" size="280px" :z-index="2000" class="api-docs-drawer">
       <div class="sider-search">
         <el-input v-model="searchText" placeholder="搜索接口..." clearable :prefix-icon="Search" />
         <div class="sider-count">共 {{ totalEndpoints }} 个接口</div>
@@ -268,7 +273,7 @@ function methodClass(method: string) {
                   <el-tag v-else size="small" round>可选</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="description" label="说明" />
+              <el-table-column prop="description" label="说明" min-width="180" />
               <el-table-column prop="example" label="示例" width="130">
                 <template #default="{ row }"><span class="param-example">{{ row.example || '-' }}</span></template>
               </el-table-column>
@@ -290,7 +295,7 @@ function methodClass(method: string) {
                   <el-tag v-else size="small" round>可选</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="description" label="说明" />
+              <el-table-column prop="description" label="说明" min-width="180" />
               <el-table-column prop="example" label="示例" width="130">
                 <template #default="{ row }"><span class="param-example">{{ row.example || '-' }}</span></template>
               </el-table-column>
@@ -312,7 +317,7 @@ function methodClass(method: string) {
                   <el-tag v-else size="small" round>可选</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="description" label="说明" />
+              <el-table-column prop="description" label="说明" min-width="180" />
               <el-table-column prop="example" label="示例" width="130">
                 <template #default="{ row }"><span class="param-example">{{ row.example || '-' }}</span></template>
               </el-table-column>
@@ -401,7 +406,7 @@ function methodClass(method: string) {
                 <el-table-column prop="type" label="类型" width="80">
                   <template #default="{ row }"><el-tag size="small" type="info" round>{{ row.type }}</el-tag></template>
                 </el-table-column>
-                <el-table-column prop="description" label="说明" />
+                <el-table-column prop="description" label="说明" min-width="180" />
               </el-table>
             </div>
 
@@ -445,16 +450,30 @@ function methodClass(method: string) {
 
   .page-title {
     margin: 0;
-    font-size: 20px;
-    font-weight: 600;
+    font-size: var(--dd-page-title-size, 22px);
+    font-weight: var(--dd-page-title-weight, 700);
+    letter-spacing: var(--dd-page-title-tracking, normal);
     display: flex;
     align-items: center;
     gap: 8px;
     color: var(--el-text-color-primary);
   }
+}
 
-  .mobile-menu-btn {
-    display: none;
+.mobile-docs-bar {
+  display: none;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+// 移动端接口列表抽屉：body 改纵向 flex 并关闭外层滚动，让顶部搜索框固定、仅下方列表滚动
+:deep(.el-drawer.api-docs-drawer) {
+  .el-drawer__body {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 }
 
@@ -469,9 +488,9 @@ function methodClass(method: string) {
   width: 280px;
   flex-shrink: 0;
   background: var(--el-bg-color);
-  // 1px 边框 + 圆角刻度，使侧栏与右侧文档卡观感统一（不再用阴影浮起）
+  // 描边宽走主题令牌 + 圆角刻度，使侧栏与右侧文档卡观感统一（不再用阴影浮起）
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
   overflow: hidden;
   height: 100%;
   display: flex;
@@ -493,6 +512,7 @@ function methodClass(method: string) {
   overflow-y: auto;
   padding-bottom: 12px;
   flex: 1;
+  min-height: 0;
 }
 
 // 分类计数从「分类名 (N)」的括号写法换成右对齐的 DdBadge（中性计数，描边不实心）。
@@ -591,11 +611,15 @@ function methodClass(method: string) {
 .api-content {
   flex: 1;
   background: var(--el-bg-color);
-  // 1px 边框 + 圆角刻度，不再用阴影浮起
+  // 描边宽走主题令牌 + 圆角刻度，不再用阴影浮起
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
   padding: 28px 32px;
   overflow: auto;
+  min-width: 0;
+}
+
+.api-doc-body {
   min-width: 0;
 }
 
@@ -607,8 +631,9 @@ function methodClass(method: string) {
 }
 
 .api-endpoint-title {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: var(--dd-page-title-size, 22px);
+  font-weight: var(--dd-page-title-weight, 700);
+  letter-spacing: var(--dd-page-title-tracking, normal);
   color: var(--el-text-color-primary);
   margin: 0 0 16px 0;
   line-height: 1.3;
@@ -619,8 +644,9 @@ function methodClass(method: string) {
   align-items: center;
   gap: 12px;
   padding: 12px 20px;
-  background: var(--el-fill-color-lighter);
-  border: 1px solid var(--el-border-color-lighter);
+  // 素白（clean）主题下主卡已是白底，内部区块用 surface-2 + divider 区分层次
+  background: var(--dd-surface-2, var(--el-fill-color-lighter));
+  border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--dd-border-strong));
   border-radius: var(--dd-radius-surface);
   margin-bottom: 24px;
   flex-wrap: wrap;
@@ -690,16 +716,17 @@ function methodClass(method: string) {
   }
 }
 
-.api-card {
-  // 这些卡用了 shadow="never"，层次全部交给自身的 1px lighter 边框（暗色自动适配）。
+// .api-card 嵌在 .api-content 内部，素白（clean）主题会把顶层 .el-card 边框设为 transparent，
+// 这里提高选择器特异性并用 --dd-divider 保留嵌套子卡的可见边界
+.api-docs-page .api-content .api-card.el-card {
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--dd-border-strong));
   margin-bottom: 20px;
   overflow: hidden;
 
   :deep(.el-card__header) {
-    background: var(--el-fill-color-light);
-    border-bottom: 1px solid var(--el-border-color-lighter);
+    background: var(--dd-surface-2, var(--el-fill-color-light));
+    border-bottom: var(--dd-border-width, 1px) solid var(--dd-divider, var(--dd-border-strong));
     padding: 12px 20px;
   }
 
@@ -731,8 +758,8 @@ function methodClass(method: string) {
 
 .param-section-header {
   padding: 8px 16px;
-  background: var(--el-fill-color-lighter);
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--dd-surface-2, var(--el-fill-color-lighter));
+  border-bottom: var(--dd-border-width, 1px) solid var(--dd-divider, var(--dd-border-strong));
   font-weight: 600;
   font-size: 13px;
   color: var(--el-text-color-regular);
@@ -752,7 +779,7 @@ function methodClass(method: string) {
 }
 
 .code-tabs {
-  padding: 0 16px;
+  padding: 0 16px 16px;
 
   :deep(.el-tabs__header) {
     margin-bottom: 0;
@@ -766,11 +793,13 @@ function methodClass(method: string) {
 
 .code-block-wrapper {
   position: relative;
+  max-width: 100%;
   border-radius: var(--dd-radius-surface);
   overflow: hidden;
   margin: 0;
 
-  &:hover .code-copy-btn {
+  &:hover .code-copy-btn,
+  &:focus-within .code-copy-btn {
     opacity: 1;
   }
 }
@@ -798,6 +827,17 @@ function methodClass(method: string) {
   opacity: 0;
   // 时长/缓动走令牌：写死毫秒会绕过 prefers-reduced-motion 的降级
   transition: opacity var(--dd-motion-fast) var(--dd-ease-standard);
+
+  &:focus-visible {
+    opacity: 1;
+  }
+}
+
+// 触屏设备无 hover 态，复制按钮常显避免无法发现
+@media (hover: none) {
+  .code-copy-btn {
+    opacity: 1;
+  }
 }
 
 .response-status {
@@ -869,12 +909,16 @@ function methodClass(method: string) {
     display: none;
   }
 
-  .page-header .mobile-menu-btn {
-    display: inline-flex;
+  .mobile-docs-bar {
+    display: flex;
   }
 
   .api-content {
     padding: 16px;
+  }
+
+  .api-endpoint-title {
+    font-size: var(--dd-page-title-size-mobile, 18px);
   }
 
   .api-content :deep(.el-table) {
@@ -890,42 +934,24 @@ function methodClass(method: string) {
     flex-direction: column;
   }
 
+  // 移动端解除桌面端 min-width: 300px，避免长 JSON 把 flex 项撑破导致 <pre class="code-block"> 无法横向滚动
+  .response-fields,
+  .response-example {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+
   .url-bar {
     padding: 10px 14px;
   }
-}
-
-// ===== 入场动画 =====
-// 与全站列表页统一：克制的淡入上移，时长走令牌（--dd-motion-page），
-// prefers-reduced-motion 时令牌自动降为 1ms 即等效关闭。
-@keyframes dd-apidocs-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-// 进入时侧栏 + 右侧文档区整体淡入上移（只对两个卡级容器各做一次，不给每个 section 重 stagger）。
-.api-sider,
-.api-content {
-  animation: dd-apidocs-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) both;
-}
-
-// 轻微错落：侧栏先入，右侧文档区略晚
-.api-content {
-  animation-delay: 60ms;
 }
 
 // ===== 接口切换过渡 =====
 // 只做 opacity，**不带任何位移**：本页正文长达数屏、外层 .api-content 自己是滚动容器，
 // 位移会让滚动条与长代码块一起抖。out-in 保证不会出现新旧两篇文档同时占位、
 // 把容器高度顶成两倍的情况。
-// 进入的容器（.api-content）自身带 dd-apidocs-rise-in，而 Transition 没有 appear，
-// 所以首屏只播一次入场动画，不会和这里的淡入叠加。
+// 首次入场交由全局 .dd-rise 负责，Transition 未挂 appear，不会与首屏入场叠加。
 .dd-apidocs-switch-enter-active {
   transition: opacity var(--dd-motion-normal) var(--dd-ease-decelerate);
 }

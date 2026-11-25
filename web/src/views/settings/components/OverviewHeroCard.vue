@@ -98,10 +98,10 @@ const releaseNotesHtml = computed(() => {
         </div>
 
         <div class="hero-actions">
-          <el-button v-if="isAdmin" type="primary" round :loading="checkingUpdate" @click="onCheckUpdate" class="hero-btn hero-btn--primary">
+          <el-button v-if="isAdmin" type="primary" :loading="checkingUpdate" @click="onCheckUpdate" class="hero-btn hero-btn--primary">
             检查系统更新
           </el-button>
-          <el-button v-if="isAdmin" type="warning" round @click="onRestartPanel" class="hero-btn hero-btn--warning">
+          <el-button v-if="isAdmin" type="warning" @click="onRestartPanel" class="hero-btn hero-btn--warning">
             重启面板
           </el-button>
           <!-- 停止面板服务：非模块版完全不显示（其它部署形态的进程管理器会立刻把面板拉回来）；
@@ -116,7 +116,6 @@ const releaseNotesHtml = computed(() => {
             <span class="hero-btn-wrap">
               <el-button
                 type="danger"
-                round
                 :disabled="!canStopPanel"
                 :loading="stoppingPanel"
                 @click="onStopPanel"
@@ -126,7 +125,7 @@ const releaseNotesHtml = computed(() => {
               </el-button>
             </span>
           </el-tooltip>
-          <el-button round @click="onOpenGitHub" class="hero-btn hero-btn--ghost">
+          <el-button @click="onOpenGitHub" class="hero-btn hero-btn--ghost">
             访问 GitHub
           </el-button>
         </div>
@@ -225,8 +224,8 @@ const releaseNotesHtml = computed(() => {
 .hero-card {
   // 卡片本体属容器类表面 → surface 档
   border-radius: var(--dd-radius-surface);
-  // 扁平化：不再用投影制造浮起，仅靠 1px 描边与页面底色区分
-  border: 1px solid var(--el-border-color-lighter);
+  // 扁平化：描边宽走主题令牌
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
   height: 100%;
 
   :deep(.el-card__body) { padding: 0; height: 100%; }
@@ -307,7 +306,8 @@ const releaseNotesHtml = computed(() => {
   font-size: 18px;
   font-weight: 700;
   color: var(--dd-accent-ink);
-  font-family: 'Inter', var(--dd-font-ui), sans-serif;
+  // --dd-font-ui 排在前面，保护 terminal 等宽主题的数字字体不被 Inter 覆盖
+  font-family: var(--dd-font-ui), 'Inter', sans-serif;
 
   &--tech {
     font-size: 14px;
@@ -321,14 +321,19 @@ const releaseNotesHtml = computed(() => {
   gap: 10px;
   flex-wrap: wrap;
   justify-content: center;
+
+  // 清零 EP 默认 .el-button + .el-button { margin-left: 12px }，修复移动端纵向堆叠阶梯错位
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .hero-btn {
-  font-weight: 600 !important;
-  font-size: 13px !important;
-  padding: 8px 18px !important;
-  // 按钮属控件类表面 → control 档（!important 是为了压过 EP 的按钮尺寸变体选择器，保留）
-  border-radius: var(--dd-radius-control) !important;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 8px 18px;
+  // 按钮圆角统一走 --dd-btn-radius（不加 !important，兼容素白胶囊及所有主题规范）
+  border-radius: var(--dd-btn-radius);
 }
 
 .hero-btn-icon {
@@ -359,7 +364,12 @@ const releaseNotesHtml = computed(() => {
 .hero-alert-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
   margin-top: 8px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .hero-meta {
@@ -539,6 +549,12 @@ pre.release-notes-content {
   .hero-actions {
     width: 100%;
     flex-direction: column;
+    align-items: stretch;
+
+    .hero-btn-wrap,
+    .hero-btn {
+      width: 100%;
+    }
   }
 
   .hero-version-row {

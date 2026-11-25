@@ -1,20 +1,24 @@
+// 16 色与 256 色基础槽位输出 CSS 变量（var(--dd-ansi-*)），由 global.scss 根据日志底色明暗
+// （html[data-dd-log-tone="light|dark"]）切换亮底加深版 / 暗底提亮版调色板，避免浅底黄白字近乎隐身。
 const ANSI_COLORS: Record<number, string> = {
-  30: '#4d4d4d', 31: '#cd3131', 32: '#0dbc79', 33: '#e5e510',
-  34: '#2472c8', 35: '#bc3fbc', 36: '#11a8cd', 37: '#e5e5e5',
-  90: '#666666', 91: '#f14c4c', 92: '#23d18b', 93: '#f5f543',
-  94: '#3b8eea', 95: '#d670d6', 96: '#29b8db', 97: '#ffffff',
+  30: 'var(--dd-ansi-30, #4d4d4d)', 31: 'var(--dd-ansi-31, #cd3131)', 32: 'var(--dd-ansi-32, #0dbc79)', 33: 'var(--dd-ansi-33, #e5e510)',
+  34: 'var(--dd-ansi-34, #2472c8)', 35: 'var(--dd-ansi-35, #bc3fbc)', 36: 'var(--dd-ansi-36, #11a8cd)', 37: 'var(--dd-ansi-37, #e5e5e5)',
+  90: 'var(--dd-ansi-90, #666666)', 91: 'var(--dd-ansi-91, #f14c4c)', 92: 'var(--dd-ansi-92, #23d18b)', 93: 'var(--dd-ansi-93, #f5f543)',
+  94: 'var(--dd-ansi-94, #3b8eea)', 95: 'var(--dd-ansi-95, #d670d6)', 96: 'var(--dd-ansi-96, #29b8db)', 97: 'var(--dd-ansi-97, #ffffff)',
 }
 
 const ANSI_BG_COLORS: Record<number, string> = {
-  40: '#4d4d4d', 41: '#cd3131', 42: '#0dbc79', 43: '#e5e510',
-  44: '#2472c8', 45: '#bc3fbc', 46: '#11a8cd', 47: '#e5e5e5',
-  100: '#666666', 101: '#f14c4c', 102: '#23d18b', 103: '#f5f543',
-  104: '#3b8eea', 105: '#d670d6', 106: '#29b8db', 107: '#ffffff',
+  40: 'var(--dd-ansi-bg-40, #4d4d4d)', 41: 'var(--dd-ansi-bg-41, #cd3131)', 42: 'var(--dd-ansi-bg-42, #0dbc79)', 43: 'var(--dd-ansi-bg-43, #e5e510)',
+  44: 'var(--dd-ansi-bg-44, #2472c8)', 45: 'var(--dd-ansi-bg-45, #bc3fbc)', 46: 'var(--dd-ansi-bg-46, #11a8cd)', 47: 'var(--dd-ansi-bg-47, #e5e5e5)',
+  100: 'var(--dd-ansi-bg-100, #666666)', 101: 'var(--dd-ansi-bg-101, #f14c4c)', 102: 'var(--dd-ansi-bg-102, #23d18b)', 103: 'var(--dd-ansi-bg-103, #f5f543)',
+  104: 'var(--dd-ansi-bg-104, #3b8eea)', 105: 'var(--dd-ansi-bg-105, #d670d6)', 106: 'var(--dd-ansi-bg-106, #29b8db)', 107: 'var(--dd-ansi-bg-107, #ffffff)',
 }
 
 const ANSI_256_BASE_COLORS = [
-  '#000000', '#800000', '#008000', '#808000', '#000080', '#800080', '#008080', '#c0c0c0',
-  '#808080', '#ff0000', '#00ff00', '#ffff00', '#0000ff', '#ff00ff', '#00ffff', '#ffffff',
+  'var(--dd-ansi-30, #4d4d4d)', 'var(--dd-ansi-31, #cd3131)', 'var(--dd-ansi-32, #0dbc79)', 'var(--dd-ansi-33, #e5e510)',
+  'var(--dd-ansi-34, #2472c8)', 'var(--dd-ansi-35, #bc3fbc)', 'var(--dd-ansi-36, #11a8cd)', 'var(--dd-ansi-37, #e5e5e5)',
+  'var(--dd-ansi-90, #666666)', 'var(--dd-ansi-91, #f14c4c)', 'var(--dd-ansi-92, #23d18b)', 'var(--dd-ansi-93, #f5f543)',
+  'var(--dd-ansi-94, #3b8eea)', 'var(--dd-ansi-95, #d670d6)', 'var(--dd-ansi-96, #29b8db)', 'var(--dd-ansi-97, #ffffff)',
 ] as const
 
 const HTML_ESCAPE_MAP: Record<string, string> = {

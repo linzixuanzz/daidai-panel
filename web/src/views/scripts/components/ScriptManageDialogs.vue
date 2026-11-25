@@ -227,6 +227,7 @@ watch(showVersionDiffDialog, (visible) => {
     :fullscreen="isMobile"
     :top="isMobile ? '0' : '4vh'"
     :close-on-click-modal="false"
+    class="script-version-diff-dialog"
     append-to-body
     destroy-on-close
   >
@@ -237,11 +238,11 @@ watch(showVersionDiffDialog, (visible) => {
     >
       <div class="version-diff-header">
         <div class="version-diff-side">
-          <span class="version-diff-caption">左侧：历史代码</span>
+          <span class="version-diff-caption">{{ isMobile ? '红底删除：历史代码' : '左侧：历史代码' }}</span>
           <strong>{{ versionDiffOriginalTitle || '历史版本' }}</strong>
         </div>
         <div class="version-diff-side version-diff-side--current">
-          <span class="version-diff-caption">右侧：当前代码</span>
+          <span class="version-diff-caption">{{ isMobile ? '绿底新增：当前代码' : '右侧：当前代码' }}</span>
           <strong>{{ versionDiffModifiedTitle || '当前代码' }}</strong>
         </div>
       </div>
@@ -367,7 +368,15 @@ watch(showVersionDiffDialog, (visible) => {
 .version-diff-dialog {
   display: flex;
   flex-direction: column;
-  height: calc(92vh - 80px);
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+
+  // 覆写 CodeDiffEditor 内层默认 min-height: 420px，防止矮屏/移动全屏下把 flex 容器撑爆出双滚动条
+  :deep(.code-diff-wrapper) {
+    min-height: 0;
+    height: 100%;
+  }
 }
 
 .version-diff-header {
@@ -375,6 +384,7 @@ watch(showVersionDiffDialog, (visible) => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 12px;
+  flex-shrink: 0;
 }
 
 .version-diff-side {
@@ -410,6 +420,7 @@ watch(showVersionDiffDialog, (visible) => {
   gap: 12px;
   margin-bottom: 12px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .version-diff-summary {
@@ -445,13 +456,13 @@ watch(showVersionDiffDialog, (visible) => {
 }
 
 .version-diff-empty {
-  flex: 1;
-  min-height: 62vh;
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px dashed var(--el-border-color);
-  // 空态占位区是整块虚线容器（占满 62vh）→ surface 档
+  // 空态占位区是整块虚线容器 → surface 档
   border-radius: var(--dd-radius-surface);
   background: color-mix(in srgb, var(--el-fill-color-light) 72%, var(--dd-surface-solid));
 }
@@ -487,10 +498,6 @@ watch(showVersionDiffDialog, (visible) => {
     text-align: left;
   }
 
-  .version-diff-editor {
-    min-height: calc(100dvh - 220px);
-  }
-
   .version-diff-toolbar {
     align-items: stretch;
   }
@@ -498,9 +505,28 @@ watch(showVersionDiffDialog, (visible) => {
   .version-diff-switch {
     justify-content: space-between;
   }
+}
+</style>
 
-  .version-diff-empty {
-    min-height: calc(100dvh - 220px);
+<style lang="scss">
+// 版本对比弹窗挂了 append-to-body，必须用非 scoped 样式定高并锁死 .el-dialog__body 纵排无滚动，
+// 把滚动完全交给内部 Diff 编辑器，消除矮屏裁切与双滚动条。
+.script-version-diff-dialog {
+  display: flex;
+  flex-direction: column;
+  height: min(88dvh, 860px);
+
+  &.is-fullscreen {
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .el-dialog__body {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 }
 </style>

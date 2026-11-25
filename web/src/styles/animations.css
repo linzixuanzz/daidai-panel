@@ -87,16 +87,7 @@
   }
 }
 
-/* 旋转动画 - 优化版 */
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
+/* 旋转动画与淡入基础 keyframes（spin / fadeIn / fadeInUp）由 global.scss 统一提供，避免重复定义覆盖 */
 @keyframes spinSmooth {
   0% {
     transform: rotate(0deg);
@@ -307,27 +298,7 @@
   }
 }
 
-/* 淡入动画 */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 20px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
+/* 淡入补充动画（fadeIn / fadeInUp 已在 global.scss 定义） */
 @keyframes fadeInLeft {
   from {
     opacity: 0;
@@ -419,15 +390,7 @@
   will-change: auto;
 }
 
-/* 工具类 - 淡入动画 */
-.animate-fade-in {
-  animation: fadeIn 0.3s ease-out both;
-}
-
-.animate-fade-in-up {
-  animation: fadeInUp 0.4s var(--ease-out) both;
-}
-
+/* 工具类 - 补充淡入动画（.animate-fade-in / .animate-fade-in-up 在 global.scss 定义） */
 .animate-fade-in-left {
   animation: fadeInLeft 0.35s var(--ease-out) both;
 }
@@ -505,17 +468,11 @@
 
 /* 骨架屏：这里的移动渐变是加载指示（同 loading 圆弧），属于功能性动效，予以保留 */
 .skeleton {
-  /* v4.0：底色改读 EP 填充色令牌（随主题与明暗变化），原写死 #f0f0f0 / #e0e0e0 */
+  /* v4.0：底色改读 EP 填充色令牌（随主题与明暗变化），圆角跟随全站控件档 */
   background: linear-gradient(90deg, var(--el-fill-color-light) 25%, var(--el-fill-color-dark) 50%, var(--el-fill-color-light) 75%);
   background-size: 200% 100%;
   animation: skeletonLoading 1.5s ease-in-out infinite;
-  border-radius: 0;
-}
-
-.skeleton-dark {
-  background: linear-gradient(90deg, #2a2a2a 25%, #1f1f1f 50%, #2a2a2a 75%);
-  background-size: 200% 100%;
-  animation: skeletonLoading 1.5s ease-in-out infinite;
+  border-radius: var(--dd-radius-control);
 }
 
 /* 渐变背景工具类 .gradient-animated 已移除：四色流动渐变属于纯装饰，与扁平方案冲突 */

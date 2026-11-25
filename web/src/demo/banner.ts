@@ -49,8 +49,10 @@ function bannerCss() {
 body { padding-top: var(--dd-demo-banner-height); }
 
 /* MainLayout 的外壳写死 100dvh，登录页写死 100vh，都要把横幅高度让出来；!important 的理由见 bannerCss 的注释 */
-.layout-container { height: calc(100dvh - var(--dd-demo-banner-height)) !important; }
-.login-page { min-height: calc(100vh - var(--dd-demo-banner-height)) !important; }
+.layout-container { height: calc(100dvh - var(--dd-demo-banner-height) - var(--dd-safe-banner-h, 0px)) !important; }
+.login-page { min-height: calc(100dvh - var(--dd-demo-banner-height) - var(--dd-safe-banner-h, 0px)) !important; }
+/* 登录页右上角明暗按钮为 fixed，需下移避开 34px 演示横幅 */
+.login-page .theme-toggle { top: calc(24px + var(--dd-demo-banner-height)) !important; }
 
 #${BANNER_ID} {
   position: fixed;
@@ -86,8 +88,9 @@ body { padding-top: var(--dd-demo-banner-height); }
   padding: 3px 8px;
   font-weight: 600;
   letter-spacing: 0.5px;
-  color: var(--el-color-white, #fff);
-  background: var(--el-color-primary);
+  color: var(--dd-btn-primary-fg, #fff);
+  background: var(--dd-btn-primary-bg, var(--el-color-primary));
+  border-radius: var(--dd-radius-control, 0);
 }
 
 #${BANNER_ID} .dd-demo-banner__text {
@@ -112,7 +115,7 @@ body { padding-top: var(--dd-demo-banner-height); }
   font-size: 12px;
   font-family: inherit;
   cursor: pointer;
-  color: var(--el-color-primary);
+  color: var(--dd-accent-ink, var(--el-color-primary));
   background: var(--el-bg-color);
   border: 1px solid var(--el-color-primary-light-5);
   border-radius: var(--dd-radius-control, 0);
@@ -123,9 +126,9 @@ body { padding-top: var(--dd-demo-banner-height); }
 }
 
 #${BANNER_ID} .dd-demo-banner__reset:hover {
-  color: var(--el-color-white, #fff);
-  background: var(--el-color-primary);
-  border-color: var(--el-color-primary);
+  color: var(--dd-btn-primary-fg, #fff);
+  background: var(--dd-btn-primary-bg, var(--el-color-primary));
+  border-color: var(--dd-btn-primary-bg, var(--el-color-primary));
 }
 
 /* 窄屏只留「演示环境 + 重置」，说明文字换成最短的一句，避免挤成两行 */

@@ -483,7 +483,7 @@ onBeforeUnmount(() => {
         </span>
       </div>
 
-      <div class="update-progress-steps">
+      <div class="update-progress-steps" :class="{ 'is-single': steps.length === 1 }">
         <div
           v-for="(step, index) in steps"
           :key="step.key"
@@ -577,8 +577,17 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   border-radius: 50%;
+  // 副光弧走主题混色，避免在亮色主题上出现硬编码纯白糊成一片
   background:
-    conic-gradient(from 210deg, transparent 0deg, transparent 48deg, var(--dd-update-accent) 128deg, transparent 196deg, rgba(255, 255, 255, 0.82) 322deg, transparent 360deg);
+    conic-gradient(
+      from 210deg,
+      transparent 0deg,
+      transparent 48deg,
+      var(--dd-update-accent) 128deg,
+      transparent 196deg,
+      color-mix(in srgb, var(--dd-update-accent) 42%, transparent) 322deg,
+      transparent 360deg
+    );
   animation: update-spin 5.2s linear infinite;
 }
 
@@ -639,6 +648,9 @@ onBeforeUnmount(() => {
 
   h3 {
     margin: 8px 0 10px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     font-size: 24px;
     line-height: 1.2;
     color: var(--el-text-color-primary);
@@ -706,14 +718,15 @@ onBeforeUnmount(() => {
   height: 100%;
   // 进度条填充跟随轨道 → pill 档
   border-radius: var(--dd-radius-pill);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--dd-update-accent) 82%, white), var(--dd-update-accent));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--dd-update-accent) 82%, var(--dd-surface-solid)), var(--dd-update-accent));
   transition: width 0.45s ease;
 
   &::after {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    // 流光高光走主题正文色混色，适配明暗双态而不写死纯白
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--dd-text) 28%, transparent), transparent);
     transform: translateX(-100%);
     animation: update-shimmer 1.8s ease-in-out infinite;
   }
@@ -750,8 +763,9 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
   min-height: 34px;
-  padding: 0 14px;
+  padding: 6px 14px;
   // 更新目标标签（不是状态灯）→ control 档
   border-radius: var(--dd-radius-control);
   font-size: 12px;
@@ -759,17 +773,25 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-primary);
   background: var(--el-fill-color-lighter);
   border: 1px solid var(--el-border-color-lighter);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 
   .el-icon {
+    flex-shrink: 0;
     color: var(--dd-update-accent);
     font-size: 13px;
   }
 }
 
+// 步进卡按实际步骤数自适应：单步全宽，多步自动 2~3 列排布，不再 5 列压成 82px
 .update-progress-steps {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
+
+  &.is-single {
+    grid-template-columns: 1fr;
+  }
 }
 
 .update-step {

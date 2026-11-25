@@ -704,6 +704,11 @@ const groupedTemplates = computed(() => {
   justify-content: flex-start;
   gap: 10px;
   flex-wrap: wrap;
+
+  // 间距统一交给 flex gap，清掉 EP 默认相邻按钮的 12px 左外边距
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .valid-badge {
@@ -841,7 +846,9 @@ const groupedTemplates = computed(() => {
   border-radius: var(--dd-radius-surface);
   background: var(--dd-surface-solid);
   cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition:
+    border-color var(--dd-motion-fast) var(--dd-ease-standard),
+    background-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
     border-color: color-mix(in srgb, var(--dd-accent) 50%, var(--dd-surface-solid));
@@ -917,6 +924,12 @@ const groupedTemplates = computed(() => {
 }
 
 @media (max-width: 768px) {
+  // 移动端全屏弹窗由 .el-dialog__body 统一滚动，解除 65vh 限高避免双层滚动条
+  .cron-templates-dialog {
+    max-height: none;
+    overflow-y: visible;
+  }
+
   .cron-rule-row {
     flex-direction: column;
   }

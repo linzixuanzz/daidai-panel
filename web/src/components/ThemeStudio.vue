@@ -100,10 +100,15 @@ function scopeLabel(key: LocalAppearanceKey) {
   return theme.isLocal(key) ? '本机' : '跟随全站'
 }
 
-// 主色：本机设过且等于这个色块时高亮
+// 主色：本机设过且等于这个色块时高亮（统一小写比较，避免大小写 hex 漏判）
 function isAccentActive(color: string) {
-  return theme.isLocal('accent') && theme.accent === color
+  return theme.isLocal('accent') && theme.accent.toLowerCase() === color
 }
+
+// 本机选了非预设主色时，给自定义取色器挂选中外环
+const isCustomAccentActive = computed(
+  () => theme.isLocal('accent') && Boolean(theme.accent) && !ACCENT_SWATCHES.includes(theme.accent.toLowerCase()),
+)
 
 function handleCustomAccent(event: Event) {
   const value = (event.target as HTMLInputElement).value
@@ -461,7 +466,12 @@ function handleClose() {
               @click="theme.setAccent(color, $event)"
             ></button>
             <!-- 自定义取色：选完（change）才提交一次，拖动取色盘时不反复写存储 -->
-            <label class="studio-swatch studio-swatch--pick" title="自定义主色">
+            <label
+              class="studio-swatch studio-swatch--pick"
+              :class="{ 'is-active': isCustomAccentActive }"
+              :style="isCustomAccentActive ? { '--sw': theme.accent } : undefined"
+              title="自定义主色"
+            >
               <input type="color" :value="theme.accent || '#7c3aed'" aria-label="自定义主色" @change="handleCustomAccent" />
             </label>
           </div>
@@ -734,7 +744,8 @@ function handleClose() {
 }
 
 @media (max-width: 768px) {
-  // 手机上全局规则已把抽屉拉满宽度，这里去掉四周留白与圆角
+  // 手机上全局规则已把抽屉拉满宽度，这里去掉四周留白与圆角；
+  // 贴紧屏幕右边缘时改用减速曲线，避免 --dd-spring-soft 过冲在右侧露出背景缝隙
   .el-overlay .el-drawer.dd-studio.rtl {
     top: 0;
     bottom: 0;
@@ -742,6 +753,7 @@ function handleClose() {
     max-width: none;
     border-radius: 0;
     border: none;
+    transition: transform var(--dd-motion-overlay) var(--dd-ease-decelerate) !important;
   }
 }
 </style>
@@ -761,7 +773,7 @@ function handleClose() {
   align-items: center;
   gap: 10px;
   padding: 18px 20px;
-  border-bottom: 1px solid var(--dd-border);
+  border-bottom: 1px solid var(--dd-divider, var(--dd-border-strong));
 
   h3 {
     flex: 1;
@@ -814,12 +826,14 @@ function handleClose() {
 .studio-sec__head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   margin-bottom: 10px;
 }
 
 .studio-sec__title {
   flex: 1;
+  min-width: max-content;
   font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 1px;
@@ -897,7 +911,7 @@ function handleClose() {
   display: block;
   padding: 8px;
   border-radius: var(--dd-radius-surface);
-  border: 1.5px solid var(--dd-border);
+  border: 1.5px solid var(--dd-divider, var(--dd-border-strong));
   background: var(--dd-surface-2);
   color: var(--dd-text);
   font: inherit;
@@ -1043,10 +1057,23 @@ function handleClose() {
 // ===== 分段控件 / 滑杆 =====
 .studio-seg {
   max-width: 100%;
-  flex-wrap: wrap;
+  // 保持单行不折行、窄屏横向平滑滑动，避免素白（clean）胶囊分段折成两行变巨型椭圆
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: auto;
+  scrollbar-width: none;
 
-  .is-unavailable {
-    opacity: 0.55;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  // 未上传背景图时的「图片」项：不用 opacity 二次降对比（素白亮色会跌至 2.31:1），
+  // 改用次要文字色（全 14 主题 ≥ 5.8:1）配虚线边框区分待配置态
+  .dd-seg-btn.is-unavailable {
+    color: var(--dd-text-2);
+    border-style: dashed;
+    border-color: var(--dd-border-strong);
   }
 }
 
@@ -1081,12 +1108,17 @@ function handleClose() {
   align-items: center;
   gap: 8px;
   margin-top: 10px;
+
+  // EP 按钮相邻时自带 12px 左外边距，这里统一由 gap 控制
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .studio-bg-preview {
   height: 96px;
   border-radius: var(--dd-radius-control);
-  border: 1px solid var(--dd-border);
+  border: 1px solid var(--dd-divider, var(--dd-border-strong));
   background-color: var(--dd-surface-2);
   background-size: cover;
   background-position: center;
@@ -1108,7 +1140,7 @@ function handleClose() {
 .studio-chip {
   padding: 3px 10px;
   border-radius: var(--dd-radius-pill);
-  border: 1px solid var(--dd-border);
+  border: 1px solid var(--dd-divider, var(--dd-border-strong));
   background: var(--dd-surface-2);
   color: var(--dd-text-2);
   font: inherit;
@@ -1131,15 +1163,42 @@ function handleClose() {
   align-items: center;
   gap: 8px;
   padding: 14px 20px;
-  border-top: 1px solid var(--dd-border);
+  border-top: 1px solid var(--dd-divider, var(--dd-border-strong));
 
   // EP 按钮相邻时自带 12px 左外边距，这里统一用 gap
-  .el-button + .el-button {
+  :deep(.el-button + .el-button) {
     margin-left: 0;
   }
 }
 
 .studio-foot__spacer {
   flex: 1;
+}
+
+@media (max-width: 768px) {
+  .studio-head {
+    padding: 14px 16px;
+  }
+
+  .studio-body {
+    padding: 14px 16px 16px;
+  }
+
+  // 移动端底栏收紧间距并补底部安全区，避免窄屏折行或被底部手势条遮挡
+  .studio-foot {
+    gap: 6px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 420px) {
+  .studio-foot {
+    gap: 4px;
+    padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+
+    :deep(.el-button--small) {
+      padding: 5px 8px;
+    }
+  }
 }
 </style>

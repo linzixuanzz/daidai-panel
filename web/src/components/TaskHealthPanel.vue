@@ -106,6 +106,22 @@ onBeforeUnmount(() => {
 })
 
 // ---- 热力格 ----
+// 骨架屏按今天倒推 HEALTH_DAYS 天的起点补齐周一前置空格，
+// 使加载态与真实日历列数（13 或 14 列）保持一致，消除加载完成时的高度跳动。
+const skeletonCells = computed(() => {
+  const start = new Date()
+  start.setDate(start.getDate() - (HEALTH_DAYS - 1))
+  const offset = (start.getDay() + 6) % 7
+  const cells: Array<{ key: string; pad: boolean }> = []
+  for (let i = 0; i < offset; i++) {
+    cells.push({ key: `sk-pad-${i}`, pad: true })
+  }
+  for (let i = 0; i < HEALTH_DAYS; i++) {
+    cells.push({ key: `sk-${i}`, pad: false })
+  }
+  return cells
+})
+
 // 每列一周、每行一个星期几（周一在最上面）。第一天前面补空格，让同一行永远是同一个星期几。
 const heatCells = computed(() => {
   const days = health.value?.days || []
@@ -252,7 +268,12 @@ const latestLogTone = computed(() => {
           </div>
         </div>
         <div v-if="healthLoading" class="task-health__heat is-loading" aria-hidden="true">
-          <span v-for="n in HEALTH_DAYS" :key="n" class="task-health__cell" />
+          <span
+            v-for="cell in skeletonCells"
+            :key="cell.key"
+            class="task-health__cell"
+            :class="{ 'is-pad': cell.pad }"
+          />
         </div>
         <div v-else class="task-health__heat" role="img" :aria-label="`近 13 周每天的运行结果，${failedDays} 天有失败`">
           <span
@@ -322,7 +343,7 @@ const latestLogTone = computed(() => {
 <style scoped lang="scss">
 .task-health {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: var(--dd-gap, 16px);
   min-width: 0;
   color: var(--dd-text);
@@ -346,7 +367,7 @@ const latestLogTone = computed(() => {
   gap: 10px;
   min-width: 0;
   padding: 14px;
-  border: 1px solid var(--dd-border);
+  border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--dd-border));
   border-radius: var(--dd-radius-control);
   background: var(--dd-surface-2);
 }
@@ -381,11 +402,12 @@ const latestLogTone = computed(() => {
   b {
     display: block;
     margin-top: 2px;
-    font-size: 18px;
+    font-size: clamp(14px, 4vw, 18px);
     font-weight: 650;
     color: var(--dd-text);
     font-variant-numeric: tabular-nums;
     line-height: 1.3;
+    white-space: nowrap;
 
     &.is-warn { color: var(--dd-warn-ink); }
     &.is-err { color: var(--dd-err-ink); }
@@ -407,7 +429,7 @@ const latestLogTone = computed(() => {
   gap: 3px;
   max-width: 420px;
 
-  // 加载中：91 个灰格占位，避免数据回来时整块跳高
+  // 加载中：按真实日历对齐前置空格占位，避免数据回来时整块跳高
   &.is-loading .task-health__cell {
     opacity: 0.6;
   }
@@ -417,7 +439,8 @@ const latestLogTone = computed(() => {
   display: block;
   aspect-ratio: 1;
   min-width: 0;
-  border-radius: 3px;
+  // 直角模式下 --dd-radius-control 为 0，圆角模式最多收敛到 3px
+  border-radius: min(3px, var(--dd-radius-control));
   background: var(--dd-surface-3);
 
   &.is-pad { background: transparent; }
@@ -476,6 +499,8 @@ html[data-dd-motion="rich"] .task-health__heat:not(.is-loading) .task-health__ce
 .task-health__trend {
   position: relative;
   height: 84px;
+  // 左右各内缩 5px（正好等于 10px 圆点半径），让首尾圆点与折线端点对齐且不探出面板内容区
+  margin: 0 5px;
 
   svg {
     display: block;

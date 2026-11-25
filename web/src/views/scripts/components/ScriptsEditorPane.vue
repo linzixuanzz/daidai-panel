@@ -858,9 +858,9 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* 卡片表面用令牌，明暗自动适配（卡片边框由 index.vue 负责） */
+  /* 卡片表面用令牌，明暗自动适配（卡片边框与 backwards 入场动画由 index.vue 统一负责，
+     这里绝不叠加 both 动画，以免残留 transform 让 Monaco 浮层错位裁切） */
   background: var(--el-bg-color);
-  animation: dd-editor-shell-in 360ms var(--dd-ease-emphasized) both;
   font-family: var(--dd-font-ui);
   overflow: hidden;
 }
@@ -1055,7 +1055,9 @@ watch(
 
 .file-pill {
   display: inline-flex;
-  transition: background-color 0.16s ease, color 0.16s ease;
+  transition:
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    color var(--dd-motion-fast) var(--dd-ease-standard);
   align-items: center;
   height: 20px;
   padding: 0 8px;
@@ -1125,7 +1127,7 @@ watch(
   }
 }
 
-// 页面自带的「减少动效」规则统一走这个包装（C8 动效偏好，本文件末尾编辑器入场那段也用它）：
+// 页面自带的「减少动效」规则统一走这个包装（C8 动效偏好）：
 // - 跟随系统：媒体查询里带 :root:not(.dd-motion-force)，个人设置选「始终开启」时不生效；
 // - 个人设置选「减少动效」：html.dd-motion-off 下不看系统同样生效。
 // 与 global.scss 末尾「减少动效」段同一口径；前缀包在 :where() 里，不给选择器额外加特异性。
@@ -1170,7 +1172,10 @@ watch(
   // 手机上 rounded 面板是 16px，配 .dd-icon-only-btn 的 32px 高正好是正圆
   border-radius: var(--dd-radius-button);
   font-weight: 500;
-  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  transition:
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    border-color var(--dd-motion-fast) var(--dd-ease-standard),
+    color var(--dd-motion-fast) var(--dd-ease-standard);
 }
 
 /* 1025~1280 这一档：还没进 compact（按钮仍带文字），但编辑器卡被 300px 目录树挤到只剩 ~450px。
@@ -1407,7 +1412,9 @@ watch(
 
 .status-item {
   letter-spacing: 0.4px;
-  transition: color 0.16s ease, opacity 0.16s ease;
+  transition:
+    color var(--dd-motion-fast) var(--dd-ease-standard),
+    opacity var(--dd-motion-fast) var(--dd-ease-standard);
 }
 
 /* 「编辑中 / 只读」：唯一不参与裁切的读数，理由见模板里的注释。
@@ -1515,24 +1522,4 @@ watch(
     padding: 28px 20px;
   }
 }
-
-
-@keyframes dd-editor-shell-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 12px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-// 走上面 dd-page-reduced-motion 的包装（C8 动效偏好）
-@include dd-page-reduced-motion {
-  .scripts-editor {
-    animation: none;
-  }
-}
-
 </style>

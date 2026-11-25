@@ -44,7 +44,7 @@ const blackFace = computed(
 );
 
 const yellowBody = computed(
-  () => `translate(275, 200) rotate(${bodyTilt.value * 0.5}, 55, 70)`,
+  () => `translate(275, 200) rotate(${bodyTilt.value * 0.5}, 55, 105)`,
 );
 const yellowFace = computed(
   () =>
@@ -136,7 +136,17 @@ const orangeFace = computed(
     </g>
 
     <g class="char-body" :transform="blackBody">
-      <rect x="0" y="0" width="95" height="210" rx="16" fill="#2D2D2D" />
+      <!-- 补暗色可见描边，避免黑色小人在呆呆/纸墨/素白暗色底上融进背景隐身 -->
+      <rect
+        x="0"
+        y="0"
+        width="95"
+        height="210"
+        rx="16"
+        fill="#2D2D2D"
+        stroke="var(--dd-border-strong)"
+        stroke-width="2"
+      />
       <g class="char-face" :transform="blackFace">
         <template v-if="coverEyes">
           <line
@@ -204,7 +214,8 @@ const orangeFace = computed(
     </g>
 
     <g class="char-body" :transform="yellowBody">
-      <path d="M 0,140 Q 0,-15 55,-15 Q 110,-15 110,140 Z" fill="#F5C542" />
+      <!-- 底部延长至局部 y=210（全局 200+210=410），与橙色小人齐平落地不再悬空 -->
+      <path d="M 0,210 L 0,140 Q 0,-15 55,-15 Q 110,-15 110,140 L 110,210 Z" fill="#F5C542" />
       <g class="char-face" :transform="yellowFace">
         <template v-if="coverEyes">
           <line

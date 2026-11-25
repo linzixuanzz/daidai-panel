@@ -418,7 +418,10 @@ watch(
   border: 1px solid transparent;
   // 视图列表里的一行卡片（行间有 6px 间隔，不是贴边内嵌）→ surface 档
   border-radius: var(--dd-radius-surface);
-  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
+  transition:
+    border-color var(--dd-motion-fast) var(--dd-ease-standard),
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    opacity var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
     border-color: var(--dd-border-strong);
@@ -428,12 +431,13 @@ watch(
     opacity: 0.55;
   }
 
-  // 「全部」固定项：换成卡片底 + 常亮 1px 描边与下方可拖拽的视图行区分开（不靠阴影/圆角）。
+  // 「全部」固定项：换成卡片底 + 常亮 1px 内部分隔边与下方可拖拽的视图行区分开（不靠阴影/圆角）。
+  // 改走 --dd-divider 避免素白 clean 下 --dd-border: transparent 导致描边隐身；
   // hover 也不点亮描边 —— 它没有拖拽/编辑/删除，点亮反而会误导成「这行能拖」。
   &.is-builtin,
   &.is-builtin:hover {
     background: var(--dd-surface-solid);
-    border-color: var(--dd-border);
+    border-color: var(--dd-divider, var(--el-border-color-light));
   }
 
   // 两个内置项（「全部」「顶栏分组页签」）上下相邻，间距与下方视图列表的行间距同为 6px
@@ -489,6 +493,11 @@ watch(
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+
+  // 间距统一交给 flex gap，清掉 EP 默认相邻按钮的 12px 左外边距
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .view-row-ghost {
@@ -503,5 +512,14 @@ watch(
 /* 拖拽中不再靠阴影浮起，改用描边标出当前拖动的行 */
 .view-row-dragging {
   border-color: var(--dd-border-strong);
+}
+
+@media (max-width: 768px) {
+  // 移动端全屏弹窗由 .el-dialog__body 统一滚，解除桌面 420px 限高避免双层嵌套滚动
+  .view-manager-list {
+    max-height: none;
+    overflow-y: visible;
+    padding-right: 0;
+  }
 }
 </style>

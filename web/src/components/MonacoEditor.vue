@@ -3,6 +3,7 @@ import { ref, shallowRef, onMounted, onBeforeUnmount, watch } from "vue";
 import {
   defineMonacoTheme,
   detectIndentWidth,
+  resolveCodeEditorFontFamily,
   resolveMonacoLanguage,
 } from "@/utils/codeEditor";
 import { PANEL_APPEARANCE_CHANGE_EVENT } from "@/utils/panelAppearance";
@@ -75,15 +76,6 @@ const emit = defineEmits<{
   "update:modelValue": [value: string];
 }>();
 
-/**
- * 等宽字体栈。与 utils/codeEditor.ts 的 EDITOR_FONT_FAMILY **逐字相同**，改一边就要改另一边。
- * 没有直接引用那个常量是因为它没有导出（那边它只服务于 CodeMirror 的 EditorView.theme），
- * 而本文件宁可重复一行字符串，也不去改动 codeEditor.ts 的导出面。
- * 不一致的表现是「切个引擎字形就变了」，不报错。
- */
-const EDITOR_FONT_FAMILY =
-  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
-
 // 从 create() 的返回值反推实例类型，而不是 import Monaco 的 IStandaloneCodeEditor：
 // 全仓只有 utils/monacoEngine.ts 可以出现 `from 'monaco-editor/...'`（见那个文件顶部）。
 type MonacoStandaloneEditor = ReturnType<MonacoApi["editor"]["create"]>;
@@ -137,6 +129,8 @@ let desiredIndentWidth = 2;
 function applyEditorTheme(monaco: MonacoApi) {
   const { themeName } = defineMonacoTheme(monaco);
   monaco.editor.setTheme(themeName);
+  // 切主题或自定义 CSS 更新 --dd-font-mono 时同步刷新编辑器字体栈
+  editor?.updateOptions({ fontFamily: resolveCodeEditorFontFamily() });
 }
 
 // 明暗切换、以及用户在系统设置里改编辑器底色，都会走 PANEL_APPEARANCE_CHANGE_EVENT
@@ -348,7 +342,7 @@ async function mountEditor() {
     tabSize: desiredIndentWidth,
     insertSpaces: true,
     fontSize: 14,
-    fontFamily: EDITOR_FONT_FAMILY,
+    fontFamily: resolveCodeEditorFontFamily(),
     // 不允许滚到最后一行以下的空白区：编辑器本来就嵌在有限高度的卡片里，
     // 多出一屏空白只会让人以为内容没加载完
     scrollBeyondLastLine: false,

@@ -1,7 +1,12 @@
-import { computed, ref } from 'vue'
+import { computed, onScopeDispose, ref } from 'vue'
 import { configApi, type SystemConfigMap } from '@/api/system'
 import { ElMessage } from 'element-plus'
-import { applyPanelAppearance, type PanelAppearanceSettings } from '@/utils/panelAppearance'
+import {
+  applyPanelAppearance,
+  getSiteAppearance,
+  THEME_SITE_CHANGE_EVENT,
+  type PanelAppearanceSettings
+} from '@/utils/panelAppearance'
 import type { PanelShapeStyle } from '@/utils/panelSettings'
 import { useThemeStore } from '@/stores/theme'
 import type { SettingsConfigForm } from './types'
@@ -413,6 +418,14 @@ export function useSettingsConfig() {
   // 界面圆角随本卡保存：保存成功后 submitConfigs 已把新值记进 rawConfigs，
   // saveConfigKeys 重跑 applyPanelAppearance 时快照里就是刚保存的圆角，当场生效、不用刷新
   async function handleSaveSystemConfig() {
+    // 选择「图片」背景效果但未上传背景图时拦截，避免保存后变成空白背景
+    if (
+      configForm.value.panel_background_effect === 'image' &&
+      !configForm.value.panel_background_image.trim()
+    ) {
+      ElMessage.warning('页面背景效果选择「背景图」时，请先上传页面背景图片')
+      return
+    }
     const saved = await saveConfigKeys([
       'panel_title', 'timezone', 'panel_icon', 'editor_background_color', 'log_background_color', 'log_background_image',
       'panel_shape_style', 'panel_background_effect', 'panel_background_image'
@@ -426,6 +439,34 @@ export function useSettingsConfig() {
         panel_background_image: readConfigString(rawConfigs.value, 'panel_background_image', '')
       })
     }
+  }
+
+  // 主题工坊「设为全站默认」修改全站外观后，同步刷新设置页表单与比对基准，
+  // 防止设置页里残留旧值、用户再点「保存配置」时把主题工坊刚保存的新值覆盖回去
+  function syncAppearanceFromSite() {
+    const site = getSiteAppearance()
+    configForm.value.panel_shape_style = site.shape
+    configForm.value.panel_background_effect = site.background
+    configForm.value.panel_background_image = site.backgroundImage
+    if (configsLoaded.value) {
+      const updates: Record<string, string> = {
+        panel_shape_style: site.shape,
+        panel_background_effect: site.background,
+        panel_background_image: site.backgroundImage
+      }
+      for (const [key, value] of Object.entries(updates)) {
+        const entry = rawConfigs.value[key]
+        if (entry) entry.value = value
+        else rawConfigs.value[key] = { value }
+      }
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener(THEME_SITE_CHANGE_EVENT, syncAppearanceFromSite)
+    onScopeDispose(() => {
+      window.removeEventListener(THEME_SITE_CHANGE_EVENT, syncAppearanceFromSite)
+    })
   }
 
   function handleSaveAlertConfig() {

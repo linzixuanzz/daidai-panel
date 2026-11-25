@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
-import { defineMonacoTheme, resolveMonacoLanguage } from "@/utils/codeEditor";
+import {
+  defineMonacoTheme,
+  resolveCodeEditorFontFamily,
+  resolveMonacoLanguage,
+} from "@/utils/codeEditor";
 import { PANEL_APPEARANCE_CHANGE_EVENT } from "@/utils/panelAppearance";
 import { MonacoLoadErrorOverlay } from "@/utils/monacoWarmup";
 // ⚠️ 只能是 `import type`：它会被 TS 完全擦掉、不产生运行时导入。
@@ -90,6 +94,8 @@ function applyTheme() {
   const { themeName, background } = defineMonacoTheme(monacoApi);
   monacoApi.editor.setTheme(themeName);
   wrapperBackground.value = background;
+  // 切换主题后同步刷新等宽字体栈，与 MonacoEditor 保持一致
+  diffEditor?.updateOptions({ fontFamily: resolveCodeEditorFontFamily() });
 }
 
 function destroyEditor() {
@@ -164,6 +170,9 @@ async function buildEditor() {
     // 与 CodeMirror 侧的 EditorView.lineWrapping 对齐。
     // 差异编辑器的 diffWordWrap 默认是 'inherit'，会跟着这条走，不用另给。
     wordWrap: "on",
+    // 与 MonacoEditor.vue 补齐一致的字号与等宽字体栈
+    fontSize: 14,
+    fontFamily: resolveCodeEditorFontFamily(),
     // ⚠️ 不要在这里给 minimap: { enabled: true }。
     // Monaco 的 _adjustOptionsForSubEditor 会在两侧子编辑器上无条件把
     // clonedOptions.minimap.enabled 设成 false，传了也会被静默覆盖。

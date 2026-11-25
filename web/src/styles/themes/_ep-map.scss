@@ -56,11 +56,11 @@ html.dark[data-dd-theme] {
   --el-text-color-placeholder: var(--dd-text-3);
   --el-text-color-disabled: color-mix(in srgb, var(--dd-text-3) 55%, var(--dd-surface-solid));
 
-  // —— 描边：lighter（卡片 / 分隔线）= border，base（输入框）= border-strong，其余在两者之间插值 ——
+  // —— 描边：lighter（内部分隔线）= divider，base（输入框）= border-strong，卡片外框在下方 .el-card 单独吃 border ——
   --el-border-color: var(--dd-border-strong);
-  --el-border-color-light: color-mix(in srgb, var(--dd-border) 50%, var(--dd-border-strong));
-  --el-border-color-lighter: var(--dd-border);
-  --el-border-color-extra-light: color-mix(in srgb, var(--dd-border) 60%, transparent);
+  --el-border-color-light: color-mix(in srgb, var(--dd-divider, var(--dd-border)) 50%, var(--dd-border-strong));
+  --el-border-color-lighter: var(--dd-divider, var(--dd-border));
+  --el-border-color-extra-light: color-mix(in srgb, var(--dd-divider, var(--dd-border)) 60%, transparent);
   --el-border-color-dark: color-mix(in srgb, var(--dd-border-strong), var(--dd-text) 12%);
   --el-border-color-darker: color-mix(in srgb, var(--dd-border-strong), var(--dd-text) 24%);
 
@@ -100,9 +100,17 @@ html.dark[data-dd-theme] {
 // 这里的选择器都是 (0,2,1) 起步，压过 EP 的组件声明，不需要 !important。
 // ----------------------------------------------------------------------------
 html[data-dd-theme] {
-  // 浮层类表面一律用 overlay（接近不透明），不吃半透明的 surface
+  // 卡片外框继续吃 --dd-border（素白无边框、呆呆 1.5px 粗描边、晨雾玻璃白边），不被内部分隔线 --dd-divider 影响；
+  // 同时压过按需懒注入的 el-card.css（0,1,0）和 global.scss 里的旧暗色卡片边规则
+  .el-card {
+    --el-card-border-color: var(--dd-border);
+    border: var(--dd-border-width, 1px) solid var(--dd-border);
+  }
+
+  // 浮层类表面一律用 overlay（接近不透明），不吃半透明的 surface；并同步圆角防懒注入回退
   .el-dialog {
     --el-dialog-bg-color: var(--dd-overlay);
+    --el-dialog-border-radius: var(--dd-radius-surface);
   }
 
   .el-drawer {
@@ -111,6 +119,47 @@ html[data-dd-theme] {
 
   .el-message-box {
     background-color: var(--dd-overlay);
+  }
+
+  .el-notification {
+    --el-notification-radius: var(--dd-radius-surface);
+    background-color: var(--dd-overlay);
+    border: var(--dd-border-width, 1px) solid var(--dd-border);
+  }
+
+  .el-slider {
+    --el-slider-border-radius: var(--dd-radius-pill);
+  }
+
+  // 开关（el-switch）：EP 默认关态轨道取 --el-border-color，在呆呆暗色（#f5f1e6 边框）下配白字/白钮仅 1.13:1，
+  // 6 套亮色主题下也全低于 2.1:1；终端暗色开态荧光绿配白字仅 1.32:1。
+  // 这里统一：开态走主按钮同对高对比色（--dd-btn-primary-bg / -fg），关态走中性弱化灰（--dd-text-3）配卡片实底（--dd-surface-solid），
+  // 14 套明暗组合开/关态实测全部 ≥ 4.6:1。
+  .el-switch {
+    --el-switch-on-color: var(--dd-btn-primary-bg);
+    --el-switch-off-color: var(--dd-text-3);
+
+    .el-switch__core .el-switch__action {
+      background-color: var(--dd-surface-solid);
+    }
+
+    .el-switch__core .el-switch__inner .is-text,
+    .el-switch__core .el-switch__inner .is-icon,
+    .el-switch__core .el-switch__inner-wrapper {
+      color: var(--dd-surface-solid);
+    }
+
+    &.is-checked {
+      .el-switch__core .el-switch__action {
+        background-color: var(--dd-btn-primary-fg);
+      }
+
+      .el-switch__core .el-switch__inner .is-text,
+      .el-switch__core .el-switch__inner .is-icon,
+      .el-switch__core .el-switch__inner-wrapper {
+        color: var(--dd-btn-primary-fg);
+      }
+    }
   }
 
   // 表格内部分隔线：呆呆主题的 border 是 1.5px 黑描边、晨雾是白描边，直接给表格网格线会太重 / 看不见，
@@ -157,6 +206,8 @@ html[data-dd-theme] {
       --el-button-text-color: var(--dd-on-status);
       --el-button-hover-text-color: var(--dd-on-status);
       --el-button-active-text-color: var(--dd-on-status);
+      --el-button-disabled-bg-color: var(--dd-#{$key}-solid);
+      --el-button-disabled-border-color: var(--dd-#{$key}-solid);
       --el-button-disabled-text-color: var(--dd-on-status);
     }
 
@@ -175,6 +226,18 @@ html[data-dd-theme] {
       --el-tag-bg-color: var(--dd-#{$key}-solid);
       --el-tag-border-color: var(--dd-#{$key}-solid);
       --el-tag-text-color: var(--dd-on-status);
+    }
+  }
+
+  // 实心按钮禁用态：保持实心字底高对比，用整体透明度表达不可点（替代 EP 混入 50% 白底导致 1.5:1 糊字）
+  .el-button--primary:not(.is-plain, .is-text, .is-link),
+  .el-button--success:not(.is-plain, .is-text, .is-link),
+  .el-button--warning:not(.is-plain, .is-text, .is-link),
+  .el-button--danger:not(.is-plain, .is-text, .is-link) {
+    &.is-disabled,
+    &.is-disabled:hover,
+    &.is-disabled:focus {
+      opacity: 0.48;
     }
   }
 
@@ -203,8 +266,14 @@ html[data-dd-theme] {
     --el-button-disabled-text-color: var(--dd-surface-solid);
   }
 
+  // info plain 按钮悬停/按下填满成 --dd-text-3，文字同样切回 --dd-surface-solid 防止暗色下白字压浅灰（2.4~3.3:1）
+  .el-button--info.is-plain {
+    --el-button-hover-text-color: var(--dd-surface-solid);
+    --el-button-active-text-color: var(--dd-surface-solid);
+  }
+
   // —— 浅底上的状态文字一律用墨色（_layout.scss）——
-  // light / plain 效果的标签、彩色文字链接、text / link / plain 三种按钮的静置文字。
+  // light / plain 效果的标签、彩色文字链接、text / link / plain 三种按钮、el-message、el-alert 浅底文字。
   // 选择器 (0,3,1) 起，压过 EP 在组件根上的 (0,2,0) 声明。悬停色不动（悬停是瞬时态，plain 悬停后已是实心底）。
   @each $type, $key in (primary: accent, success: ok, warning: warn, danger: err, error: err) {
     .el-tag.el-tag--#{$type}:not(.el-tag--dark) {
@@ -217,6 +286,46 @@ html[data-dd-theme] {
 
     .el-button--#{$type}:is(.is-plain, .is-text, .is-link) {
       --el-button-text-color: var(--dd-#{$key}-ink);
+    }
+
+    .el-message.el-message--#{$type} {
+      --el-message-text-color: var(--dd-#{$key}-ink);
+    }
+
+    .el-alert.el-alert--#{$type}.is-light {
+      color: var(--dd-#{$key}-ink);
+
+      .el-alert__description {
+        color: var(--dd-#{$key}-ink);
+      }
+    }
+  }
+
+  @each $type, $key in (success: ok, warning: warn, error: err) {
+    .el-alert.el-alert--#{$type}.is-dark {
+      background-color: var(--dd-#{$key}-solid);
+      color: var(--dd-on-status);
+
+      .el-alert__description {
+        color: var(--dd-on-status);
+      }
+    }
+  }
+
+  .el-alert.el-alert--info.is-light {
+    color: var(--dd-text-2);
+
+    .el-alert__description {
+      color: var(--dd-text-2);
+    }
+  }
+
+  .el-alert.el-alert--info.is-dark {
+    background-color: var(--dd-text-3);
+    color: var(--dd-surface-solid);
+
+    .el-alert__description {
+      color: var(--dd-surface-solid);
     }
   }
 
@@ -248,8 +357,52 @@ html[data-dd-theme] {
     --el-tag-text-color: var(--dd-text-2);
   }
 
-  // 复选框勾选后的对勾：同上，跟主色上的文字色走
+  // 复选框勾选后的对勾与选中标签文字：跟主题墨色 / 主色字色走
   .el-checkbox {
     --el-checkbox-checked-icon-color: var(--dd-on-accent);
+    --el-checkbox-checked-text-color: var(--dd-accent-ink);
+  }
+
+  // 单选框与单选按钮组：修复终端暗色荧光绿底压白字/白点（1.32:1）与极光暗色选中标签偏暗（4.29:1）
+  .el-radio {
+    --el-radio-input-border-color-hover: var(--dd-accent);
+
+    .el-radio__input.is-checked .el-radio__inner::after {
+      background-color: var(--dd-on-accent);
+    }
+
+    .el-radio__input.is-checked + .el-radio__label {
+      color: var(--dd-accent-ink);
+    }
+  }
+
+  .el-radio-button {
+    --el-radio-button-checked-bg-color: var(--dd-btn-primary-bg);
+    --el-radio-button-checked-border-color: var(--dd-btn-primary-bg);
+    --el-radio-button-checked-text-color: var(--dd-btn-primary-fg);
+  }
+
+  // 下拉菜单悬停项与 Select 选中项文字改走主色墨色
+  .el-select-dropdown__item.is-selected {
+    color: var(--dd-accent-ink);
+  }
+
+  .el-dropdown-menu__item:not(.is-disabled):hover,
+  .el-dropdown-menu__item:not(.is-disabled):focus {
+    color: var(--dd-accent-ink);
+  }
+
+  // 日期选择器：今日高亮走主色墨色，选中日/起止端/选中月年走主按钮高对比对（修终端暗色白字压亮绿 1.32:1）
+  .el-date-table td.today .el-date-table-cell__text {
+    color: var(--dd-accent-ink);
+  }
+
+  .el-date-table td.current:not(.disabled) .el-date-table-cell__text,
+  .el-date-table td.start-date .el-date-table-cell__text,
+  .el-date-table td.end-date .el-date-table-cell__text,
+  .el-month-table td.current:not(.disabled) .el-date-table-cell__text,
+  .el-year-table td.current:not(.disabled) .el-date-table-cell__text {
+    background-color: var(--dd-btn-primary-bg);
+    color: var(--dd-btn-primary-fg);
   }
 }

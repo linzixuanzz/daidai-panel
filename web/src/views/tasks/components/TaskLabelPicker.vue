@@ -296,8 +296,8 @@ defineExpose({ commitPending })
   flex-shrink: 0;
   padding: 0 14px;
   border: 1px solid var(--dd-border-strong);
-  // 按钮角色：桌面 = control 档，≤768 跟着移动端按钮档走
-  border-radius: var(--dd-radius-button);
+  // 与全局 .el-button 统一走按钮排版令牌（默认 control 档，素白 clean 主题为胶囊）
+  border-radius: var(--dd-btn-radius);
   background: var(--el-fill-color-blank);
   color: var(--el-text-color-regular);
   font-family: inherit;

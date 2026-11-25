@@ -18,8 +18,9 @@ html[data-dd-theme="clean"] {
   --dd-surface-2: #f7f7fa;
   --dd-surface-3: rgba(118, 118, 128, 0.12);
   --dd-overlay: #ffffff;
-  // 卡片无描边；输入框等「base」描边仍要看得见，用很淡的灰
+  // 卡片无描边；输入框等「base」描边与内部分隔线仍要看得见，用很淡的灰
   --dd-border: transparent;
+  --dd-divider: rgba(60, 60, 67, 0.12);
   --dd-border-strong: rgba(60, 60, 67, 0.14);
   --dd-border-width: 1px;
   --dd-text: #000000;
@@ -69,7 +70,7 @@ html[data-dd-theme="clean"] {
   --dd-btn-primary-fg: #ffffff;
   --dd-btn-primary-hover-bg: #2c2c2e;
   --dd-btn-primary-active-bg: #3a3a3c;
-  --dd-btn-primary-disabled-bg: #8e8e93;
+  --dd-btn-primary-disabled-bg: #000000;
   --dd-btn-radius: var(--dd-radius-pill);
   --dd-page-title-size: 34px;
   --dd-page-title-size-mobile: 28px;
@@ -77,21 +78,23 @@ html[data-dd-theme="clean"] {
   --dd-page-title-tracking: -0.7px;
   --dd-sidebar-bg: rgba(255, 255, 255, 0.75);
   --dd-sidebar-blur: 24px;
-  --dd-sidebar-radius: 30px;
+  // 跟随全站圆角刻度：默认主题档为 26px / 12px，切直角或圆角滑杆归 0 时自动归零
+  --dd-sidebar-radius: var(--dd-radius-surface);
   --dd-sidebar-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05), 0 12px 34px -16px rgba(0, 0, 0, 0.2);
   --dd-nav-active-bg: rgba(118, 118, 128, 0.14);
   --dd-nav-active-fg: var(--dd-text);
   --dd-nav-indicator-width: 0px;
-  --dd-nav-item-radius: 14px;
+  --dd-nav-item-radius: var(--dd-radius-control);
   --dd-seg-radius: var(--dd-radius-pill);
   --dd-seg-bg: rgba(118, 118, 128, 0.12);
   --dd-seg-thumb-bg: #ffffff;
   --dd-seg-thumb-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   --dd-seg-active-fg: var(--dd-text);
+  // 左上角紫色柔化至 0.28，避免压在左上角的日期胶囊与副文案对比度跌破 4.5:1
   --dd-hero-bg:
-    radial-gradient(120% 90% at 0% 0%, #8b74e6 0%, rgba(139, 116, 230, 0.5) 30%, transparent 65%),
-    radial-gradient(80% 70% at 100% 0%, rgba(126, 160, 255, 0.45), transparent 70%),
-    linear-gradient(170deg, #d9d0f6, #f1ecfb 60%, #fbfaff);
+    radial-gradient(120% 90% at 0% 0%, rgba(139, 116, 230, 0.28) 0%, rgba(139, 116, 230, 0.14) 32%, transparent 65%),
+    radial-gradient(80% 70% at 100% 0%, rgba(126, 160, 255, 0.26), transparent 70%),
+    linear-gradient(170deg, #f2eefc, #f8f6fe 58%, #ffffff);
   --dd-card-title-size: 19px;
   --dd-card-title-weight: 800;
   --dd-card-title-icon-display: none;
@@ -108,11 +111,13 @@ html.dark[data-dd-theme="clean"] {
   // 浮层与卡片同色：iOS 的抬升色 #2c2c2e 上弱化文字只有 4.3:1，过不了门槛；浮层靠阴影与纯黑底区分
   --dd-overlay: #1c1c1e;
   --dd-border: transparent;
+  --dd-divider: rgba(235, 235, 245, 0.12);
   --dd-border-strong: rgba(235, 235, 245, 0.16);
   --dd-border-width: 1px;
   --dd-text: #ffffff;
-  --dd-text-2: #98989f;
-  --dd-text-3: #8d8d93;
+  --dd-text-2: #aeaeb6;
+  // 暗色弱化文字提亮至 #9e9ea6，确保压在 --dd-surface-2（#2c2c2e）与 --dd-surface-3 上仍 ≥ 4.5:1
+  --dd-text-3: #9e9ea6;
   --dd-accent: #0a84ff;
   --dd-accent-2: #5e5ce6;
   --dd-on-accent: #ffffff;
@@ -153,7 +158,7 @@ html.dark[data-dd-theme="clean"] {
   --dd-btn-primary-fg: #000000;
   --dd-btn-primary-hover-bg: #e5e5ea;
   --dd-btn-primary-active-bg: #d1d1d6;
-  --dd-btn-primary-disabled-bg: #8e8e93;
+  --dd-btn-primary-disabled-bg: #ffffff;
   --dd-btn-radius: var(--dd-radius-pill);
   --dd-page-title-size: 34px;
   --dd-page-title-size-mobile: 28px;
@@ -161,12 +166,12 @@ html.dark[data-dd-theme="clean"] {
   --dd-page-title-tracking: -0.7px;
   --dd-sidebar-bg: rgba(28, 28, 30, 0.72);
   --dd-sidebar-blur: 24px;
-  --dd-sidebar-radius: 30px;
+  --dd-sidebar-radius: var(--dd-radius-surface);
   --dd-sidebar-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 34px -16px rgba(0, 0, 0, 0.7);
   --dd-nav-active-bg: rgba(118, 118, 128, 0.24);
   --dd-nav-active-fg: var(--dd-text);
   --dd-nav-indicator-width: 0px;
-  --dd-nav-item-radius: 14px;
+  --dd-nav-item-radius: var(--dd-radius-control);
   --dd-seg-radius: var(--dd-radius-pill);
   // 底槽用不透明色：半透明的 rgba(118,118,128,.24) 叠在卡片 / 二级底上，未选中的次要文字只有 4.0~4.4:1
   --dd-seg-bg: #2c2c2e;
@@ -194,15 +199,21 @@ html[data-dd-theme="clean"] {
     border-radius: var(--dd-btn-radius);
   }
 
-  // 次要按钮（没有 type 的默认款）：灰色填充、无描边，与参考图一致。
-  // 排除所有带类型的按钮与文字 / 链接按钮，它们保持 EP 原有观感（主按钮的黑底已经由令牌接好）
+  // 素白卡片保持无边框（明暗双态）
+  .el-card {
+    border-color: transparent;
+  }
+
+  // 次要按钮（没有 type 的默认款）：灰色填充、无描边，悬停字色走正文色避免系统蓝在灰底对比度不足
   .el-button:not(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger, .el-button--info, .is-text, .is-link) {
     --el-button-bg-color: var(--dd-surface-3);
     --el-button-border-color: transparent;
     --el-button-hover-bg-color: rgba(118, 118, 128, 0.2);
     --el-button-hover-border-color: transparent;
+    --el-button-hover-text-color: var(--dd-text);
     --el-button-active-bg-color: rgba(118, 118, 128, 0.26);
     --el-button-active-border-color: transparent;
+    --el-button-active-text-color: var(--dd-text);
   }
 
   // EP 分段控件（目前项目里没用，先接好线，给第二波新组件用）：胶囊底槽 + 白色胶囊滑块
@@ -216,5 +227,17 @@ html[data-dd-theme="clean"] {
   // 光斑描边与参考图的极简风格冲突，只保留底面那层淡光
   .dd-spot::before {
     display: none;
+  }
+}
+
+// 素白暗色专属覆盖：暗色下 --dd-surface-3 本身已是 0.24，悬停必须比静置更亮（0.36/0.46）
+html.dark[data-dd-theme="clean"] {
+  .el-card {
+    border-color: transparent;
+  }
+
+  .el-button:not(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger, .el-button--info, .is-text, .is-link) {
+    --el-button-hover-bg-color: rgba(118, 118, 128, 0.36);
+    --el-button-active-bg-color: rgba(118, 118, 128, 0.46);
   }
 }

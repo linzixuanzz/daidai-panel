@@ -268,9 +268,9 @@ async function handleStop(item: TaskRunningItem) {
   }
 }
 
-// 桌面端：有任务在跑、或浮窗开着时显示右下角胶囊（开着时它就是收起按钮）。
-// 移动端不显示胶囊，开关在顶栏的运行中胶囊上（G1）。
-const showPill = computed(() => !isMobile.value && (running.count > 0 || ui.dockOpen))
+// 桌面端顶栏已常驻 .header-runcap 入口，收起态不再于右下角渲染冗余悬浮胶囊，彻底避免遮挡页面底部分页栏；
+// 仅在移动端收起态且有运行中任务时显示底部胶囊，方便单手展开。
+const showPill = computed(() => isMobile.value && !ui.dockOpen && running.count > 0)
 const pillText = computed(() => (running.count > 0 ? `${running.count} 个任务运行中` : '没有运行中的任务'))
 const restCount = computed(() => Math.max(0, running.count - MAX_STREAMS))
 
@@ -288,7 +288,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div class="running-dock" :class="{ 'is-open': ui.dockOpen, 'is-mobile': isMobile }">
       <Transition name="running-dock-panel">
-        <section v-if="ui.dockOpen" class="running-dock__panel dd-glass" aria-label="运行中的任务">
+        <section v-if="ui.dockOpen" class="running-dock__panel" aria-label="运行中的任务">
           <header class="running-dock__head">
             <span class="running-dock__dot" :class="{ 'is-running': running.count > 0 }" />
             <span class="running-dock__title">运行中的任务</span>
@@ -349,8 +349,10 @@ onBeforeUnmount(() => {
 <style scoped lang="scss">
 .running-dock {
   position: fixed;
-  right: 22px;
-  bottom: 22px;
+  // 桌面端锚定在右上角顶栏下方（顶栏高 68px，额外留 6px 间隙），完全避开页面底部分页栏与右下角按钮
+  top: calc(74px + var(--dd-demo-banner-height, 0px) + var(--dd-safe-banner-h, 0px));
+  right: 20px;
+  bottom: auto;
   // 低于 Element Plus 的弹窗 / 消息框（从 2000 起），停止确认框要盖在浮窗上面
   z-index: 1500;
   width: 390px;
@@ -367,8 +369,10 @@ onBeforeUnmount(() => {
   }
 
   &.is-mobile {
+    top: auto;
     right: 12px;
-    bottom: 12px;
+    // 移动端预留底部安全区，避免悬浮胶囊与展开浮窗贴底被系统手势条遮挡
+    bottom: calc(12px + env(safe-area-inset-bottom));
     width: calc(100vw - 24px);
     max-width: none;
   }
@@ -382,12 +386,18 @@ html.dd-screen-mode .running-dock {
 
 .running-dock__panel {
   width: 100%;
+  // 使用浮层令牌（接近不透明），避免玻璃主题下底层表格文字透叠进实时日志
+  background: var(--dd-overlay);
   border: var(--dd-border-width, 1px) solid var(--dd-border);
   border-radius: var(--dd-radius-surface);
   box-shadow: var(--dd-shadow-popper);
   overflow: hidden;
-  transform-origin: bottom right;
+  transform-origin: top right;
   color: var(--dd-text);
+}
+
+.running-dock.is-mobile .running-dock__panel {
+  transform-origin: bottom right;
 }
 
 .running-dock__head {
@@ -459,14 +469,14 @@ html.dd-screen-mode .running-dock {
 }
 
 .running-dock__list {
-  max-height: min(60vh, 520px);
+  max-height: min(60dvh, 520px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 .running-dock__item {
   padding: 10px 12px 12px 16px;
-  border-top: 1px solid var(--dd-border);
+  border-top: 1px solid var(--dd-divider, var(--el-border-color-lighter));
 }
 
 .running-dock__row {
@@ -529,7 +539,7 @@ html.dd-screen-mode .running-dock {
 .running-dock__progress {
   height: 4px;
   margin: 8px 0;
-  border-radius: 99px;
+  border-radius: var(--dd-radius-pill);
   background: var(--dd-surface-3);
   overflow: hidden;
 
@@ -537,7 +547,7 @@ html.dd-screen-mode .running-dock {
     display: block;
     width: 40%;
     height: 100%;
-    border-radius: 99px;
+    border-radius: var(--dd-radius-pill);
     background: linear-gradient(90deg, transparent, var(--dd-accent), var(--dd-accent-2), transparent);
     animation: running-dock-indeterminate 1.6s var(--dd-ease-io, ease-in-out) infinite;
   }
@@ -557,6 +567,8 @@ html.dd-screen-mode .running-dock {
 }
 
 .running-dock__line {
+  // 显式指定次要文字色，确保经典亮色等主题下实时日志对比度 ≥ 4.5:1
+  color: var(--dd-text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: pre;
@@ -564,7 +576,7 @@ html.dd-screen-mode .running-dock {
 }
 
 .running-dock__status {
-  color: var(--dd-text-3);
+  color: var(--dd-text-2);
 
   &.is-ended {
     color: var(--dd-ok-ink);
@@ -577,7 +589,7 @@ html.dd-screen-mode .running-dock {
 
 .running-dock__footnote {
   padding: 8px 16px 12px;
-  border-top: 1px solid var(--dd-border);
+  border-top: 1px solid var(--dd-divider, var(--el-border-color-lighter));
   font-size: 12px;
   color: var(--dd-text-3);
 }
@@ -610,7 +622,7 @@ html.dd-screen-mode .running-dock {
   transform: rotate(180deg);
 }
 
-// 面板展开 / 收起：从右下角弹出
+// 桌面端从右上角顶栏下方滑落展开；移动端从底部滑出展开
 .running-dock-panel-enter-active,
 .running-dock-panel-leave-active {
   transition: opacity 0.3s ease, transform 0.5s var(--dd-spring-soft, ease);
@@ -619,6 +631,11 @@ html.dd-screen-mode .running-dock {
 .running-dock-panel-enter-from,
 .running-dock-panel-leave-to {
   opacity: 0;
+  transform: translateY(-10px) scale(0.97);
+}
+
+.running-dock.is-mobile .running-dock-panel-enter-from,
+.running-dock.is-mobile .running-dock-panel-leave-to {
   transform: translateY(12px) scale(0.97);
 }
 

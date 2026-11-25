@@ -26,6 +26,9 @@ export type TransitionOrigin = { x: number; y: number } | { clientX: number; cli
  * 过渡期间 <html> 上挂 dd-vt-theme：motion.scss 用它关掉根快照默认的交叉淡化；
  * 内容区的 dd-main 命名只在切页过渡期间存在（router/index.ts），这里天然不会把内容区单独拎出来。
  */
+// 递增序号防止 760ms 内连续切主题时，前一次被中止的 finished 回调把新过渡的 dd-vt-theme 提前删掉
+let themeVtSeq = 0
+
 export function withThemeTransition(update: () => void, origin?: TransitionOrigin | null) {
   if (
     typeof document === 'undefined'
@@ -42,6 +45,9 @@ export function withThemeTransition(update: () => void, origin?: TransitionOrigi
   // 扩散半径取点击点到最远一个角的距离，保证最后整屏都被盖住
   const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y))
   const root = document.documentElement
+  const seq = ++themeVtSeq
+  // 如果切页过渡还没结束就立刻切主题，先摘掉 dd-vt-page，避免内容区被单独拎出来与整页扩散脱节
+  root.classList.remove('dd-vt-page')
   root.classList.add('dd-vt-theme')
 
   let transition: ViewTransition
@@ -49,13 +55,14 @@ export function withThemeTransition(update: () => void, origin?: TransitionOrigi
     transition = document.startViewTransition(update)
   } catch {
     // 个别实现在特殊状态下（例如文档正在卸载）会直接抛错：退回直接切换
-    root.classList.remove('dd-vt-theme')
+    if (themeVtSeq === seq) root.classList.remove('dd-vt-theme')
     update()
     return
   }
 
   transition.ready
     .then(() => {
+      if (themeVtSeq !== seq) return
       root.animate(
         { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
         { duration: 760, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', pseudoElement: '::view-transition-new(root)' },
@@ -63,7 +70,9 @@ export function withThemeTransition(update: () => void, origin?: TransitionOrigi
     })
     // ready 在过渡被跳过（同时又发起了一次过渡、页面切到后台）时会 reject，不影响 update 已经执行
     .catch(() => {})
-  const cleanup = () => root.classList.remove('dd-vt-theme')
+  const cleanup = () => {
+    if (themeVtSeq === seq) root.classList.remove('dd-vt-theme')
+  }
   transition.finished.then(cleanup, cleanup)
 }
 

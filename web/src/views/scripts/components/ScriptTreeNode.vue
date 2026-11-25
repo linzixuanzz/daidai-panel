@@ -86,9 +86,8 @@ const extLabel = computed(() => {
   // 与外层 .el-tree-node__content（ScriptsSidebar.vue 里同样是 control）保持一致，
   // 免得两层底色的圆角错位、在拐角处露出一线深色。
   border-radius: var(--dd-radius-control);
-  transition: background-color 0.16s ease;
+  transition: background-color var(--dd-motion-fast) var(--dd-ease-standard);
   align-items: center;
-  gap: 10px;
   flex: 1;
   width: 100%;
   min-width: 0;
@@ -108,6 +107,7 @@ const extLabel = computed(() => {
 .tree-node-dot {
   width: 8px;
   height: 8px;
+  margin-right: 10px;
   border-radius: 2px;
   flex-shrink: 0;
 }
@@ -122,7 +122,7 @@ const extLabel = computed(() => {
 
 .tree-node-label {
   flex: 1;
-  transition: color 0.15s ease;
+  transition: color var(--dd-motion-fast) var(--dd-ease-standard);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -136,11 +136,17 @@ const extLabel = computed(() => {
   font-weight: 500;
 }
 
+// 桌面常态将扩展名标签与操作按钮一并收起占位（0 宽 + 0 间距），把 ~75-95px 宽度还给文件名；
+// hover 或键盘 focus-within 时再展开，避免静态白白挤占长文件名。
 .tree-node-ext {
   font-size: 9.5px;
   font-weight: 700;
   font-family: var(--dd-font-mono);
-  padding: 2px 6px;
+  padding: 2px 0;
+  margin-left: 0;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
   // 扩展名是静态标签，与 el-tag 同归控件类 → control 档
   border-radius: var(--dd-radius-control);
   background: color-mix(in srgb, var(--el-fill-color) 85%, transparent);
@@ -149,13 +155,24 @@ const extLabel = computed(() => {
   letter-spacing: 0.4px;
   line-height: 1.3;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  pointer-events: none;
+  transition:
+    opacity var(--dd-motion-fast) var(--dd-ease-standard),
+    max-width var(--dd-motion-fast) var(--dd-ease-standard),
+    padding var(--dd-motion-fast) var(--dd-ease-standard),
+    margin-left var(--dd-motion-fast) var(--dd-ease-standard);
 }
 
 .tree-node-actions {
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
   opacity: 0;
-  transition: opacity 0.15s ease;
   flex-shrink: 0;
+  transition:
+    opacity var(--dd-motion-fast) var(--dd-ease-standard),
+    max-width var(--dd-motion-fast) var(--dd-ease-standard),
+    margin-left var(--dd-motion-fast) var(--dd-ease-standard);
 
   .more-btn {
     cursor: pointer;
@@ -170,7 +187,9 @@ const extLabel = computed(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.15s, color 0.15s;
+    transition:
+      background-color var(--dd-motion-fast) var(--dd-ease-standard),
+      color var(--dd-motion-fast) var(--dd-ease-standard);
 
     &:hover {
       background: var(--el-fill-color);
@@ -184,12 +203,32 @@ const extLabel = computed(() => {
   }
 }
 
-.tree-node:hover {
+.tree-node:hover,
+.tree-node:focus-within {
   background: color-mix(in srgb, var(--el-fill-color-light) 86%, transparent);
   .tree-node-label { color: var(--dd-accent-ink); }
 
-  .tree-node-ext,
+  .tree-node-ext {
+    max-width: 56px;
+    padding: 2px 6px;
+    margin-left: 8px;
+    opacity: 1;
+  }
+
   .tree-node-actions {
+    max-width: 28px;
+    margin-left: 6px;
+    overflow: visible;
+    opacity: 1;
+  }
+}
+
+// 触控设备（含宽屏平板 / 触屏笔记本，无 hover 能力）常驻显示操作入口，避免永远点不到「更多操作」
+@media (hover: none), (pointer: coarse) {
+  .tree-node-actions {
+    max-width: 28px;
+    margin-left: 6px;
+    overflow: visible;
     opacity: 1;
   }
 }

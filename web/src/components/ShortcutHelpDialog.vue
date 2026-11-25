@@ -8,10 +8,12 @@
 import { computed } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
+import { useResponsive } from '@/composables/useResponsive'
 import { GOTO_SHORTCUTS, findMenuItem, hasMinRole } from '@/layouts/menu'
 
 const ui = useUiStore()
 const authStore = useAuthStore()
+const { dialogFullscreen } = useResponsive()
 
 // Mac 上显示 ⌘，其余显示 Ctrl（与顶栏搜索胶囊同一口径）
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent)
@@ -42,6 +44,7 @@ const paletteRows = [
     v-model="ui.shortcutHelpOpen"
     title="快捷键"
     width="min(520px, calc(100vw - 32px))"
+    :fullscreen="dialogFullscreen"
     append-to-body
     class="dd-shortcut-dialog"
   >
@@ -82,6 +85,10 @@ const paletteRows = [
         光标在输入框、可编辑区或代码编辑器里时，g、? 这类单键快捷键不会触发，放心打字。
       </p>
     </div>
+
+    <template v-if="dialogFullscreen" #footer>
+      <el-button @click="ui.closeShortcutHelp()">关闭</el-button>
+    </template>
   </el-dialog>
 </template>
 

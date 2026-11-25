@@ -26,7 +26,7 @@ defineProps<{
         </div>
       </div>
     </template>
-    <div v-if="isMobile" class="dd-mobile-list">
+    <div v-if="isMobile" v-loading="loginLogsLoading" class="dd-mobile-list">
       <div
         v-for="row in loginLogs"
         :key="row.id"
@@ -106,6 +106,10 @@ defineProps<{
   background: color-mix(in srgb, var(--el-fill-color-light) 84%, transparent);
   display: flex;
   gap: 8px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .pagination-container {

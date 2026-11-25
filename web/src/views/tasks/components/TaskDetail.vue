@@ -140,16 +140,17 @@ function handleClose() {
           后端按类别分别下发），只用标签文字当 key 会触发 Vue 的 Duplicate keys 警告。
           这里只改 key，本弹窗「显示完整标签、刻意不跟随列表页显示设置」的语义保持不变。
         -->
-        <el-tag
-          v-for="(label, index) in displayLabels"
-          :key="`${index}-${label}`"
-          size="small"
-          effect="plain"
-          style="margin-right: 6px"
-        >
-          {{ label }}
-        </el-tag>
-        <span v-if="displayLabels.length === 0" style="color: var(--dd-text-3)">无</span>
+        <div v-if="displayLabels.length > 0" class="detail-labels">
+          <el-tag
+            v-for="(label, index) in displayLabels"
+            :key="`${index}-${label}`"
+            size="small"
+            effect="plain"
+          >
+            {{ label }}
+          </el-tag>
+        </div>
+        <span v-else style="color: var(--dd-text-3)">无</span>
       </el-descriptions-item>
       <el-descriptions-item label="上次运行状态">
         <el-tag v-if="task.last_run_status === null" type="info" size="small">未运行</el-tag>
@@ -228,6 +229,13 @@ function handleClose() {
   font-size: var(--dd-card-title-size, 14px);
   font-weight: var(--dd-card-title-weight, 600);
   color: var(--dd-text);
+}
+
+/* 标签容器：flex 换行 + 统一 gap，避免多枚标签折行时行间黏连 */
+.detail-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 /* 状态标签 + 可能出现的「已禁用」开关位标签并排一行（本块是纯 CSS，注释不能用 //） */

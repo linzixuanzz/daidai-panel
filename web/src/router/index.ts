@@ -394,6 +394,8 @@ router.afterEach((to) => {
 // 任何一步出意外都直接放行导航：宁可没有动画，也不能卡住切页。
 // ============================================================================
 let finishPageTransition: (() => void) | null = null
+// 递增序号防止快速连点切页时，前一次被中止过渡的 finished 回调提前删掉后一次的 dd-vt-page
+let pageVtSeq = 0
 
 router.beforeResolve((to, from) => {
   if (
@@ -401,6 +403,8 @@ router.beforeResolve((to, from) => {
     || typeof document.startViewTransition !== 'function'
     || document.visibilityState === 'hidden'
     || motionLevel() === 'off'
+    // 移动端 .route-shell 高度随内容自由伸展（可达 3000px+），高度差大的页面用 dd-main 过渡会拉伸变形并压住 sticky 顶栏
+    || window.matchMedia?.('(max-width: 768px)').matches
     || from.matched.length < 2
     || to.matched.length < 2
     || to.path === from.path
@@ -414,6 +418,7 @@ router.beforeResolve((to, from) => {
 
   return new Promise<void>((allowNavigation) => {
     const root = document.documentElement
+    const seq = ++pageVtSeq
     root.classList.add('dd-vt-page')
     let transition: ViewTransition
     try {
@@ -432,11 +437,13 @@ router.beforeResolve((to, from) => {
         allowNavigation()
       }))
     } catch {
-      root.classList.remove('dd-vt-page')
+      if (pageVtSeq === seq) root.classList.remove('dd-vt-page')
       allowNavigation()
       return
     }
-    const cleanup = () => root.classList.remove('dd-vt-page')
+    const cleanup = () => {
+      if (pageVtSeq === seq) root.classList.remove('dd-vt-page')
+    }
     transition.finished.then(cleanup, cleanup)
     // 过渡被跳过（同时切了主题、页面切到后台）时 ready 会 reject，吞掉即可：更新回调照样会执行
     transition.ready.catch(() => {})

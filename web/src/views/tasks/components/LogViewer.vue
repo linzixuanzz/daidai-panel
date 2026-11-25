@@ -1062,7 +1062,7 @@ function handleClose() {
               aria-label="切换换行"
             >
               <el-icon :size="15"><Switch /></el-icon>
-              <span class="tool-btn-label">Wrap</span>
+              <span class="tool-btn-label tool-btn-label--wrap">Wrap</span>
             </button>
           </el-tooltip>
           <el-tooltip content="复制全部" placement="bottom">
@@ -1116,17 +1116,17 @@ function handleClose() {
       </div>
 
       <div class="viewer-statusbar">
-        <div class="viewer-statusbar-group">
+        <div class="viewer-statusbar-group viewer-statusbar-group--meta">
           <span class="viewer-statusbar-item">{{ lineCount }} 行</span>
           <span v-if="byteLabel" class="viewer-statusbar-item">{{ byteLabel }}</span>
           <span class="viewer-statusbar-item">Wrap {{ wrap ? 'ON' : 'OFF' }}</span>
         </div>
-        <div class="viewer-statusbar-group">
+        <div class="viewer-statusbar-group viewer-statusbar-group--status">
           <!-- 等日志期间沿用「实时采集中」那颗跳动的点，表示这里还在自动刷新，不是死在「暂无日志」上 -->
           <span v-if="headerState === 'waiting'" class="viewer-statusbar-item viewer-statusbar-item--live">等待日志中</span>
           <span v-else-if="props.mode === 'latest' && !error && !emptyMessage" class="viewer-statusbar-item">最近结果</span>
           <span v-else-if="!done && !error && !emptyMessage" class="viewer-statusbar-item viewer-statusbar-item--live">实时采集中</span>
-          <span v-else-if="error" class="viewer-statusbar-item viewer-statusbar-item--error">{{ error }}</span>
+          <span v-else-if="error" class="viewer-statusbar-item viewer-statusbar-item--error" :title="error">{{ error }}</span>
           <span v-else-if="emptyMessage" class="viewer-statusbar-item viewer-statusbar-item--empty">暂无日志</span>
           <span v-else class="viewer-statusbar-item">UTF-8</span>
         </div>
@@ -1221,7 +1221,7 @@ function handleClose() {
 
   &--empty {
     background: color-mix(in srgb, var(--dd-text-3) 18%, transparent);
-    color: var(--dd-text-3);
+    color: var(--dd-text-2);
   }
 }
 
@@ -1297,7 +1297,9 @@ function handleClose() {
 
 .status-switch-enter-active,
 .status-switch-leave-active {
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  transition:
+    transform var(--dd-motion-fast) var(--dd-ease-standard),
+    opacity var(--dd-motion-fast) var(--dd-ease-standard);
 }
 
 .status-switch-enter-from,
@@ -1328,7 +1330,10 @@ function handleClose() {
   font-size: 12px;
   font-family: var(--dd-font-mono);
   cursor: pointer;
-  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  transition:
+    color var(--dd-motion-fast) var(--dd-ease-standard),
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    border-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover:not(:disabled):not(.tool-btn--close) {
     color: var(--dd-accent-ink);
@@ -1361,7 +1366,7 @@ function handleClose() {
     margin-left: 6px;
     position: relative;
     overflow: hidden;
-    transition: color 0.25s;
+    transition: color var(--dd-motion-normal) var(--dd-ease-standard);
 
     .el-icon {
       position: relative;
@@ -1377,7 +1382,7 @@ function handleClose() {
       border-radius: var(--dd-radius-control);
       background: var(--dd-err-solid);
       opacity: 0;
-      transition: opacity 0.2s ease;
+      transition: opacity var(--dd-motion-fast) var(--dd-ease-standard);
     }
 
     &:hover:not(:disabled) {
@@ -1498,7 +1503,10 @@ function handleClose() {
   white-space: normal;
   word-break: normal;
   cursor: pointer;
-  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  transition:
+    color var(--dd-motion-fast) var(--dd-ease-standard),
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    border-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
     color: var(--dd-log-text-color);
@@ -1517,8 +1525,9 @@ function handleClose() {
   color: color-mix(in srgb, var(--dd-log-text-color) 55%, transparent);
   font-size: 13px;
 
+  // 错误提示改用警告墨色，确保亮色日志底上可读性达标
   &--error {
-    color: color-mix(in srgb, var(--dd-warn) 90%, transparent);
+    color: var(--dd-warn-ink);
   }
 
   &--empty {
@@ -1528,7 +1537,7 @@ function handleClose() {
 
 .viewer-message-hint {
   font-size: 11.5px;
-  color: color-mix(in srgb, var(--dd-log-text-color) 40%, transparent);
+  color: color-mix(in srgb, var(--dd-log-text-color) 72%, transparent);
   letter-spacing: 0.2px;
 }
 
@@ -1536,6 +1545,8 @@ function handleClose() {
 .viewer-statusbar {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 10px;
   padding: 6px 22px;
   font-family: var(--dd-font-mono);
   font-size: 11px;
@@ -1547,11 +1558,23 @@ function handleClose() {
 
 .viewer-statusbar-group {
   display: inline-flex;
+  align-items: center;
   gap: 14px;
+  min-width: 0;
+
+  &--meta {
+    flex-shrink: 0;
+  }
+
+  &--status {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
 }
 
 .viewer-statusbar-item {
   letter-spacing: 0.4px;
+  white-space: nowrap;
 
   &--live {
     // #133：与头部「运行中」标签一致用 success 绿（原为 warning 橙：头部改绿之后一橙一绿，两处对不上）。
@@ -1565,8 +1588,13 @@ function handleClose() {
     }
   }
 
+  // 右侧长报错单行省略，防止把左侧行数/大小信息挤出状态栏
   &--error {
     color: var(--dd-err-ink);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &--empty {
@@ -1615,7 +1643,8 @@ function handleClose() {
     gap: 4px;
   }
 
-  .tool-btn-label {
+  // 移动端保留字号 SM/MD/LG 文本指示，仅隐藏 Wrap 文案节省工具栏空间
+  .tool-btn-label--wrap {
     display: none;
   }
 

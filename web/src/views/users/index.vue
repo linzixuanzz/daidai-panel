@@ -243,7 +243,7 @@ async function handleResetPassword() {
 function getRoleTag(role: string) {
   switch (role) {
     case 'admin': return 'danger'
-    case 'operator': return ''
+    case 'operator': return 'primary'
     case 'viewer': return 'info'
     default: return 'info'
   }
@@ -308,7 +308,7 @@ function getRoleName(role: string) {
       </div>
     </div>
 
-    <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 2">
+    <div v-if="isMobile" v-loading="loading" class="dd-mobile-list dd-rise" style="--dd-i: 2">
       <div v-for="row in pagedUsers" :key="row.id" class="dd-mobile-card">
         <div class="dd-mobile-card__header">
           <div class="dd-mobile-card__title-wrap">
@@ -506,35 +506,54 @@ function getRoleName(role: string) {
   &__search { width: 260px; }
 }
 
-// 角色分段控件：与定时任务页/订阅管理页一致的分段容器；选中态靠底色+品牌色文字区分，不再用阴影浮起
+// 角色分段控件：接入排版级 --dd-seg-* 令牌（素白自动切胶囊底槽+白色滑块）
 .status-tabs {
-  // 分段控件的灰底槽属控件类表面 → control 档（与槽内的项同档，两者一致才不会露出内外错位的角）
-  display: inline-flex; background: var(--el-fill-color-light); border-radius: var(--dd-radius-control); padding: 3px; gap: 2px;
+  display: inline-flex;
+  background: var(--dd-seg-bg);
+  border-radius: var(--dd-seg-radius);
+  padding: 3px;
+  gap: 2px;
 }
 
 .status-tab {
   // inline-flex + gap：标签文字与计数角标并排，间距交给 gap，不用 margin 拼。
   // 角标高 18px，与 13px 文字的行盒高度基本齐平，加上去不会把分段控件顶高。
-  display: inline-flex; align-items: center; gap: 6px;
-  // 分段项属控件类表面 → control 档
-  padding: 6px 14px; border-radius: var(--dd-radius-control); border: none; background: transparent;
-  color: var(--el-text-color-secondary); font-size: 13px; font-weight: 500; cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--dd-seg-radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dd-seg-fg);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
   transition:
     color var(--dd-motion-fast) var(--dd-ease-standard),
-    background-color var(--dd-motion-fast) var(--dd-ease-standard);
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    border-color var(--dd-motion-fast) var(--dd-ease-standard);
   white-space: nowrap;
   &:hover { color: var(--el-text-color-primary); }
-  &.active { background: var(--el-bg-color); color: var(--dd-accent-ink); font-weight: 600; }
+  &.active {
+    background: var(--dd-seg-thumb-bg);
+    box-shadow: var(--dd-seg-thumb-shadow);
+    border-color: var(--el-border-color-lighter);
+    color: var(--dd-seg-active-fg);
+    font-weight: 600;
+  }
 }
 
-// 表格卡：1px 边框划分层次，不再用阴影浮起（dd-fixed-page 下的 flex + 内部滚动由全局规则接管）
+// 表格卡：描边宽走主题令牌，不再用阴影浮起（dd-fixed-page 下的 flex + 内部滚动由全局规则接管）
 // 表格容器属容器类表面 → surface 档；overflow:hidden 让内部贴边的表头/行自动被圆角裁角
 .table-card {
-  background: var(--el-bg-color); border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter); overflow: hidden;
+  background: var(--el-bg-color);
+  border-radius: var(--dd-radius-surface);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
+  overflow: hidden;
 }
 
-.user-name-cell { display: flex; align-items: center; gap: 12px; }
+.user-name-cell { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .user-avatar {
   // 用户头像：形状承载语义（圆形=头像/身份标识），两种圆角模式下都固定正圆，不吃 --dd-radius-* 令牌
   width: 36px; height: 36px; border-radius: 50%;
@@ -543,8 +562,22 @@ function getRoleName(role: string) {
   color: var(--dd-btn-primary-fg); display: flex; align-items: center; justify-content: center;
   font-weight: 600; font-size: 14px; flex-shrink: 0;
 }
-.user-name-info { display: flex; align-items: center; gap: 8px; }
-.user-name-text { font-weight: 500; color: var(--el-text-color-primary); }
+.user-name-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.user-name-text {
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 // 角色标签的占位槽：out-in 过渡中间有一帧「旧的已移除、新的还没进来」，
 // 没有这个最小高度的话，移动端卡片里那一行会瞬间塌一次高度。
@@ -552,6 +585,7 @@ function getRoleName(role: string) {
 .role-tag-slot {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   min-height: 24px;
 }
 
@@ -584,14 +618,6 @@ function getRoleName(role: string) {
 }
 .pagination-total { font-size: 13px; color: var(--el-text-color-secondary); }
 
-:deep(.el-table) {
-  // 边框统一走令牌，明暗自动适配（原写死浅灰会在暗色串色）
-  --el-table-border-color: var(--el-border-color-lighter);
-  .el-table__header-wrapper th { border-bottom: 1px solid var(--el-border-color-light); }
-  .el-table__row td { border-bottom: 1px solid var(--el-border-color-lighter); }
-  .el-table__cell { padding: 12px 0; }
-}
-
 @media (max-width: 768px) {
   .page-header { flex-direction: column; gap: 10px; margin-bottom: 14px; h2 { font-size: 18px; } }
   .toolbar { flex-direction: column; align-items: stretch; gap: 10px;
@@ -600,31 +626,5 @@ function getRoleName(role: string) {
     &__search { width: 100% !important; }
   }
   .status-tabs { width: 100%; overflow-x: auto; }
-}
-
-// ===== 入场动画 =====
-// 与定时任务页/订阅管理页统一：只对卡片级容器（工具条 / 表格卡 / 移动列表）做克制的淡入上移 + 轻微错落；
-// 不给表格每一行或每张移动卡做 stagger。时长走令牌，prefers-reduced-motion 时令牌自动降为 1ms 即等效关闭。
-@keyframes dd-users-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.toolbar,
-.table-card,
-.dd-mobile-list {
-  animation: dd-users-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) both;
-}
-
-// 轻微错落：工具条先入，表格卡/移动列表略晚
-.table-card,
-.dd-mobile-list {
-  animation-delay: 60ms;
 }
 </style>

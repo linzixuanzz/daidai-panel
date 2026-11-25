@@ -60,7 +60,7 @@ defineProps<{
 
     <el-divider />
 
-    <div v-if="isMobile" class="dd-mobile-list">
+    <div v-if="isMobile" v-loading="sessionsLoading" class="dd-mobile-list">
       <div
         v-for="row in sessions"
         :key="row.id"
@@ -138,6 +138,10 @@ defineProps<{
   background: color-mix(in srgb, var(--el-fill-color-light) 84%, transparent);
   display: flex;
   gap: 8px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .session-card__actions > * {

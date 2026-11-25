@@ -412,11 +412,17 @@ async function handleCancelEdit() {
 
 /* ---- Mobile layout ---- */
 .scripts-page.mobile {
-  height: 100%;
-  min-height: 0;
+  // 移动端 .layout-main 自行滚动、父容器不再给固定高度，height: 100% 会退化为 auto，
+  // 导致空/短脚本编辑区塌陷，长文件树与长脚本把底部状态栏或「代码运行器」推出视口；
+  // 显式按视口高度建立纵向 flex 高度链（扣掉顶栏、页面留白及演示/安全横幅），保证内部独立滚动。
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 84px - var(--dd-demo-banner-height, 0px) - var(--dd-safe-banner-h, 0px));
+  min-height: 460px;
   overflow: hidden;
 
   .page-header {
+    flex-shrink: 0;
     flex-direction: column;
     gap: 10px;
     margin-bottom: 14px;
@@ -426,12 +432,12 @@ async function handleCancelEdit() {
     }
   }
 
-  /* 移动端：两卡纵向堆叠，各占满宽度 */
+  /* 移动端：两卡纵向堆叠，各占满剩余高度并在内部滚动 */
   .scripts-workspace {
     flex-direction: column;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     width: 100%;
-    height: 100%;
+    height: 0;
     min-height: 0;
     gap: 12px;
 

@@ -1013,7 +1013,7 @@ onBeforeUnmount(() => {
           <template #default="{ row }">
             <div class="task-name-cell">
               <div class="task-name-info">
-                <span class="task-name-text">{{ row.task_name || `任务#${row.task_id}` }}</span>
+                <span class="task-name-text" :title="row.task_name || `任务#${row.task_id}`">{{ row.task_name || `任务#${row.task_id}` }}</span>
                 <span class="task-name-sub">#{{ row.id }}</span>
               </div>
             </div>
@@ -1199,30 +1199,60 @@ onBeforeUnmount(() => {
         </el-tooltip>
       </div>
 
-      <el-table :data="logFiles" v-loading="logFilesLoading" max-height="420px" size="small">
-        <el-table-column prop="filename" label="文件名" min-width="220" />
-        <el-table-column label="大小" width="110">
-          <template #default="{ row }">{{ formatFileSize(row.size) }}</template>
-        </el-table-column>
-        <el-table-column label="时间" width="180">
-          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
-          <template #default="{ row }">
+      <!-- 移动端全屏改用卡片列表，避免 fixed=right 挤压与 420px 限高截断；桌面端保留表格并套 .action-btns 清零外边距 -->
+      <div v-if="isMobile" class="log-files-mobile-list" v-loading="logFilesLoading">
+        <div
+          v-for="row in logFiles"
+          :key="row.path || row.filename"
+          class="log-file-mobile-card"
+        >
+          <div class="log-file-mobile-card__name" :title="row.filename">{{ row.filename }}</div>
+          <div class="log-file-mobile-card__meta">
+            <span>{{ formatFileSize(row.size) }}</span>
+            <span>{{ formatDateTime(row.created_at) }}</span>
+          </div>
+          <div class="log-file-mobile-card__actions">
             <el-button type="primary" text size="small" @click="viewLogFile(row)">查看</el-button>
             <el-button
               type="primary"
               text
               size="small"
               :loading="logFileDownloadingKey === (row.path || row.filename)"
-              title="下载原始日志文件：由服务端直传磁盘上的字节，回车符与终端控制序列一个不少（弹窗预览是折叠后的）"
               @click="downloadRawLogFileRow(row)"
             >下载</el-button>
             <el-button v-if="canOperateLogs" type="danger" text size="small" @click="deleteLogFile(row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-if="!logFilesLoading && logFiles.length === 0" description="暂无日志文件" />
+          </div>
+        </div>
+        <el-empty v-if="!logFilesLoading && logFiles.length === 0" description="暂无日志文件" />
+      </div>
+      <template v-else>
+        <el-table :data="logFiles" v-loading="logFilesLoading" max-height="420px" size="small">
+          <el-table-column prop="filename" label="文件名" min-width="220" show-overflow-tooltip />
+          <el-table-column label="大小" width="110">
+            <template #default="{ row }">{{ formatFileSize(row.size) }}</template>
+          </el-table-column>
+          <el-table-column label="时间" width="180">
+            <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="200" fixed="right" align="center">
+            <template #default="{ row }">
+              <div class="action-btns">
+                <el-button type="primary" text size="small" @click="viewLogFile(row)">查看</el-button>
+                <el-button
+                  type="primary"
+                  text
+                  size="small"
+                  :loading="logFileDownloadingKey === (row.path || row.filename)"
+                  title="下载原始日志文件：由服务端直传磁盘上的字节，回车符与终端控制序列一个不少（弹窗预览是折叠后的）"
+                  @click="downloadRawLogFileRow(row)"
+                >下载</el-button>
+                <el-button v-if="canOperateLogs" type="danger" text size="small" @click="deleteLogFile(row)">删除</el-button>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!logFilesLoading && logFiles.length === 0" description="暂无日志文件" />
+      </template>
 
       <!-- 移动端全屏时补一个底部「关闭」（v3.3.1，issue #143 F2）：有了 footer，global.scss 会在 ≤768 收起右上角的 ×，
            关闭入口挪到拇指够得着的右下角。v-if 在插槽上，桌面 EP 不渲染 footer，弹窗与原来完全一样。 -->
@@ -1231,7 +1261,13 @@ onBeforeUnmount(() => {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showFileContent" :title="fileContentName" width="1100px" :fullscreen="dialogFullscreen">
+    <el-dialog
+      v-model="showFileContent"
+      :title="fileContentName"
+      width="1100px"
+      :fullscreen="dialogFullscreen"
+      class="log-file-content-dialog"
+    >
       <div ref="fileContentRef" class="detail-log dd-log-surface">
         <template v-if="fileHasContent">
           <button
@@ -1352,6 +1388,11 @@ onBeforeUnmount(() => {
     gap: 10px;
     // 与左区第一行对齐的另一半：撑到同样的 39px，内部 center 让 32px 的按钮落在同一条中线上
     min-height: 39px;
+
+    // 清零 EP 默认相邻按钮 12px 左外边距，间距统一由 gap 控制
+    :deep(.el-button + .el-button) {
+      margin-left: 0;
+    }
   }
 
   &__search {
@@ -1406,6 +1447,11 @@ onBeforeUnmount(() => {
   // 不补这个下限它就贴在网格行顶端、中心线只有 16px，勾选后整排批量按钮会比右侧按钮高 3.5px。
   // 39px 本来就是左槽的 min-height，补上不会改变左槽高度，高度不变式照旧成立。
   min-height: 39px;
+
+  // 清零 EP 默认相邻按钮 12px 左外边距，间距统一由 gap 控制
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 // 勾选数：纯文字级提示，用次级色，不跟旁边那排实体按钮抢视觉重量
@@ -1483,6 +1529,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .task-name-info {
@@ -1490,11 +1537,15 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1;
 }
 
 .task-name-text {
   font-weight: 500;
   color: var(--el-text-color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .task-name-sub {
@@ -1543,26 +1594,14 @@ onBeforeUnmount(() => {
 }
 
 :deep(.el-table) {
-  // 边框统一走令牌，明暗自动适配（原写死浅灰会在暗色串色）
-  --el-table-border-color: var(--el-border-color-lighter);
-
-  .el-table__header-wrapper th {
-    border-bottom: 1px solid var(--el-border-color-light);
-  }
-
+  // 表线颜色与桌面单元格行高统一交由全局 global.scss + _switches.scss 的密度变量控制，
+  // 这里只保留执行日志行 hover 高亮与平滑过渡。
   .el-table__row td {
-    border-bottom: 1px solid var(--el-border-color-lighter);
-    // 时长/缓动走令牌：原来写死的 0.18s ease 既不在动效档位上，
-    // 也让这一页的行 hover 比全站其他表格慢半拍
     transition: background-color var(--dd-motion-fast) var(--dd-ease-standard);
   }
 
   .el-table__body tr:hover > td {
     background: var(--el-color-primary-light-9);
-  }
-
-  .el-table__cell {
-    padding: 12px 0;
   }
 }
 
@@ -1906,11 +1945,97 @@ onBeforeUnmount(() => {
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 10px;
+  flex-shrink: 0;
 }
 
 .log-files-summary {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+// 日志文件弹窗移动端全屏：解除 420px 限高，卡片列表在弹窗 body 内独立滚动
+:deep(.log-files-dialog.is-fullscreen) {
+  .el-dialog__body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+}
+
+.log-files-mobile-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.log-file-mobile-card {
+  padding: 12px;
+  border-radius: var(--dd-radius-card);
+  border: 1px solid var(--dd-divider, var(--el-border-color-lighter));
+  background: var(--el-fill-color-lighter);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.log-file-mobile-card__name {
+  font-family: var(--dd-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  word-break: break-all;
+}
+
+.log-file-mobile-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--dd-font-mono);
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.log-file-mobile-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--dd-divider, var(--el-border-color-lighter));
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
+// 日志文件内容弹窗：绑定定高 flex 弹窗类，令 .detail-log 始终在内部滚动，
+// 避免超长文件把 .detail-log 撑到上万像素导致日志背景图纵向拉伸失真。
+:deep(.log-file-content-dialog) {
+  display: flex;
+  flex-direction: column;
+  height: min(82vh, 760px);
+
+  &.is-fullscreen {
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .el-dialog__body {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .detail-log {
+    flex: 1 1 0;
+    min-height: 0;
+  }
 }
 
 /* =============== Animations =============== */

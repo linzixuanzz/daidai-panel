@@ -32,6 +32,8 @@ const props = defineProps<{ isMobile: boolean }>()
 
 const meta = ref<SystemConsoleMeta | null>(null)
 const metaLoading = ref(false)
+// 移动端默认折叠冗长的使用说明，给命令输入框和输出区留出可视高度；桌面默认展开
+const noticeExpanded = ref(!props.isMobile)
 const command = ref('')
 const running = ref(false)
 const exitCode = ref<number | null>(null)
@@ -342,6 +344,8 @@ function teardown() {
 
 watch(visible, (val) => {
   if (val) {
+    // 每次打开按当前端重置说明折叠态：移动端默认折叠腾出输入与输出空间，桌面默认展开
+    noticeExpanded.value = !props.isMobile
     // 上一次的输出留到下次打开会让人以为是刚跑出来的，开窗即清空；
     // 命令文本刻意保留，用户多半是想改一改再跑一次。
     resetOutput()
@@ -354,6 +358,13 @@ watch(visible, (val) => {
   }
   teardown()
 })
+
+watch(
+  () => props.isMobile,
+  (mobile) => {
+    noticeExpanded.value = !mobile
+  }
+)
 
 onBeforeUnmount(() => {
   teardown()
@@ -396,23 +407,36 @@ onBeforeUnmount(() => {
             show-icon
             :title="meta.unavailable_reason || '当前环境不支持系统命令行'"
           />
-          <el-alert v-else class="console-notice" type="info" :closable="false" show-icon>
-            <div class="console-notice__line">
-              一次只执行一条命令（可以写多行，但 <code>cd /x &amp;&amp; ls</code> 这种复合写法才连得起来）。
-              这不是交互式终端，<b>不保留 cd 和环境变量</b>，下一条命令又是全新的进程。
+          <el-alert v-else class="console-notice" :class="{ 'is-collapsed': !noticeExpanded }" type="info" :closable="false" show-icon>
+            <div class="console-notice__summary">
+              <span>非交互式终端：单次独立执行，不保留 <code>cd</code> 与环境变量</span>
+              <button
+                type="button"
+                class="console-notice__toggle"
+                :aria-expanded="noticeExpanded"
+                @click="noticeExpanded = !noticeExpanded"
+              >
+                {{ noticeExpanded ? '收起说明' : '展开说明' }}
+              </button>
             </div>
-            <div class="console-notice__line">
-              工作目录 <code>{{ meta?.work_dir || '面板脚本目录' }}</code>
-              <span v-if="meta?.shell">，Shell <code>{{ meta.shell }}</code></span>
-              <span v-if="meta?.distribution">，发行版 {{ meta.distribution }}</span>。
-              单条命令超过 {{ timeoutText }} 会被强制结束。
-            </div>
-            <div class="console-notice__line">
-              要放到后台的进程请<b>自行重定向输出</b>（<code>setsid nohup xxx &gt;/dev/null 2&gt;&amp;1 &amp;</code>），
-              否则本次运行会在命令本体退出约 2 秒后自行收尾，末尾只留一句「仍有后台进程持有输出管道」，
-              <b>之后它的输出面板再也收不到</b>。运行结束后再关闭弹窗或清除记录都不会杀掉它，
-              后台进程会留在容器里；只有<b>命令还在运行时</b>关窗或撞上超时，才会终止<b>整个进程组</b>。
-              真要留常驻进程，也请这样用 <code>setsid</code> 启动：定时 / 手动任务结束时会清理留在进程组里的后台进程（开机任务除外），setsid 起的不受影响。
+            <div v-if="noticeExpanded" class="console-notice__details">
+              <div class="console-notice__line">
+                一次只执行一条命令（可以写多行，但 <code>cd /x &amp;&amp; ls</code> 这种复合写法才连得起来）。
+                这不是交互式终端，<b>不保留 cd 和环境变量</b>，下一条命令又是全新的进程。
+              </div>
+              <div class="console-notice__line">
+                工作目录 <code>{{ meta?.work_dir || '面板脚本目录' }}</code>
+                <span v-if="meta?.shell">，Shell <code>{{ meta.shell }}</code></span>
+                <span v-if="meta?.distribution">，发行版 {{ meta.distribution }}</span>。
+                单条命令超过 {{ timeoutText }} 会被强制结束。
+              </div>
+              <div class="console-notice__line">
+                要放到后台的进程请<b>自行重定向输出</b>（<code>setsid nohup xxx &gt;/dev/null 2&gt;&amp;1 &amp;</code>），
+                否则本次运行会在命令本体退出约 2 秒后自行收尾，末尾只留一句「仍有后台进程持有输出管道」，
+                <b>之后它的输出面板再也收不到</b>。运行结束后再关闭弹窗或清除记录都不会杀掉它，
+                后台进程会留在容器里；只有<b>命令还在运行时</b>关窗或撞上超时，才会终止<b>整个进程组</b>。
+                真要留常驻进程，也请这样用 <code>setsid</code> 启动：定时 / 手动任务结束时会清理留在进程组里的后台进程（开机任务除外），setsid 起的不受影响。
+              </div>
             </div>
           </el-alert>
 
@@ -558,11 +582,51 @@ onBeforeUnmount(() => {
 
 .console-notice {
   flex-shrink: 0;
+  padding: 8px 12px;
+
+  :deep(.el-alert__content) {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+.console-notice__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.console-notice__toggle {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--dd-accent-ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.console-notice__details {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--dd-divider, var(--el-border-color-lighter));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .console-notice__line {
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 12.5px;
+  line-height: 1.55;
 }
 
 .console-quick {
@@ -637,15 +701,32 @@ onBeforeUnmount(() => {
 
 .console-container.mobile {
   flex-direction: column;
+  // 移动端外层 .el-dialog__body 已开启 overflow-y: auto，容器允许按内容自然增高，
+  // 防止软键盘弹出压缩视口时把输入框压塌或把输出区裁切掉。
+  height: auto;
+  min-height: 100%;
 
-  .console-input-panel,
+  .console-input-panel {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+
   .console-log-panel {
-    flex: 1 1 0;
-    min-height: 180px;
+    flex: 1 0 220px;
+    min-height: 220px;
   }
 
   .panel-content {
     padding: 8px;
+  }
+
+  .console-command-input {
+    min-height: 120px;
+    flex-shrink: 0;
+
+    :deep(.el-textarea__inner) {
+      min-height: 120px;
+    }
   }
 }
 </style>
@@ -679,6 +760,13 @@ onBeforeUnmount(() => {
     flex-shrink: 0;
     padding: 12px 18px;
     border-top: 1px solid var(--el-border-color-lighter);
+  }
+}
+
+@media (max-width: 768px) {
+  // 移动端允许弹窗正文纵向滚动，避免软键盘弹起后压塌命令输入框或裁切输出区
+  .system-console-dialog .el-dialog__body {
+    overflow-y: auto;
   }
 }
 </style>

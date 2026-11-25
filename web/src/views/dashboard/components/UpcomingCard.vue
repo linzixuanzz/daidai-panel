@@ -22,6 +22,9 @@ const MAX_LANES = 12
 const HOVER_WINDOW_MIN = 12
 /** 后台自动重取的间隔：「现在」那条线会走，5 分钟重取一次足够 */
 const AUTO_REFRESH_MS = 5 * 60_000
+/** 实例级唯一 clipPath id，避免页面存在多个时间轴实例时 id 冲突 */
+let clipSeq = 0
+const plotClipId = `tl-plot-clip-${++clipSeq}`
 
 const router = useRouter()
 const attention = useAttentionStore()
@@ -117,10 +120,26 @@ const laneTicks = computed(() => {
   })
 })
 
-/** 名字太长时截断（SVG 文本没有省略号），中文按 12px 一个字估算 */
+/** 名字太长时截断（SVG 文本没有省略号）：按半角 0.55、全角 1.0 加权计算宽度，避免英文任务名被腰斩 */
 function clipName(name: string) {
-  const max = Math.max(3, Math.floor((NAME_W.value - 14) / 12))
-  return name.length > max ? `${name.slice(0, max - 1)}…` : name
+  const maxUnits = Math.max(3, (NAME_W.value - 14) / 12)
+  const ellipsisBudget = Math.max(1.5, maxUnits - 0.9)
+  const chars = Array.from(name)
+  let used = 0
+  let cutIdx = -1
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i]!
+    const w = ch.charCodeAt(0) <= 0x7f ? 0.55 : 1
+    if (cutIdx < 0 && used + w > ellipsisBudget) {
+      cutIdx = i
+    }
+    used += w
+    if (used > maxUnits) {
+      const end = cutIdx > 0 ? cutIdx : Math.max(1, i)
+      return `${chars.slice(0, end).join('')}…`
+    }
+  }
+  return name
 }
 
 const hourly = computed(() => data.value?.hourly || [])
@@ -142,17 +161,41 @@ const peakLabel = computed(() => {
   return `高峰 ${hhmm(data.value.from + peakIndex.value * 3600)} 起 · ${hourly.value[peakIndex.value]} 次`
 })
 
-/** 底部时间刻度：每 3 小时一个，第一个写「现在」，最后补一个 +24h */
+/** 高峰标注位置与对齐：靠近右端自动切 end、靠近左端切 start，避免标注冲出卡片左右边框 */
+const peakPos = computed(() => {
+  const plotLeft = NAME_W.value
+  const plotRight = NAME_W.value + plotW.value
+  if (peakIndex.value < 0 || !peakLabel.value) {
+    return { x: plotLeft, anchor: 'start' as const }
+  }
+  const cx = plotLeft + peakIndex.value * barW.value + barW.value / 2
+  // 留出大屏 1.25 倍字号的宽度余量，避免文字右端探出绘图区
+  const estW = Math.min(plotW.value, peakLabel.value.length * 10 + 16)
+  const halfW = estW / 2
+  if (cx + halfW > plotRight) {
+    return { x: plotRight, anchor: 'end' as const }
+  }
+  if (cx - halfW < plotLeft) {
+    return { x: plotLeft, anchor: 'start' as const }
+  }
+  return { x: cx, anchor: 'middle' as const }
+})
+
+/** 底部时间刻度：每 3 小时一个，第一个写「现在」，最后补一个 +24h；较窄宽与大屏下避让最后两格碰撞 */
 const hourTicks = computed(() => {
   if (!data.value) return []
   const out: Array<{ x: number; text: string; anchor: string }> = []
   const hours = Math.round(totalMinutes.value / 60)
-  // 窄屏每 6 小时一个，免得字挤在一起
-  const step = width.value < 520 ? 6 : 3
+  // 绘图区较窄时切 6 小时步长，减少刻度拥挤
+  const step = plotW.value < 520 ? 6 : 3
+  const endX = xOf(totalMinutes.value)
   for (let h = 0; h < hours; h += step) {
-    out.push({ x: xOf(h * 60), text: h === 0 ? '现在' : hhmm(data.value.from + h * 3600), anchor: h === 0 ? 'start' : 'middle' })
+    const x = xOf(h * 60)
+    // 距离右侧 +24h 刻度不足 68px（兼容大屏 1.25 倍字号）时跳过该刻度，防止最后两格碰撞重叠
+    if (h > 0 && endX - x < 68) continue
+    out.push({ x, text: h === 0 ? '现在' : hhmm(data.value.from + h * 3600), anchor: h === 0 ? 'start' : 'middle' })
   }
-  out.push({ x: xOf(totalMinutes.value), text: `+${hours}h`, anchor: 'end' })
+  out.push({ x: endX, text: `+${hours}h`, anchor: 'end' })
   return out
 })
 
@@ -190,14 +233,27 @@ function handlePointerMove(e: PointerEvent) {
   hover.value = { x, y, minute }
 }
 
-/** 提示框位置：跟着指针，靠右时翻到左边，避免被卡片裁掉 */
+/** 提示框位置：横向在容器 [0, width - tipWidth] 内双向钳制，纵向按图高底边钳制，彻底消除移动端左右/底部溢出 */
 const tipStyle = computed(() => {
   if (!hover.value) return {}
-  const flip = hover.value.x > width.value - 230
+  const tipWidth = Math.min(240, width.value)
+  const preferLeft =
+    hover.value.x + 14 + tipWidth > width.value
+      ? hover.value.x - 14 - tipWidth
+      : hover.value.x + 14
+  const left = Math.max(0, Math.min(preferLeft, Math.max(0, width.value - tipWidth)))
+
+  const hitRows =
+    hoverHits.value.length > 0
+      ? Math.min(6, hoverHits.value.length) + (hoverHits.value.length > 6 ? 1 : 0)
+      : 1
+  const estTipHeight = 42 + hitRows * 20
+  const maxTop = Math.max(0, height.value - estTipHeight)
+  const top = Math.max(0, Math.min(hover.value.y - 10, maxTop))
+
   return {
-    left: flip ? 'auto' : `${hover.value.x + 14}px`,
-    right: flip ? `${width.value - hover.value.x + 14}px` : 'auto',
-    top: `${Math.max(0, hover.value.y - 10)}px`,
+    left: `${Math.round(left)}px`,
+    top: `${Math.round(top)}px`,
   }
 })
 
@@ -249,9 +305,16 @@ onBeforeUnmount(() => {
       @pointermove="handlePointerMove"
       @pointerleave="hover = null"
     >
+      <defs>
+        <!-- 裁剪绘图区域与高峰标注，防止极窄屏或大屏 1.25× 字号下柱/标注探出卡片边框 -->
+        <clipPath :id="plotClipId">
+          <rect :x="NAME_W - 2" y="0" :width="plotW + 4" :height="height" />
+        </clipPath>
+      </defs>
+
       <!-- 每小时调度次数 -->
       <text class="tl-hour" :x="NAME_W - 10" :y="TOP_H - 14" text-anchor="end">每小时</text>
-      <g class="tl-fade">
+      <g class="tl-fade" :clip-path="`url(#${plotClipId})`">
         <rect
           v-for="(c, h) in hourly"
           :key="'b' + h"
@@ -267,9 +330,10 @@ onBeforeUnmount(() => {
       <text
         v-if="peakLabel"
         class="tl-peak"
-        :x="Math.min(width - 70, Math.max(NAME_W + 60, NAME_W + peakIndex * barW + barW / 2))"
+        :clip-path="`url(#${plotClipId})`"
+        :x="peakPos.x"
         :y="TOP_H - 52"
-        text-anchor="middle"
+        :text-anchor="peakPos.anchor"
       >{{ peakLabel }}</text>
 
       <!-- 泳道 -->
@@ -360,7 +424,7 @@ onBeforeUnmount(() => {
 }
 
 .tl-name {
-  font-size: 12px;
+  font-size: calc(12px * var(--dash-scale, 1));
   fill: var(--dd-text-2);
 
   &.is-link {
@@ -424,20 +488,20 @@ onBeforeUnmount(() => {
   fill: var(--dd-text-3);
 }
 
-// 首次出现淡入；关闭档由全局规则统一去掉动画
+// 首次出现淡入；用 backwards 避免结束后长期残留合成层属性；关闭档由全局规则统一去掉动画
 .tl-fade {
-  animation: dd-fade-in 0.8s var(--dd-ease-standard) both;
+  animation: dd-fade-in 0.8s var(--dd-ease-standard) backwards;
 }
 
 .tl-tip {
   position: absolute;
   z-index: 3;
   min-width: 160px;
-  max-width: 240px;
+  max-width: min(240px, 100%);
   padding: 8px 10px;
   border-radius: var(--dd-radius-surface);
   background: var(--dd-overlay);
-  border: 1px solid var(--dd-border);
+  border: var(--dd-border-width, 1px) solid var(--dd-border);
   box-shadow: var(--dd-shadow-popper);
   font-size: calc(12px * var(--dash-scale, 1));
   line-height: 1.6;

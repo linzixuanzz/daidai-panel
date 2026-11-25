@@ -12,6 +12,7 @@ html[data-dd-theme][data-dd-bg="plain"],
 html.dark[data-dd-theme][data-dd-bg="plain"] {
   --dd-bg-blob-opacity: 0;
   --dd-bg-grid-opacity: 0;
+  --dd-bg-noise-opacity: 0;
   --dd-bg-scan-opacity: 0;
 }
 
@@ -19,12 +20,16 @@ html[data-dd-theme][data-dd-bg="aurora"],
 html.dark[data-dd-theme][data-dd-bg="aurora"] {
   --dd-bg-blob-opacity: 0.6;
   --dd-bg-grid-opacity: 0;
+  --dd-bg-noise-opacity: 0;
+  --dd-bg-scan-opacity: 0;
 }
 
 html[data-dd-theme][data-dd-bg="grid"],
 html.dark[data-dd-theme][data-dd-bg="grid"] {
   --dd-bg-blob-opacity: 0;
   --dd-bg-grid-opacity: 0.5;
+  --dd-bg-noise-opacity: 0;
+  --dd-bg-scan-opacity: 0;
 }
 
 // 背景图：图片本身由 AppBackdrop 画，这里只把会和图片抢戏的层关掉
@@ -32,40 +37,50 @@ html[data-dd-theme][data-dd-bg="image"],
 html.dark[data-dd-theme][data-dd-bg="image"] {
   --dd-bg-blob-opacity: 0;
   --dd-bg-grid-opacity: 0;
+  --dd-bg-noise-opacity: 0;
   --dd-bg-scan-opacity: 0;
 }
 
-// —— 玻璃开关：生效模糊为 0（用户设 0、或低端设备跟随系统）时 JS 写 data-dd-glass="off" ——
-// design 约定「模糊 0 = 不透明卡片」：半透明卡片不模糊时，背景的极光块会直接透到文字后面，可读性最差。
-// 所以关玻璃时把 surface 换成实色。.dd-glass 的 backdrop-filter 在 global.scss 里按同一个属性关掉。
+// —— 玻璃开关 ——
+// 区分两种无卡片模糊状态（v4.0.1）：
+//   off      主题默认卡片不透明（如素白 clean），但允许主题自己保留局部毛玻璃（如素白侧栏）；
+//   disabled 用户显式把模糊设为 0 或低端机降级：连同侧栏、下拉浮层一并关掉模糊并退回实色，
+//            避免出现「半透明无模糊」透出底层图案。
 html[data-dd-theme][data-dd-glass="off"],
-html.dark[data-dd-theme][data-dd-glass="off"] {
+html.dark[data-dd-theme][data-dd-glass="off"],
+html[data-dd-theme][data-dd-glass="disabled"],
+html.dark[data-dd-theme][data-dd-glass="disabled"] {
   --dd-surface: var(--dd-surface-solid);
 }
 
+html[data-dd-theme][data-dd-glass="disabled"],
+html.dark[data-dd-theme][data-dd-glass="disabled"] {
+  --dd-sidebar-bg: var(--dd-surface-solid);
+  --dd-sidebar-blur: 0px;
+}
+
 // —— 界面密度（主题工坊「密度」）：只动少量变量，不改布局 ——
-// 默认（cozy）的值写在 global.scss 的 :root；这里只写另外两档。
+// 默认（cozy）的值写在 global.scss 的 :root 与 _layout.scss；这里只写另外两档。
 // 字号只改 body（--dd-font-size），<html> 的 14px 不动：项目里的 rem 都按 14px 写的，改根字号等于整站缩放。
 html[data-dd-density="compact"] {
   --dd-pad: 14px;
   --dd-gap: 12px;
   --dd-font-size: 13px;
+  --dd-table-cell-py: 5px;
 }
 
 html[data-dd-density="roomy"] {
   --dd-pad: 26px;
   --dd-gap: 22px;
   --dd-font-size: 15px;
+  --dd-table-cell-py: 12px;
 }
 
-// EP 表格行高：EP 把单元格上下内边距写死在 `.el-table .el-table__cell{padding:8px 0}`（0,2,0），不走变量，
-// 只能按密度就地覆盖。显式带了 size="small" / "large" 的表格是页面自己选的尺寸，不跟密度走。
-html[data-dd-density="compact"] .el-table:not(.el-table--small, .el-table--large) .el-table__cell {
-  padding-top: 5px;
-  padding-bottom: 5px;
-}
-
-html[data-dd-density="roomy"] .el-table:not(.el-table--small, .el-table--large) .el-table__cell {
-  padding-top: 12px;
-  padding-bottom: 12px;
+// EP 表格行高：桌面端统一走 --dd-table-cell-py（限定 ≥769px，避免 roomy 压过移动端 6px 紧凑表格）。
+// 显式带了 size="small" / "large" 的表格是页面自己选的尺寸，不跟密度走。
+@media screen and (min-width: 769px) {
+  html[data-dd-theme] .el-table:not(.el-table--small, .el-table--large) .el-table__cell {
+    padding-top: var(--dd-table-cell-py, 9px);
+    padding-bottom: var(--dd-table-cell-py, 9px);
+  }
 }

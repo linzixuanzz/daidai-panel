@@ -25,7 +25,7 @@ import { useSettingsConfig } from './useSettingsConfig'
 import { useSettingsOverview } from './useSettingsOverview'
 import { usePanelLogViewer } from './usePanelLogViewer'
 import { useSettingsSecurity } from './useSettingsSecurity'
-import { Bell, Connection, Document, Key, Lock, Monitor, Refresh, Tickets } from '@element-plus/icons-vue'
+import { Connection, Document, Key, Lock, Monitor, Refresh, Tickets } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 
 const authStore = useAuthStore()
@@ -381,10 +381,7 @@ watch(
         />
       </el-tab-pane>
 
-      <el-tab-pane v-if="isAdmin" name="panel-log">
-        <template #label>
-          <span class="sub-tab-label"><el-icon :size="14"><Document /></el-icon>面板日志</span>
-        </template>
+      <el-tab-pane v-if="isAdmin" label="面板日志" name="panel-log">
         <PanelLogCard
           v-model:lines="panelLogLines"
           v-model:keyword="panelLogKeyword"
@@ -406,10 +403,7 @@ watch(
         />
       </el-tab-pane>
 
-      <el-tab-pane v-if="isAdmin" name="alert">
-        <template #label>
-          <span class="sub-tab-label"><el-icon :size="14"><Bell /></el-icon>告警通知</span>
-        </template>
+      <el-tab-pane v-if="isAdmin" label="告警通知" name="alert">
         <AlertConfigCard
           :configs-loading="configsLoading"
           :configs-saving="configsSaving"
@@ -430,6 +424,7 @@ watch(
 
       <el-tab-pane v-if="isAdmin" label="登录验证码" name="captcha">
         <CaptchaConfigCard
+          :configs-loading="configsLoading"
           :configs-saving="configsSaving"
           :form="configForm"
           :captcha-feature-implemented="captchaFeatureImplemented"
@@ -591,42 +586,19 @@ watch(
 <style scoped lang="scss">
 .settings-page { padding: 0; }
 
+// 右对齐轻量刷新栏：去掉无意义的通栏灰槽，避免单颗按钮配整行底色显得空旷
 .settings-toolbar {
   display: flex;
   justify-content: flex-end;
   align-items: center;
   margin-bottom: 12px;
-  padding: 4px;
-  // 按钮组的灰底槽 → control 档（与槽内按钮同档，圆角一致才不会露出内外错位的角）
-  border-radius: var(--dd-radius-control);
-  // 半透明凹槽令牌：明暗两档各自有值，不再需要单独的暗色补丁
-  background: var(--dd-surface-3);
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 18px;
-  gap: 16px;
-
-  h2 { margin: 0; font-size: 22px; font-weight: 700; color: var(--el-text-color-primary); line-height: 1.3; }
-  .page-subtitle { font-size: 13px; color: var(--el-text-color-secondary); margin: 6px 0 0; line-height: 1.6; display: block; max-width: 720px; }
-}
-
-.page-title {
-  font-size: 22px;
-  font-weight: 700;
-  margin: 0;
-  color: var(--el-text-color-primary);
-  line-height: 1.3;
 }
 
 .sub-tab-label {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-weight: 500;
+  font-weight: inherit;
 }
 
 // 「通用设置」页：左「面板外观」、右「其它配置项」两栏 1:1，间距与概览信息网格一致（16px）。
@@ -639,11 +611,9 @@ watch(
   align-items: start;
 }
 
-// 概览主区：只剩「产品与版本」一张卡，单列水平居中并限宽，宽屏上不拉成通栏；
-// 入场淡入上移走切页动效令牌（reduced-motion 由 global.scss 统一降级）
+// 概览主区：单列水平居中并限宽；入场动效仅由子卡各自的 .dd-rise 承担，外层不再叠动画
 .overview-grid {
   display: grid;
-  animation: dd-settings-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) both;
   grid-template-columns: minmax(0, 720px);
   justify-content: center;
   margin-bottom: 16px;
@@ -690,16 +660,10 @@ watch(
   }
 }
 
-// 概览统计卡：夹在两个网格之间，给同款入场动画保持节奏一致（轻微延迟错落）
-:deep(.stats-card) {
-  animation: dd-settings-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) 30ms both;
-}
-
-// 概览信息网格：入场动画与主网格一致，轻微延迟形成克制的错落
+// 概览信息网格：minmax(0, 1fr) 防长内容把栅格撑宽，入场交由子卡 .dd-rise
 .overview-info-grid {
   display: grid;
-  animation: dd-settings-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) 60ms both;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 
   :deep(.mt-card) {
@@ -707,16 +671,10 @@ watch(
   }
 }
 
-// 设置页入场动画：小幅淡入上移，避免大量子元素逐个 stagger
-@keyframes dd-settings-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
+// 中等视口下系统信息与系统健康两卡提前收成单列，避免左右互相挤压
+@media (max-width: 1100px) {
+  .overview-info-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -728,22 +686,32 @@ watch(
 @media (max-width: 768px) {
   // 手机端「产品与版本」卡占满整行
   .overview-grid { grid-template-columns: minmax(0, 1fr); }
-  .overview-info-grid { grid-template-columns: 1fr; }
-  .page-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    margin-bottom: 14px;
 
-    h2 { font-size: 18px; }
+  // 移动端标签改原生触控横滑：隐藏 EP 两侧翻页箭头、清零 scrollable 留白并复位 nav 位移
+  :deep(.el-tabs__header) {
+    padding-left: 0;
   }
 
-  :deep(.el-tabs__nav-wrap) {
-    overflow-x: auto;
+  :deep(.el-tabs__nav-wrap.is-scrollable) {
+    padding: 0;
+  }
+
+  :deep(.el-tabs__nav-prev),
+  :deep(.el-tabs__nav-next) {
+    display: none;
   }
 
   :deep(.el-tabs__nav-scroll) {
-    min-width: max-content;
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  :deep(.el-tabs__nav) {
+    transform: none !important;
   }
 
   :deep(.el-tabs__item) {

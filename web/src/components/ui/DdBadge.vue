@@ -109,24 +109,25 @@ const ariaLabel = computed(() => {
   border-radius: 50%;
 }
 
+// 各语义级别统一走高对比实心令牌对，确保全 14 套主题组合均 ≥ 4.5:1
 .dd-badge--danger {
-  background-color: var(--el-color-danger);
+  background-color: var(--dd-err-solid);
+  color: var(--dd-on-status);
 }
 
 .dd-badge--warning {
-  background-color: var(--el-color-warning);
+  background-color: var(--dd-warn-solid);
+  color: var(--dd-on-status);
 }
 
 .dd-badge--primary {
-  background-color: var(--el-color-primary);
+  background-color: var(--dd-btn-primary-bg);
+  color: var(--dd-btn-primary-fg);
 }
 
-/* info 级用描边而非实心：它只是「有这么多东西」的中性计数，
-   实心色会让它和真正需要处理的 danger 抢注意力。 */
 .dd-badge--info {
-  color: var(--el-text-color-regular);
-  background-color: var(--el-fill-color);
-  border: 1px solid var(--el-border-color-lighter);
+  background-color: var(--dd-text-3);
+  color: var(--dd-surface-solid);
 }
 
 .dd-badge__num {

@@ -88,15 +88,20 @@
             var lum = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
             root.style.setProperty('--dd-accent', accent);
             root.style.setProperty('--dd-on-accent', 1.05 / (lum + 0.05) >= (lum + 0.05) / 0.0556 ? '#ffffff' : '#111111');
+            if (preset !== 'clean') {
+              root.style.setProperty('--dd-btn-primary-bg', accent);
+            }
           }
 
           // 玻璃模糊：本机 > 全站 > （低端设备且动效跟随系统 → 0）> 主题默认（与 THEME_PRESETS 的 blur 一致）
           var blurDefaults = { classic: 0, aurora: 22, mist: 26, terminal: 4, paper: 0, daidai: 0, clean: 0 };
           var blur = int(read('dd:appearance:blur'), 40);
           if (blur === null) blur = int(site.panel_glass_blur, 40);
-          if (blur === null && motion === 'system' && lowEnd) blur = 0;
+          var lowEndBlurOff = blur === null && motion === 'system' && lowEnd;
+          if (lowEndBlurOff) blur = 0;
           if (blur !== null) root.style.setProperty('--dd-glass-blur', blur + 'px');
-          root.setAttribute('data-dd-glass', (blur === null ? blurDefaults[preset] : blur) === 0 ? 'off' : 'on');
+          var glassAttr = blur === 0 || lowEndBlurOff ? 'disabled' : (blur === null ? blurDefaults[preset] : blur) === 0 ? 'off' : 'on';
+          root.setAttribute('data-dd-glass', glassAttr);
 
           // 圆角：本机滑杆 > 全站圆角风格（缓存键 dd:appearance:shape，再退到快照，默认 theme）
           var shapes = ['theme', 'square', 'rounded'];

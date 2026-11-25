@@ -149,9 +149,9 @@ onMounted(() => {
 @use './config-card-shared.scss' as *;
 
 .health-card {
-  // 扁平化：无阴影，层次只靠 1px 描边表达（边框色走令牌，暗色下自动跟随）；卡片本体 → surface 档
+  // 扁平化：描边宽走主题令牌；卡片本体 → surface 档
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
   height: 100%;
 }
 
@@ -183,9 +183,10 @@ onMounted(() => {
 .health-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   padding: 12px 0;
-  border-bottom: 1px dashed var(--el-border-color-lighter);
+  border-bottom: 1px dashed var(--dd-divider, var(--el-border-color-lighter));
 
   &:last-child {
     border-bottom: none;
@@ -205,7 +206,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
+  flex: 1 1 140px;
   min-width: 0;
 }
 
@@ -219,6 +220,7 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 600;
   padding: 1px 8px;
+  flex-shrink: 0;
   // 健康状态 chip 是天然胶囊 → pill 档（与 .dd-status-chip 同档）
   border-radius: var(--dd-radius-pill);
 
@@ -239,10 +241,15 @@ onMounted(() => {
   }
 }
 
+// 去掉 flex-shrink: 0 并允许换行/断词，避免长健康诊断文案把窄卡顶出横向溢出
 .health-item__message {
   font-size: 12px;
+  line-height: 1.5;
   color: var(--el-text-color-secondary);
-  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 @media (max-width: 768px) {

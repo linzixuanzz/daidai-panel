@@ -467,22 +467,22 @@ defineExpose({ loadViews, loadGroups, openCreateDialog, openManagementDialog, ca
         <el-form-item label="筛选条件" required>
           <div class="filter-list">
             <div v-for="(filter, index) in editForm.filters" :key="index" class="filter-row">
-              <el-select v-model="filter.field" style="width: 120px" size="small" @change="filter.value = ''">
+              <el-select v-model="filter.field" class="filter-row__field" size="small" @change="filter.value = ''">
                 <el-option v-for="f in filterFields" :key="f.value" :label="f.label" :value="f.value" />
               </el-select>
-              <el-select v-model="filter.operator" style="width: 100px" size="small">
+              <el-select v-model="filter.operator" class="filter-row__operator" size="small">
                 <el-option v-for="op in filterOperators" :key="op.value" :label="op.label" :value="op.value" />
               </el-select>
               <el-select
                 v-if="isStatusField(filter)"
                 v-model="filter.value"
+                class="filter-row__value"
                 placeholder="选择状态"
                 size="small"
-                style="flex: 1"
               >
                 <el-option v-for="opt in statusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
               </el-select>
-              <el-input v-else v-model="filter.value" placeholder="请输入内容" size="small" style="flex: 1" />
+              <el-input v-else v-model="filter.value" class="filter-row__value" placeholder="请输入内容" size="small" />
               <el-button v-if="editForm.filters.length > 1" :icon="Delete" size="small" @click="removeFilter(index)" />
             </div>
             <el-button size="small" type="primary" link @click="addFilter">+ 新增筛选条件</el-button>
@@ -492,10 +492,10 @@ defineExpose({ loadViews, loadGroups, openCreateDialog, openManagementDialog, ca
         <el-form-item label="排序方式">
           <div class="filter-list">
             <div v-for="(rule, index) in editForm.sortRules" :key="index" class="filter-row">
-              <el-select v-model="rule.field" style="width: 120px" size="small">
+              <el-select v-model="rule.field" class="filter-row__field" size="small">
                 <el-option v-for="f in sortFields" :key="f.value" :label="f.label" :value="f.value" />
               </el-select>
-              <el-select v-model="rule.direction" style="width: 100px" size="small">
+              <el-select v-model="rule.direction" class="filter-row__operator" size="small">
                 <el-option v-for="d in sortDirections" :key="d.value" :label="d.label" :value="d.value" />
               </el-select>
               <el-button :icon="Delete" size="small" @click="removeSortRule(index)" />
@@ -524,14 +524,11 @@ defineExpose({ loadViews, loadGroups, openCreateDialog, openManagementDialog, ca
   align-items: center;
 }
 
-// 灰底槽：数值逐条对齐 tasks/index.vue 的 .status-tabs，让上下两排分段控件观感一致
+// 灰底槽：与全站 .dd-seg-group / tasks/index.vue 的 .status-tabs 统一读 --dd-seg-* 排版级令牌
 .view-seg {
   display: inline-flex;
-  background: var(--el-fill-color-light);
-  // 灰底槽取 control 档，与全站通用类 .dd-seg-group、tasks/index.vue 的 .status-tabs 同档。
-  // 槽 padding 3px ⇒ 内侧曲率 = 槽圆角 - 3px；取 control(6px) 时内侧 3px 小于项的 6px，
-  // 选中项的角稳稳落在槽内侧曲线之内；取 surface(10px) 时内侧 7px 反而大于 6px，会露出错位。
-  border-radius: var(--dd-radius-control);
+  background: var(--dd-seg-bg);
+  border-radius: var(--dd-seg-radius);
   padding: 3px;
   gap: 2px;
   // 视图数量由用户决定、可能很多，桌面保留原来的换行而不是照抄 status-tabs 的单行排布。
@@ -545,12 +542,12 @@ defineExpose({ loadViews, loadGroups, openCreateDialog, openManagementDialog, ca
 
 .view-tab {
   padding: 6px 14px;
-  // 槽内的分段项 → control 档
-  border-radius: var(--dd-radius-control);
+  // 槽内的分段项与底槽同源，吃 --dd-seg-radius（素白 clean 主题自动切胶囊）
+  border-radius: var(--dd-seg-radius);
   // 透明描边占位，选中时只换 border-color，避免出现 1px 的尺寸跳动
   border: 1px solid transparent;
   background: transparent;
-  color: var(--dd-text-2);
+  color: var(--dd-seg-fg, var(--dd-text-2));
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -570,14 +567,15 @@ defineExpose({ loadViews, loadGroups, openCreateDialog, openManagementDialog, ca
   &:focus-visible {
     outline: 2px solid var(--dd-accent-ring);
     outline-offset: -1px;
-    // 焦点环沿 border-radius 描边，要跟分段项本身同档，否则圆角模式下环是方的、项是圆的
-    border-radius: var(--dd-radius-control);
+    // 焦点环沿 border-radius 描边，与分段项本身同源
+    border-radius: var(--dd-seg-radius);
   }
 
   &.active {
-    background: var(--dd-surface-solid);
-    color: var(--dd-accent-ink);
-    border-color: var(--dd-border);
+    background: var(--dd-seg-thumb-bg);
+    box-shadow: var(--dd-seg-thumb-shadow);
+    color: var(--dd-seg-active-fg);
+    border-color: var(--el-border-color-lighter);
     font-weight: 600;
   }
 }
@@ -654,11 +652,43 @@ defineExpose({ loadViews, loadGroups, openCreateDialog, openManagementDialog, ca
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
+
+  :deep(.filter-row__field) {
+    width: 120px;
+    flex-shrink: 0;
+  }
+
+  :deep(.filter-row__operator) {
+    width: 100px;
+    flex-shrink: 0;
+  }
+
+  :deep(.filter-row__value) {
+    flex: 1 1 140px;
+    min-width: 120px;
+  }
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 @media (max-width: 768px) {
+  // 移动端筛选行分两排：第一排「字段 + 运算符」平分整行，第二排「值输入框 + 删除键」，避免值输入框被挤成 80px
   .filter-row {
     flex-wrap: wrap;
+
+    :deep(.filter-row__field),
+    :deep(.filter-row__operator) {
+      width: auto;
+      flex: 1 1 calc(50% - 4px);
+      min-width: 110px;
+    }
+
+    :deep(.filter-row__value) {
+      flex: 1 1 calc(100% - 44px);
+      min-width: 160px;
+    }
   }
 
   // 移动端视图分组栏（issue #143 T7/T8；留白与圆角口径 v3.3.2 / issue #144 修正）：

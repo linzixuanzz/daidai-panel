@@ -517,12 +517,11 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
 .sidebar-top {
   display: flex;
   border-bottom: 1px solid color-mix(in srgb, var(--el-border-color-lighter) 80%, transparent);
-  padding-bottom: 10px;
   position: relative;
   flex-direction: column;
   gap: 10px;
   flex-shrink: 0;
-  padding: 16px 14px 0;
+  padding: 14px 14px 10px;
 }
 
 .sidebar-search {
@@ -544,7 +543,9 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
     border-radius: var(--dd-radius-button);
     padding: 4px 12px;
     box-shadow: 0 0 0 1px var(--el-border-color-lighter) inset;
-    transition: box-shadow 0.2s, background 0.2s;
+    transition:
+      box-shadow var(--dd-motion-fast) var(--dd-ease-standard),
+      background-color var(--dd-motion-fast) var(--dd-ease-standard);
     background: var(--el-fill-color-light);
   }
 
@@ -625,7 +626,10 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  transition:
+    color var(--dd-motion-fast) var(--dd-ease-standard),
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    border-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
     color: var(--dd-accent-ink);
@@ -663,7 +667,7 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
     padding-left: 4px;
     // 目录树的行是可点小块（hover / 选中都会上底色）→ control 档
     border-radius: var(--dd-radius-control);
-    transition: background 0.15s;
+    transition: background-color var(--dd-motion-fast) var(--dd-ease-standard);
     font-size: 13px;
     overflow: hidden;
   }
@@ -747,7 +751,9 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
   text-align: left;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    border-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
     background: color-mix(in srgb, var(--scripts-accent, var(--dd-accent)) 8%, var(--el-fill-color-light));
@@ -803,9 +809,12 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
     padding: 0;
   }
 
+  // 窄屏/移动模式下始终展开节点操作按钮，避免收起占位后触控无法呼出菜单
   :deep(.tree-node) {
-    .tree-node-actions,
-    .tree-node-ext {
+    .tree-node-actions {
+      max-width: 28px;
+      margin-left: 6px;
+      overflow: visible;
       opacity: 1;
     }
   }

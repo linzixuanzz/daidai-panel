@@ -2,8 +2,8 @@
 // 设置 → 账号安全 → 通行密钥（#175）。
 // 组件自己加载、自己闭合：列表、添加、重命名、删除都在这里，不往 useSettingsSecurity.ts 里塞。
 // 个人资料页（非管理员进不了设置页）也直接复用这张卡片。
-import { onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { defineComponent, h, onMounted, ref } from 'vue'
+import { ElCard, ElMessage, ElMessageBox } from 'element-plus'
 import { Key, Plus, Refresh } from '@element-plus/icons-vue'
 import { securityApi, type PasskeyItem } from '@/api/security'
 import { useResponsive } from '@/composables/useResponsive'
@@ -16,8 +16,25 @@ import {
   toCreationOptions
 } from '@/utils/passkey'
 
+const props = withDefaults(defineProps<{
+  // 个人资料页外层已有一张带标题的 el-card，传入 embedded 时省去外层卡片壳与重复标题，避免双卡嵌套
+  embedded?: boolean
+}>(), {
+  embedded: false
+})
+
 // 列表数量变化时通知外层（个人资料页要显示「已添加 N 个」）
 const emit = defineEmits<{ (e: 'changed', count: number): void }>()
+
+// 用轻包装按 embedded 切换外层容器，避免 <component :is="'div'"> 接收命名插槽 #header 触发告警
+const CardOrDiv = defineComponent({
+  name: 'PasskeyCardWrapper',
+  setup(_, { slots }) {
+    return () => props.embedded
+      ? h('div', { class: 'passkey-embedded' }, slots.default?.())
+      : h(ElCard, { shadow: 'never' }, slots)
+  }
+})
 
 const { isMobile, dialogFullscreen } = useResponsive()
 
@@ -223,7 +240,7 @@ defineExpose({ reload: loadPasskeys })
 </script>
 
 <template>
-  <el-card shadow="never">
+  <CardOrDiv>
     <template #header>
       <div class="card-header">
         <span class="card-title"><el-icon><Key /></el-icon> 通行密钥</span>
@@ -235,6 +252,15 @@ defineExpose({ reload: loadPasskeys })
         </div>
       </div>
     </template>
+
+    <div v-if="embedded" class="passkey-embedded__bar">
+      <div class="card-header-buttons">
+        <el-button :loading="loading" @click="loadPasskeys"><el-icon><Refresh /></el-icon>刷新</el-button>
+        <el-button type="primary" :disabled="!supported" @click="openAddDialog">
+          <el-icon><Plus /></el-icon>添加通行密钥
+        </el-button>
+      </div>
+    </div>
 
     <el-alert
       v-if="!supported"
@@ -255,7 +281,7 @@ defineExpose({ reload: loadPasskeys })
       <p>APP 端暂不支持通行密钥，仍用密码（和两步验证码）登录。</p>
     </div>
 
-    <div v-if="isMobile" class="dd-mobile-list">
+    <div v-if="isMobile" v-loading="loading" class="dd-mobile-list">
       <div v-for="row in passkeys" :key="row.id" class="dd-mobile-card">
         <div class="dd-mobile-card__header">
           <div class="dd-mobile-card__title-wrap">
@@ -302,12 +328,14 @@ defineExpose({ reload: loadPasskeys })
       </el-table-column>
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" text @click="handleRename(row)">重命名</el-button>
-          <el-button size="small" text type="danger" @click="handleDelete(row)">删除</el-button>
+          <div class="passkey-table-actions">
+            <el-button size="small" text @click="handleRename(row)">重命名</el-button>
+            <el-button size="small" text type="danger" @click="handleDelete(row)">删除</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
-  </el-card>
+  </CardOrDiv>
 
   <el-dialog
     v-model="showAddDialog"
@@ -358,6 +386,12 @@ defineExpose({ reload: loadPasskeys })
 <style scoped lang="scss">
 @use './config-card-shared.scss' as *;
 
+.passkey-embedded__bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
 .card-header-buttons {
   padding: 2px;
   // 按钮组的灰底槽 → control 档（与槽内按钮同档，圆角一致才不会露出内外错位的角）
@@ -365,6 +399,20 @@ defineExpose({ reload: loadPasskeys })
   background: color-mix(in srgb, var(--el-fill-color-light) 84%, transparent);
   display: flex;
   gap: 8px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
+.passkey-table-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .passkey-alert {
@@ -409,8 +457,14 @@ defineExpose({ reload: loadPasskeys })
   color: var(--el-text-color-secondary);
 }
 
-.passkey-card__actions > * {
-  flex: 1 1 auto;
+.passkey-card__actions {
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+
+  > * {
+    flex: 1 1 auto;
+  }
 }
 
 @media (max-width: 768px) {

@@ -5,6 +5,7 @@ import { Document, MagicStick, Setting, Upload } from '@element-plus/icons-vue'
 import type { SettingsConfigForm } from '../types'
 import { resolveConfigOptions, type ParsedSystemConfigItem } from '../systemConfigSchema'
 import { compressLogBackgroundImage, logBackgroundImageMaxBytes } from '../useSettingsConfig'
+import { useThemeStore } from '@/stores/theme'
 import { useUiStore } from '@/stores/ui'
 
 const timezoneOptions = [
@@ -36,6 +37,7 @@ const shapeStyleItem = computed(() => props.configSchema.panel_shape_style)
 const backgroundEffectItem = computed(() => props.configSchema.panel_background_effect)
 const backgroundImageItem = computed(() => props.configSchema.panel_background_image)
 
+const themeStore = useThemeStore()
 const ui = useUiStore()
 
 // 页面背景图上传：与日志背景图同一套格式、10MB 上限与自动压缩（compressLogBackgroundImage）。
@@ -76,10 +78,10 @@ function handlePanelBackgroundUpload(file: File) {
 
     <div class="config-section">
       <h4 class="section-title">面板设置</h4>
-      <!-- v4.0：风格、主色、玻璃模糊、密度、自定义 CSS 都在主题工坊里（管理员可「设为全站默认」），这里只留一句入口 -->
+      <!-- v4.0：风格、主色、背景、玻璃模糊、圆角、密度、动效、自定义 CSS 都在主题工坊里（管理员可「设为全站默认」），这里只留一句入口 -->
       <button type="button" class="studio-hint" @click="ui.openStudio()">
         <el-icon><MagicStick /></el-icon>
-        <span>更多外观（风格、主色、玻璃模糊、密度、自定义 CSS）在主题工坊，点这里打开</span>
+        <span>更多外观（风格、主色、背景、玻璃模糊、圆角、密度、动效、自定义 CSS）在主题工坊，点这里打开</span>
       </button>
       <div class="form-field">
         <label>面板标题</label>
@@ -138,6 +140,13 @@ function handlePanelBackgroundUpload(file: File) {
           />
         </el-select>
         <span v-if="shapeStyleItem.description" class="form-hint">{{ shapeStyleItem.description }}</span>
+        <!-- 本机在主题工坊单独调过圆角滑杆时，会压过全站 panel_shape_style；提示并提供一键恢复 -->
+        <div v-if="themeStore.isLocal('radius')" class="local-override-tip">
+          <span>本机已在主题工坊单独覆盖，当前修改仅影响未覆盖设备</span>
+          <el-button link type="primary" size="small" @click="themeStore.setRadius(null)">
+            恢复跟随全站
+          </el-button>
+        </div>
       </div>
       <!-- 页面背景效果（v4.0）：与圆角一样保存后生效，选项取服务端 schema -->
       <div v-if="backgroundEffectItem" class="form-field">
@@ -151,6 +160,12 @@ function handlePanelBackgroundUpload(file: File) {
           />
         </el-select>
         <span v-if="backgroundEffectItem.description" class="form-hint">{{ backgroundEffectItem.description }}</span>
+        <div v-if="themeStore.isLocal('background')" class="local-override-tip">
+          <span>本机已在主题工坊单独覆盖，当前修改仅影响未覆盖设备</span>
+          <el-button link type="primary" size="small" @click="themeStore.setBackground(null)">
+            恢复跟随全站
+          </el-button>
+        </div>
       </div>
       <div v-if="backgroundImageItem" class="form-field">
         <label>{{ backgroundImageItem.label }}</label>
@@ -292,12 +307,28 @@ function handlePanelBackgroundUpload(file: File) {
   }
 }
 
+.local-override-tip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: var(--dd-radius-control);
+  background: color-mix(in srgb, var(--dd-warn) 10%, var(--dd-surface-solid));
+  border: var(--dd-border-width, 1px) solid color-mix(in srgb, var(--dd-warn) 28%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dd-warn-ink);
+}
+
 .page-bg-preview {
   height: 96px;
   max-width: 400px;
   margin-bottom: 4px;
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--dd-border);
+  border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--dd-border-strong));
   background-color: var(--dd-surface-2);
   background-size: cover;
   background-position: center;
@@ -308,6 +339,10 @@ function handlePanelBackgroundUpload(file: File) {
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .log-bg-preview {

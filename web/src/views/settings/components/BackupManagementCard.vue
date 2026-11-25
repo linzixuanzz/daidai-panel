@@ -161,7 +161,7 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
       style="margin-bottom: 12px"
     />
 
-    <div v-if="isMobile" class="dd-mobile-list">
+    <div v-if="isMobile" v-loading="backupsLoading" class="dd-mobile-list">
       <div
         v-for="row in backups"
         :key="row.name"
@@ -180,7 +180,7 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
               <span class="dd-mobile-card__value">{{ formatSize(row.size) }}</span>
             </div>
           </div>
-          <div class="dd-mobile-card__actions backup-actions">
+          <div class="dd-mobile-card__actions">
             <el-button size="small" type="primary" plain @click="onDownloadBackup(row.name)">下载</el-button>
             <el-button size="small" type="success" plain @click="onRestoreBackup(row.name)">恢复</el-button>
             <el-button size="small" type="danger" plain @click="onDeleteBackup(row.name)">删除</el-button>
@@ -215,8 +215,8 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
       </el-table-column>
     </el-table>
 
-    <el-alert type="info" :closable="false" show-icon style="margin-top: 16px">
-      支持导入呆呆面板备份（`.tgz` / `.enc` / 旧版 `.json`）以及青龙面板导出的 `.tgz` 备份包
+    <el-alert type="info" :closable="false" show-icon style="margin-top: 16px" class="backup-format-alert">
+      支持导入呆呆面板备份（<code>.tgz</code> / <code>.enc</code> / 旧版 <code>.json</code>）以及青龙面板导出的 <code>.tgz</code> 备份包
     </el-alert>
 
     <el-divider />
@@ -285,23 +285,25 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
       <div class="schedule-selection">
         <label class="schedule-selection-title">定时备份内容</label>
         <div class="backup-selection-grid">
-          <label
+          <div
             v-for="option in backupSelectionOptions"
             :key="`schedule-${option.key}`"
             class="backup-selection-card"
             :class="{ 'is-active': backupScheduleSelection[option.key] }"
+            @click="updateBackupScheduleSelection(option.key, !backupScheduleSelection[option.key])"
           >
             <div class="backup-selection-card-header">
               <el-icon class="backup-selection-icon" :size="16"><component :is="option.icon" /></el-icon>
               <el-checkbox
                 :model-value="backupScheduleSelection[option.key]"
+                @click.stop
                 @update:model-value="updateBackupScheduleSelection(option.key, Boolean($event))"
               >
                 {{ option.title }}
               </el-checkbox>
             </div>
             <span class="backup-selection-hint">{{ option.description }}</span>
-          </label>
+          </div>
         </div>
       </div>
     </section>
@@ -311,23 +313,25 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
     <el-form :label-width="dialogFullscreen ? 'auto' : '100px'" :label-position="dialogFullscreen ? 'top' : 'right'">
       <el-form-item label="备份内容">
         <div class="backup-selection-grid">
-          <label
+          <div
             v-for="option in backupSelectionOptions"
             :key="option.key"
             class="backup-selection-card"
             :class="{ 'is-active': backupSelection[option.key] }"
+            @click="updateBackupSelection(option.key, !backupSelection[option.key])"
           >
             <div class="backup-selection-card-header">
               <el-icon class="backup-selection-icon" :size="16"><component :is="option.icon" /></el-icon>
               <el-checkbox
                 :model-value="backupSelection[option.key]"
+                @click.stop
                 @update:model-value="updateBackupSelection(option.key, Boolean($event))"
               >
                 {{ option.title }}
               </el-checkbox>
             </div>
             <span class="backup-selection-hint">{{ option.description }}</span>
-          </label>
+          </div>
         </div>
       </el-form-item>
       <el-form-item label="备份密码">
@@ -336,8 +340,8 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
       <el-form-item label="备份文件名">
         <el-input v-model="backupName" placeholder="可选，例如：周五全量备份" />
       </el-form-item>
-      <el-alert type="info" :closable="false" show-icon>
-        创建的备份默认导出为 `.tgz`，设置密码后会加密为 `.enc`；如果填写名称，系统会自动补全正确扩展名。
+      <el-alert type="info" :closable="false" show-icon class="backup-format-alert">
+        创建的备份默认导出为 <code>.tgz</code>，设置密码后会加密为 <code>.enc</code>；如果填写名称，系统会自动补全正确扩展名。
       </el-alert>
     </el-form>
     <template #footer>
@@ -386,7 +390,7 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
 @use './config-card-shared.scss' as *;
 
 .card-header-buttons,
-.backup-actions {
+:deep(.el-table) .backup-actions {
   padding: 2px;
   // 按钮组的灰底槽 → control 档（与槽内按钮同档，圆角一致才不会露出内外错位的角）
   border-radius: var(--dd-radius-control);
@@ -396,9 +400,23 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
   flex-wrap: wrap;
 }
 
-.backup-actions {
+.card-header-buttons :deep(.el-button + .el-button),
+:deep(.el-table) .backup-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+:deep(.el-table) .backup-actions {
   justify-content: center;
   flex-wrap: nowrap;
+}
+
+.backup-format-alert :deep(code) {
+  font-family: var(--dd-font-mono);
+  font-size: 0.92em;
+  padding: 1px 5px;
+  border-radius: var(--dd-radius-control);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
 }
 
 .backup-selection-grid {
@@ -412,7 +430,7 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
   flex-direction: column;
   gap: 4px;
   padding: 12px 14px;
-  border: 1px solid var(--el-border-color-light);
+  border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--el-border-color-light));
   // 备份内容的可选列表卡片属容器类表面 → surface 档
   border-radius: var(--dd-radius-surface);
   background: var(--el-fill-color-extra-light);
@@ -462,7 +480,7 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
   font-size: 11px;
   color: var(--el-text-color-secondary);
   line-height: 1.5;
-  margin-left: 46px;
+  margin-left: 0;
   white-space: normal;
 }
 
@@ -513,7 +531,7 @@ function updateBackupScheduleSelection(key: keyof BackupSelection, value: boolea
 }
 
 .schedule-field--switch {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .schedule-selection {

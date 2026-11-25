@@ -12,14 +12,22 @@
 // ============================================================================
 :root {
   // —— 主按钮（EP 的 .el-button--primary 实色款已接线）——
-  // 默认值与改动前逐项相同：底色 = 主色，悬停 / 按下 / 禁用沿用 EP 的 light-3 / dark-2 / light-5
+  // 悬停 / 按下往正文色方向微推（亮色加深、暗色提亮），避免 EP 默认 light-3 往白混导致亮色悬停对比度跌破 3:1；
+  // 禁用态保持实心底色并在 _ep-map.scss 统一降低透明度，避免 light-5 混白产生白字浅底失格。
   --dd-btn-primary-bg: var(--dd-accent);
   --dd-btn-primary-fg: var(--dd-on-accent);
-  --dd-btn-primary-hover-bg: var(--el-color-primary-light-3);
-  --dd-btn-primary-active-bg: var(--el-color-primary-dark-2);
-  --dd-btn-primary-disabled-bg: var(--el-color-primary-light-5);
+  --dd-btn-primary-hover-bg: color-mix(in srgb, var(--dd-btn-primary-bg) 85%, var(--dd-text));
+  --dd-btn-primary-active-bg: color-mix(in srgb, var(--dd-btn-primary-bg) 72%, var(--dd-text));
+  --dd-btn-primary-disabled-bg: var(--dd-btn-primary-bg);
   // 按钮圆角：默认就是控件档；素白取 pill 档（跟着全站圆角风格走，选了直角仍是直角）
   --dd-btn-radius: var(--dd-radius-control);
+
+  // —— 内部分隔线与密度行高（v4.0.1 解耦外框卡片边与内部分隔线）——
+  // 素白（clean）外框 --dd-border 为 transparent、晨雾（mist）亮色为 75% 白边，
+  // 若直接复用给弹窗头尾/卡片头/列表内线会导致分隔线隐身，故单列 --dd-divider。
+  --dd-divider: var(--dd-border);
+  // 表格单元格默认上下内边距（cozy 档）；compact / roomy 在 _switches.scss 覆盖
+  --dd-table-cell-py: 9px;
 
   // —— 页面大标题（.dd-page-header__title 已接线）——
   --dd-page-title-size: 22px;

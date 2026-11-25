@@ -31,9 +31,16 @@ import {
 const EDITOR_BACKGROUND_VAR = '--dd-editor-bg-color'
 const EDITOR_FOREGROUND_VAR = '--dd-editor-fg-color'
 
-/** 等宽字体栈与环境变量弹窗里的那份保持一致，避免同一份脚本在两处字形不同。 */
-const EDITOR_FONT_FAMILY =
+/** 等宽字体栈兜底值（当 --dd-font-mono 尚未解析或处于非浏览器环境时使用）。 */
+const FALLBACK_EDITOR_FONT_FAMILY =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace'
+
+/**
+ * 读取全站等宽字体令牌 `--dd-font-mono`，保证 CodeMirror、Monaco 与 MonacoDiff 使用同一字体栈。
+ */
+export function resolveCodeEditorFontFamily(): string {
+  return readRootCssVar('--dd-font-mono') || FALLBACK_EDITOR_FONT_FAMILY
+}
 
 /**
  * 语言名 → CodeMirror 语言扩展。
@@ -320,12 +327,12 @@ export function buildCodeEditorTheme(): Extension[] {
 
   const backgroundValue = `var(${EDITOR_BACKGROUND_VAR}, ${background})`
   const foregroundValue = `var(${EDITOR_FOREGROUND_VAR}, ${foreground})`
+  const fontFamily = resolveCodeEditorFontFamily()
   // 选区/行高亮沿用改造前 defineMonacoTheme 里那几条颜色，保持观感一致
   const selectionColor = dark ? '#134e4acc' : '#bfdbfe'
   const activeLineColor = dark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.04)'
   const gutterColor = dark ? '#6b7280' : '#94a3b8'
   const caretColor = dark ? '#34d399' : '#2563eb'
-  const panelBorder = dark ? '#374151' : '#e2e8f0'
   // 缩进参考线的颜色。刻意不从 --dd-editor-fg-color 派生：那是用户可配的任意颜色，
   // 想在它基础上叠透明度只能靠 color-mix()，旧一点的移动端浏览器不认、会静默变成没有线。
   // 改用「底色深就叠白、底色浅就叠黑」的低透明度覆盖 —— 和上面 activeLine / selectionMatch
@@ -362,12 +369,12 @@ export function buildCodeEditorTheme(): Extension[] {
         outline: 'none'
       },
       '&.cm-editor .cm-scroller': {
-        fontFamily: EDITOR_FONT_FAMILY,
+        fontFamily,
         lineHeight: '1.5',
         overflow: 'auto'
       },
       '&.cm-editor .cm-content': {
-        fontFamily: EDITOR_FONT_FAMILY,
+        fontFamily,
         padding: '8px 0',
         // 原生光标的颜色：编辑器刻意没启用 drawSelection（那会关掉原生选区，
         // 手机上的长按菜单与选择手柄就全没了），所以只能靠 caret-color 给光标上色。
@@ -406,12 +413,12 @@ export function buildCodeEditorTheme(): Extension[] {
         backgroundColor: dark ? 'rgba(234, 179, 8, 0.5)' : 'rgba(234, 179, 8, 0.6)'
       },
       // 搜索面板（Ctrl+F）用面板自身的令牌配色，不要跟着编辑器底色走：
-      // 用户可能把编辑器底色调成任意颜色，面板控件仍要保持可读。
+      // 用户可能把编辑器底色调成任意颜色，面板控件与边框仍要与当前面板主题保持一致、避免极性相反时串色。
       '&.cm-editor .cm-panels': {
         backgroundColor: 'var(--el-bg-color)',
         color: 'var(--el-text-color-primary)',
-        borderTop: `1px solid ${panelBorder}`,
-        borderBottom: `1px solid ${panelBorder}`
+        borderTop: '1px solid var(--dd-divider, var(--el-border-color-lighter))',
+        borderBottom: '1px solid var(--dd-divider, var(--el-border-color-lighter))'
       },
       '&.cm-editor .cm-textfield': {
         backgroundColor: 'var(--el-fill-color-blank)',
@@ -575,6 +582,16 @@ function toMonacoColor(value: string, fallback = '#000000'): string {
   return parseMonacoHex(value) ?? parseMonacoHex(fallback) ?? '#000000'
 }
 
+/** 将 CSS 颜色叠上指定透明度（0~1），转成 Monaco 可识别的 8 位十六进制。 */
+function toMonacoAlphaColor(value: string, alpha: number, fallback: string): string {
+  const baseHex = parseMonacoHex(value) ?? parseMonacoHex(fallback) ?? '#000000'
+  const rgbHex = baseHex.slice(0, 7)
+  const alphaByte = Math.max(0, Math.min(255, Math.round(alpha * 255)))
+    .toString(16)
+    .padStart(2, '0')
+  return `${rgbHex}${alphaByte}`
+}
+
 function parseMonacoHex(value: string): string | null {
   const text = (value || '').trim().toLowerCase()
 
@@ -649,6 +666,37 @@ export function defineMonacoTheme(monaco: MonacoThemeHost): MonacoThemeDescripto
   const background = toMonacoColor(rawBackground, getDefaultEditorBackgroundColor(dark))
   const foreground = toMonacoColor(rawForeground, getReadableTextColor(rawBackground))
 
+  // 查找框/浮层控件与 Diff 着色从当前面板主题令牌派生，使 Monaco 融入全部 7 套主题（明暗双态）
+  const panelDark = isPanelDarkMode()
+  const widgetBg = toMonacoColor(
+    readRootCssVar('--dd-overlay') || readRootCssVar('--dd-surface-solid'),
+    panelDark ? '#1e293b' : '#ffffff'
+  )
+  const widgetFg = toMonacoColor(
+    readRootCssVar('--dd-text'),
+    panelDark ? '#e5e7eb' : '#111827'
+  )
+  const widgetMutedFg = toMonacoColor(
+    readRootCssVar('--dd-text-3') || readRootCssVar('--dd-text-2'),
+    panelDark ? '#94a3b8' : '#64748b'
+  )
+  const widgetBorder = toMonacoColor(
+    readRootCssVar('--dd-divider') || readRootCssVar('--dd-border-strong'),
+    panelDark ? '#334155' : '#e2e8f0'
+  )
+  const inputBg = toMonacoColor(
+    readRootCssVar('--dd-surface-solid'),
+    panelDark ? '#0f172a' : '#ffffff'
+  )
+  const inputBorder = toMonacoColor(
+    readRootCssVar('--dd-border-strong') || readRootCssVar('--dd-divider'),
+    panelDark ? '#475569' : '#cbd5e1'
+  )
+  const accentRaw = readRootCssVar('--dd-accent') || (panelDark ? '#60a5fa' : '#2563eb')
+  const focusBorder = toMonacoColor(accentRaw, panelDark ? '#60a5fa' : '#2563eb')
+  const okRaw = readRootCssVar('--dd-ok') || (dark ? '#34d399' : '#16a34a')
+  const errRaw = readRootCssVar('--dd-err') || (dark ? '#f87171' : '#dc2626')
+
   const color = dark ? DARK_SYNTAX : LIGHT_SYNTAX
   // token 规则里的 foreground 按 Monaco 惯例写成不带 `#` 的 6 位裸 hex。
   // 截到 6 位是防御性的：调色板目前全是 6 位，将来谁加一条带透明度的进来，
@@ -717,7 +765,33 @@ export function defineMonacoTheme(monaco: MonacoThemeHost): MonacoThemeDescripto
       // Monaco 的 findMatch 指【当前那一个】匹配（对应 .cm-searchMatch-selected），
       // findMatchHighlight 才是其余匹配（对应 .cm-searchMatch）。接反了不报错，只是深浅颠倒。
       'editor.findMatchBackground': toMonacoColor(searchMatchSelectedColor),
-      'editor.findMatchHighlightBackground': toMonacoColor(searchMatchColor)
+      'editor.findMatchHighlightBackground': toMonacoColor(searchMatchColor),
+      // 查找替换浮层 / 悬浮提示 / 自动补全浮层：跟随面板当前主题的表面与分隔线令牌
+      'editorWidget.background': widgetBg,
+      'editorWidget.foreground': widgetFg,
+      'editorWidget.border': widgetBorder,
+      'editorHoverWidget.background': widgetBg,
+      'editorHoverWidget.foreground': widgetFg,
+      'editorHoverWidget.border': widgetBorder,
+      'editorSuggestWidget.background': widgetBg,
+      'editorSuggestWidget.foreground': widgetFg,
+      'editorSuggestWidget.border': widgetBorder,
+      'editorSuggestWidget.selectedBackground': toMonacoAlphaColor(accentRaw, panelDark ? 0.24 : 0.14, focusBorder),
+      'input.background': inputBg,
+      'input.foreground': widgetFg,
+      'input.border': inputBorder,
+      'input.placeholderForeground': widgetMutedFg,
+      'inputOption.activeBorder': focusBorder,
+      'inputOption.activeBackground': toMonacoAlphaColor(accentRaw, panelDark ? 0.24 : 0.14, focusBorder),
+      'focusBorder': focusBorder,
+      // Diff 对比增删高亮：按当前主题 --dd-ok / --dd-err 与编辑器明暗派生柔和半透底色
+      'diffEditor.insertedTextBackground': toMonacoAlphaColor(okRaw, dark ? 0.22 : 0.18, '#22c55e'),
+      'diffEditor.removedTextBackground': toMonacoAlphaColor(errRaw, dark ? 0.22 : 0.18, '#ef4444'),
+      'diffEditor.insertedLineBackground': toMonacoAlphaColor(okRaw, dark ? 0.14 : 0.11, '#22c55e'),
+      'diffEditor.removedLineBackground': toMonacoAlphaColor(errRaw, dark ? 0.14 : 0.11, '#ef4444'),
+      'diffEditor.border': widgetBorder,
+      'diffEditorGutter.insertedLineBackground': toMonacoAlphaColor(okRaw, dark ? 0.28 : 0.22, '#22c55e'),
+      'diffEditorGutter.removedLineBackground': toMonacoAlphaColor(errRaw, dark ? 0.28 : 0.22, '#ef4444')
     }
   }
 

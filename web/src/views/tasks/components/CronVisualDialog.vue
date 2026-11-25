@@ -424,6 +424,11 @@ function handleApply() {
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
+
+  // 间距统一交给 flex gap，清掉 EP 默认的相邻按钮 12px 左外边距
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 @media (max-width: 768px) {

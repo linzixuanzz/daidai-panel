@@ -1203,6 +1203,9 @@ function handlePullDialogClose() {
   // 后端拉取还在跑，这四个值是重新打开弹窗时 reattachPullStream 恢复现场的依据。
 }
 
+// 桌面表格实例：勾选态保存在 el-table 内部，「取消选择」与批量删除完成后需同步清空复选框
+const subTableRef = ref<any>(null);
+
 async function handleBatchDelete() {
   // 确认之前就把 ids 拷下来，确认框里的数量与真正发出去的请求用同一份：
   // 确认框开着的时候，在途的 loadData 回来可能已把 selectedIds 裁小甚至裁空，
@@ -1217,7 +1220,7 @@ async function handleBatchDelete() {
     );
     await subscriptionApi.batchDelete(ids);
     ElMessage.success("批量删除成功");
-    selectedIds.value = [];
+    clearSelection();
     loadData();
   } catch {
     /* cancelled */
@@ -1228,8 +1231,9 @@ function handleSelectionChange(rows: any[]) {
   selectedIds.value = rows.map((r) => r.id);
 }
 
-// 移动端批量栏「取消」：退出批量态。桌面不用它，el-table 的选择由表头复选框自己管。
+// 批量栏「取消选择 / 取消」：同时清桌面 el-table 内部勾选态与移动端 selectedIds。
 function clearSelection() {
+  subTableRef.value?.clearSelection?.();
   selectedIds.value = [];
 }
 
@@ -1452,29 +1456,44 @@ function viewLogDetail(log: any) {
     </div>
 
     <div v-else class="toolbar dd-rise" style="--dd-i: 0">
+      <!-- 按 design-system §4.2：左槽 1×1 网格叠放筛选区与批量栏，两支常驻 DOM 靠 visibility 切换，
+           勾选前后工具栏高度恒定，消除表格与右区按钮跳动。 -->
       <div class="toolbar__left">
-        <div class="status-tabs">
-          <button
-            v-for="tab in typeTabs"
-            :key="tab.value"
-            :class="['status-tab', { active: typeFilter === tab.value }]"
-            @click="handleTypeFilter(tab.value)"
+        <div class="toolbar__filters" :class="{ 'is-swapped-out': selectedIds.length > 0 }">
+          <div class="status-tabs">
+            <button
+              v-for="tab in typeTabs"
+              :key="tab.value"
+              :class="['status-tab', { active: typeFilter === tab.value }]"
+              @click="handleTypeFilter(tab.value)"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+          <el-input
+            v-model="keyword"
+            placeholder="搜索订阅名称或 URL"
+            clearable
+            class="toolbar__search"
+            @keyup.enter="handleSearch"
+            @clear="handleSearch"
           >
-            {{ tab.label }}
-          </button>
+            <template #prefix
+              ><el-icon><Search /></el-icon
+            ></template>
+          </el-input>
         </div>
-        <el-input
-          v-model="keyword"
-          placeholder="搜索订阅名称或 URL"
-          clearable
-          class="toolbar__search"
-          @keyup.enter="handleSearch"
-          @clear="handleSearch"
-        >
-          <template #prefix
-            ><el-icon><Search /></el-icon
-          ></template>
-        </el-input>
+        <div class="batch-actions" :class="{ 'is-swapped-out': selectedIds.length === 0 }">
+          <span class="batch-actions__count">已选 {{ selectedIds.length }} 项</span>
+          <el-button
+            type="danger"
+            :title="`批量删除已勾选的 ${selectedIds.length} 条订阅`"
+            @click="handleBatchDelete"
+          >
+            批量删除
+          </el-button>
+          <el-button @click="clearSelection">取消选择</el-button>
+        </div>
       </div>
       <div class="toolbar__right">
         <el-button @click="openSSHKeyManage" title="SSH 密钥管理">
@@ -1483,21 +1502,6 @@ function viewLogDetail(log: any) {
         <el-button @click="handleOpenSettings" title="订阅设置">
           <el-icon><Setting /></el-icon>
         </el-button>
-        <!-- 批量操作条：勾选后凭空插进来一个按钮，会把右边的「新建订阅」顶着往左跳一下。
-             包一层 opacity 过渡淡进淡出。刻意不做宽度/高度过渡——它在 .toolbar__right
-             的横向 flex 里，动尺寸会每帧推着相邻按钮走、带整行重排；opacity 不参与布局。 -->
-        <Transition name="dd-batch-bar">
-          <el-button
-            v-if="selectedIds.length > 0"
-            type="danger"
-            plain
-            size="small"
-            :title="`批量删除已勾选的 ${selectedIds.length} 条订阅`"
-            @click="handleBatchDelete"
-          >
-            <el-icon><Delete /></el-icon> 批量删除
-          </el-button>
-        </Transition>
         <el-button type="primary" @click="openCreate">
           <el-icon><Plus /></el-icon> 新建订阅
         </el-button>
@@ -1544,7 +1548,7 @@ function viewLogDetail(log: any) {
           <el-tag
             class="subscription-card__type-tag"
             size="small"
-            :type="row.type === 'git-repo' ? '' : 'warning'"
+            :type="row.type === 'git-repo' ? 'primary' : 'warning'"
             :title="row.type === 'git-repo' ? 'Git 仓库' : '单文件'"
           >
             {{ row.type === "git-repo" ? "Git" : "文件" }}
@@ -1666,6 +1670,7 @@ function viewLogDetail(log: any) {
 
     <div v-else class="table-card dd-spot dd-rise" style="--dd-i: 1">
       <el-table
+        ref="subTableRef"
         :data="filteredSubList"
         v-loading="loading"
         @selection-change="handleSelectionChange"
@@ -1700,7 +1705,7 @@ function viewLogDetail(log: any) {
               </span>
               <el-tag
                 size="small"
-                :type="row.type === 'git-repo' ? '' : 'warning'"
+                :type="row.type === 'git-repo' ? 'primary' : 'warning'"
                 round
               >
                 {{ row.type === "git-repo" ? "Git" : "文件" }}
@@ -1865,7 +1870,7 @@ function viewLogDetail(log: any) {
         v-model:page-size="pageSize"
         :total="total"
         :page-sizes="[20, 50, 100]"
-        layout="sizes, prev, pager, next"
+        :layout="isMobile ? 'prev, pager, next' : 'sizes, prev, pager, next'"
         @current-change="handlePageChange"
         @size-change="handlePageSizeChange"
       />
@@ -2264,8 +2269,44 @@ function viewLogDetail(log: any) {
       title="拉取日志"
       width="700px"
       :fullscreen="dialogFullscreen"
+      class="sub-log-list-dialog"
     >
-      <el-table :data="logList" v-loading="logLoading" max-height="400px">
+      <!-- 移动端全屏改用紧凑卡片列表，消除 400px 限高留白与 fixed=right 横向挤压；桌面保留表格 -->
+      <div v-if="isMobile" class="sub-log-mobile-list" v-loading="logLoading">
+        <div
+          v-for="row in logList"
+          :key="row.id || row.created_at"
+          class="sub-log-mobile-card"
+        >
+          <div class="sub-log-mobile-card__head">
+            <el-tag
+              size="small"
+              :type="row.status === 0 ? 'success' : 'danger'"
+            >
+              {{ row.status === 0 ? "成功" : "失败" }}
+            </el-tag>
+            <span class="sub-log-mobile-card__meta">
+              {{ formatDateTime(row.created_at) }} · {{ formatDuration(row.duration) }}
+            </span>
+            <el-button
+              size="small"
+              text
+              type="primary"
+              @click="viewLogDetail(row)"
+            >
+              查看
+            </el-button>
+          </div>
+          <div class="sub-log-mobile-card__content">
+            {{ row.content || "暂无日志摘要" }}
+          </div>
+        </div>
+        <el-empty
+          v-if="!logLoading && logList.length === 0"
+          description="暂无拉取日志"
+        />
+      </div>
+      <el-table v-else :data="logList" v-loading="logLoading" max-height="400px">
         <el-table-column label="状态" width="80">
           <template #default="{ row }">
             <el-tag
@@ -2326,6 +2367,7 @@ function viewLogDetail(log: any) {
       title="日志详情"
       width="900px"
       :fullscreen="dialogFullscreen"
+      class="sub-log-detail-dialog"
     >
       <pre
         class="pull-log-content dd-log-surface"
@@ -2343,6 +2385,7 @@ function viewLogDetail(log: any) {
       title="拉取日志"
       width="900px"
       :fullscreen="dialogFullscreen"
+      class="sub-log-detail-dialog"
       :close-on-click-modal="false"
       @close="handlePullDialogClose"
     >
@@ -2554,7 +2597,7 @@ function viewLogDetail(log: any) {
             :rows="8"
             :placeholder="isCreateSSHKey ? '粘贴 SSH 私钥内容' : '留空不修改'"
             spellcheck="false"
-            style="font-family: monospace"
+            style="font-family: var(--dd-font-mono)"
           />
         </el-form-item>
       </el-form>
@@ -2603,30 +2646,75 @@ function viewLogDetail(log: any) {
   }
 }
 
-// 工具条：与定时任务页/执行日志页对齐——上下统一间距、左右两区一行排布、gap 一致
+// 工具条：按 design-system §4.2，左槽 1×1 网格叠放筛选区与批量栏，两支常驻 DOM 靠 visibility 切换，
+// 勾选前后工具栏高度恒定，消除表格跳动。
 .toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin: 14px 0;
   gap: 12px;
   flex-wrap: wrap;
   &__left {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    flex: 1;
+    min-width: 0;
+    min-height: 39px;
+  }
+  &__filters {
     display: flex;
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
-    flex: 1;
     min-width: 0;
   }
   &__right {
     display: flex;
     align-items: center;
     gap: 10px;
+    min-height: 39px;
+
+    // 清零 EP 默认相邻按钮 12px 左外边距，间距统一由 gap 决定
+    :deep(.el-button + .el-button) {
+      margin-left: 0;
+    }
   }
   &__search {
     width: 260px;
   }
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 39px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
+.batch-actions__count {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.toolbar__filters,
+.batch-actions {
+  grid-area: 1 / 1;
+  min-width: 0;
+  transition: opacity var(--dd-motion-fast) var(--dd-ease-standard);
+}
+
+.is-swapped-out {
+  opacity: 0;
+  visibility: hidden;
 }
 
 // 状态分段控件：与定时任务页/执行日志页一致的分段容器 + 选中态白底品牌色 + 1px 边框
@@ -2801,20 +2889,8 @@ function viewLogDetail(log: any) {
 }
 
 :deep(.el-table) {
-  // 边框统一走令牌，明暗自动适配（原写死浅灰会在暗色串色）
-  --el-table-border-color: var(--el-border-color-lighter);
-  .el-table__header-wrapper th {
-    border-bottom: 1px solid var(--el-border-color-light);
-  }
-  .el-table__row td {
-    border-bottom: 1px solid var(--el-border-color-lighter);
-  }
-  .el-table__cell {
-    padding: 12px 0;
-  }
-  // 拉取日志「内容」列：已移除 show-overflow-tooltip（详情走「查看」按钮），
-  // 需自行补回单行截断，否则会退回 .el-table .cell 的 white-space: normal 换行，
-  // 长日志会把行高撑爆。
+  // 表线颜色与桌面单元格行高统一交由全局 global.scss + _switches.scss 密度令牌接管；
+  // 这里仅保留拉取日志「内容」列的单行截断规则。
   .log-content-cell .cell {
     white-space: nowrap;
     overflow: hidden;
@@ -2913,6 +2989,7 @@ function viewLogDetail(log: any) {
   font-size: 13px;
   line-height: 1.6;
   padding: 12px 16px;
+  margin: 0;
   // 拉取日志面板属容器类表面 → surface 档（弹窗 body 有内边距，不贴边，不会露角）
   border-radius: var(--dd-radius-surface);
   max-height: 560px;
@@ -2920,6 +2997,71 @@ function viewLogDetail(log: any) {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+// 移动端拉取日志列表与日志详情全屏弹窗：改为 flex 撑满全屏，取消 400px / 560px 限高截断
+:deep(.sub-log-list-dialog.is-fullscreen),
+:deep(.sub-log-detail-dialog.is-fullscreen) {
+  .el-dialog__body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .pull-log-content {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+.sub-log-mobile-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sub-log-mobile-card {
+  padding: 12px;
+  border-radius: var(--dd-radius-card);
+  border: 1px solid var(--dd-divider, var(--el-border-color-lighter));
+  background: var(--el-fill-color-lighter);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sub-log-mobile-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sub-log-mobile-card__meta {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--dd-font-mono);
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub-log-mobile-card__content {
+  font-family: var(--dd-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-regular);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+}
+
 .pull-log-line {
   white-space: pre-wrap;
   word-break: break-all;
@@ -2994,22 +3136,6 @@ function viewLogDetail(log: any) {
 
 .dd-status-switch-enter-from,
 .dd-status-switch-leave-to {
-  opacity: 0;
-}
-
-// 批量操作条进出场：只做 opacity。
-// 宽度/高度过渡会让这个按钮每帧推着右侧「新建订阅」移动、整行反复重排；
-// opacity 不参与布局计算，位置一次到位，只是内容淡进淡出。
-.dd-batch-bar-enter-active {
-  transition: opacity var(--dd-motion-fast) var(--dd-ease-decelerate);
-}
-
-.dd-batch-bar-leave-active {
-  transition: opacity var(--dd-motion-fast) var(--dd-ease-standard);
-}
-
-.dd-batch-bar-enter-from,
-.dd-batch-bar-leave-to {
   opacity: 0;
 }
 
@@ -3139,6 +3265,19 @@ function viewLogDetail(log: any) {
     h2 {
       font-size: 18px;
     }
+  }
+
+  // 移动端分页栏纵向堆叠居中，防止总条数与页码并排溢出
+  .pagination-bar {
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+  }
+
+  :deep(.sub-log-list-dialog.is-fullscreen) .pagination-container {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
   }
 
   // issue #144 / v3.3.2：横栏改回 12px 留白后，槽（.dd-mobile-bleed）在移动端吃 --dd-radius-button（16px），

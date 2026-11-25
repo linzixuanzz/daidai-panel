@@ -91,7 +91,7 @@
       </div>
     </div>
 
-    <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 2">
+    <div v-if="isMobile" v-loading="loading" class="dd-mobile-list dd-rise" style="--dd-i: 2">
       <div v-for="row in pagedApps" :key="row.id" class="dd-mobile-card">
         <div class="dd-mobile-card__header">
           <div class="dd-mobile-card__title-wrap">
@@ -217,7 +217,7 @@
           fontSize: '13px',
         }"
       >
-        <el-table-column prop="name" label="应用名称" min-width="180">
+        <el-table-column prop="name" label="应用名称" min-width="150">
           <template #default="{ row }">
             <div class="app-name-cell">
               <span
@@ -236,7 +236,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="API Key" min-width="220">
+        <el-table-column label="API Key" min-width="175">
           <template #default="{ row }">
             <div class="key-display">
               <code class="key-code">{{ maskKey(row.app_key) }}</code>
@@ -250,7 +250,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="App Secret" min-width="240">
+        <el-table-column label="App Secret" min-width="175">
           <template #default="{ row }">
             <div v-if="revealedSecrets[row.id]" class="key-display">
               <code class="key-code secret-code">{{
@@ -284,7 +284,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="权限" min-width="200">
+        <el-table-column label="权限" min-width="160">
           <template #default="{ row }">
             <el-tag
               v-for="s in parseScopesTags(row.scopes)"
@@ -303,10 +303,10 @@
         <el-table-column
           prop="call_count"
           label="今日调用"
-          width="90"
+          width="84"
           align="center"
         />
-        <el-table-column label="状态" width="80" align="center">
+        <el-table-column label="状态" width="72" align="center">
           <template #default="{ row }">
             <el-switch
               :model-value="row.enabled"
@@ -315,7 +315,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="170">
+        <el-table-column label="创建时间" width="156">
           <template #default="{ row }">
             <span class="time-text">{{
               row.created_at
@@ -328,11 +328,9 @@
              `.el-button + .el-button { margin-left: 12px }`，占掉 180px 列宽，
              而且「删除」和「编辑」并排、字号一样大，误点的代价却完全不同。
              改成 Split Button：主体是最常用的「编辑」，其余收进菜单，
-             删除标红并用分隔线隔开。列宽 180 → 130。 -->
-        <!-- fixed="right"：这张表列多（应用名/Key/Secret/权限/调用数/状态/创建时间），
-             1249px 视口下实测横向溢出 323px，不固定的话操作列整个被挤出可视区，
-             用户得先横向滚动才点得到。收窄列宽只是把溢出从 373 减到 323，治不了根。 -->
-        <el-table-column label="操作" width="130" align="center" fixed="right">
+             删除标红并用分隔线隔开。列宽 180 → 124。 -->
+        <!-- fixed="right"：这张表列多，窄桌面视口下固定操作列保证可点击。 -->
+        <el-table-column label="操作" width="124" align="center" fixed="right">
           <template #default="{ row }">
             <DdSplitButton
               label="编辑"
@@ -439,16 +437,8 @@
         </el-form-item>
         <el-form-item label="速率限制">
           <el-input-number v-model="form.rate_limit" :min="0" :max="10000" />
-          <span style="margin-left: 8px; color: var(--el-text-color-secondary)"
-            >次/小时，填 0 表示无限制</span
-          >
-          <div
-            style="
-              margin-top: 6px;
-              color: var(--el-text-color-secondary);
-              font-size: 12px;
-            "
-          >
+          <span class="rate-limit-unit">次/小时，填 0 表示无限制</span>
+          <div class="form-item-hint">
             调用次数按当天统计展示，每日会重新从 0 开始累计。
           </div>
         </el-form-item>
@@ -601,31 +591,76 @@
     <el-dialog
       v-model="logsDialogVisible"
       title="调用日志"
-      width="700px"
+      width="min(860px, 92vw)"
       :fullscreen="dialogFullscreen"
     >
-      <el-table :data="callLogs" size="small" max-height="400">
+      <!-- 移动端改用卡片视图并取消固定 max-height，避免全屏弹窗只占半屏且表格挤压横滚 -->
+      <div v-if="isMobile" v-loading="logsLoading" class="dd-mobile-list call-logs-mobile">
+        <div
+          v-for="(row, idx) in callLogs"
+          :key="row.id ?? idx"
+          class="dd-mobile-card"
+        >
+          <div class="dd-mobile-card__header">
+            <div class="dd-mobile-card__title-wrap">
+              <span class="dd-mobile-card__title call-log-endpoint">{{ row.endpoint }}</span>
+              <div class="dd-mobile-card__badges">
+                <el-tag size="small" type="info" effect="plain">{{ row.method }}</el-tag>
+                <el-tag
+                  size="small"
+                  :type="row.status >= 200 && row.status < 300 ? 'success' : row.status >= 400 ? 'danger' : 'warning'"
+                  effect="plain"
+                >
+                  {{ row.status }}
+                </el-tag>
+              </div>
+            </div>
+          </div>
+          <div class="dd-mobile-card__body">
+            <div class="dd-mobile-card__grid">
+              <div class="dd-mobile-card__field">
+                <span class="dd-mobile-card__label">耗时</span>
+                <span class="dd-mobile-card__value">{{ row.duration }} ms</span>
+              </div>
+              <div class="dd-mobile-card__field">
+                <span class="dd-mobile-card__label">IP</span>
+                <span class="dd-mobile-card__value">{{ row.ip || "-" }}</span>
+              </div>
+              <div class="dd-mobile-card__field dd-mobile-card__field--full">
+                <span class="dd-mobile-card__label">时间</span>
+                <span class="dd-mobile-card__value time-text">{{ formatDateTime(row.created_at) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <el-empty
+          v-if="!logsLoading && callLogs.length === 0"
+          description="暂无调用日志"
+        />
+      </div>
+
+      <el-table v-else :data="callLogs" v-loading="logsLoading" size="small" max-height="440">
         <el-table-column
           prop="endpoint"
           label="接口"
-          min-width="200"
+          min-width="180"
           show-overflow-tooltip
         />
-        <el-table-column prop="method" label="方法" width="80" />
+        <el-table-column prop="method" label="方法" width="76" />
         <el-table-column
           prop="status"
           label="状态码"
-          width="80"
+          width="76"
           align="center"
         />
         <el-table-column
           prop="duration"
           label="耗时(ms)"
-          width="90"
+          width="88"
           align="center"
         />
-        <el-table-column prop="ip" label="IP" width="140" />
-        <el-table-column prop="created_at" label="时间" width="170">
+        <el-table-column prop="ip" label="IP" width="128" />
+        <el-table-column prop="created_at" label="时间" width="160">
           <template #default="{ row }">
             {{ formatDateTime(row.created_at) }}
           </template>
@@ -681,6 +716,7 @@ const editingApp = ref<any>(null);
 const submitting = ref(false);
 const secretData = ref<any>({});
 const callLogs = ref<any[]>([]);
+const logsLoading = ref(false);
 const logTotal = ref(0);
 const logPage = ref(1);
 const currentLogAppId = ref(0);
@@ -1099,6 +1135,7 @@ const showLogs = (app: any) => {
 };
 
 const loadLogs = async () => {
+  logsLoading.value = true;
   try {
     const res = await openApiApi.callLogs(currentLogAppId.value, {
       page: logPage.value,
@@ -1108,6 +1145,8 @@ const loadLogs = async () => {
     logTotal.value = (res as any).total || 0;
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.error || "加载调用日志失败");
+  } finally {
+    logsLoading.value = false;
   }
 };
 
@@ -1153,8 +1192,13 @@ onMounted(loadApps);
   }
   .header-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     flex-shrink: 0;
+
+    :deep(.el-button + .el-button) {
+      margin-left: 0;
+    }
   }
 }
 
@@ -1177,19 +1221,24 @@ onMounted(loadApps);
   &__right {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
+
+    // 清零 EP 默认按钮左距，避免 320~375px 窄屏换行后与 gap 叠加或左偏裁切
+    :deep(.el-button + .el-button) {
+      margin-left: 0;
+    }
   }
   &__search {
     width: 260px;
   }
 }
 
-// 状态分段控件：与定时任务页/订阅页一致的分段容器；选中态靠底色+品牌色文字区分，不再用阴影浮起
+// 状态分段控件：接入排版级 --dd-seg-* 令牌（素白自动切胶囊底槽+白色滑块）
 .status-tabs {
   display: inline-flex;
-  background: var(--el-fill-color-light);
-  // 分段控件的灰底槽属控件类表面 → control 档（与槽内的项同档，两者一致才不会露出内外错位的角）
-  border-radius: var(--dd-radius-control);
+  background: var(--dd-seg-bg);
+  border-radius: var(--dd-seg-radius);
   padding: 3px;
   gap: 2px;
 }
@@ -1201,34 +1250,36 @@ onMounted(loadApps);
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  // 分段项属控件类表面 → control 档
-  border-radius: var(--dd-radius-control);
-  border: none;
+  border-radius: var(--dd-seg-radius);
+  border: 1px solid transparent;
   background: transparent;
-  color: var(--el-text-color-secondary);
+  color: var(--dd-seg-fg);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition:
     color var(--dd-motion-fast) var(--dd-ease-standard),
-    background-color var(--dd-motion-fast) var(--dd-ease-standard);
+    background-color var(--dd-motion-fast) var(--dd-ease-standard),
+    border-color var(--dd-motion-fast) var(--dd-ease-standard);
   white-space: nowrap;
   &:hover {
     color: var(--el-text-color-primary);
   }
   &.active {
-    background: var(--el-bg-color);
-    color: var(--dd-accent-ink);
+    background: var(--dd-seg-thumb-bg);
+    box-shadow: var(--dd-seg-thumb-shadow);
+    border-color: var(--el-border-color-lighter);
+    color: var(--dd-seg-active-fg);
     font-weight: 600;
   }
 }
 
-// 表格卡：1px 边框划分层次，不再用阴影浮起（本页为滚动页，无需 fixed 高度链）
+// 表格卡：描边宽走主题令牌，不再用阴影浮起（本页为滚动页，无需 fixed 高度链）
 .table-card {
   background: var(--el-bg-color);
   // 表格容器属容器类表面 → surface 档；overflow:hidden 让内部贴边的表头/行自动被圆角裁角
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
   overflow: hidden;
 }
 
@@ -1288,6 +1339,10 @@ onMounted(loadApps);
   display: flex;
   align-items: center;
   gap: 6px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .key-code {
@@ -1297,7 +1352,7 @@ onMounted(loadApps);
   padding: 4px 8px;
   // 表格内的 key 展示块是行内小型交互块（可复制），归控件类 → control 档
   border-radius: var(--dd-radius-control);
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--el-border-color-lighter));
   font-family: var(--dd-font-mono);
   flex: 1;
   min-width: 0;
@@ -1315,26 +1370,12 @@ onMounted(loadApps);
 
 .copy-btn {
   flex-shrink: 0;
-  border: 1px solid var(--el-border-color);
+  border: var(--dd-border-width, 1px) solid var(--el-border-color);
   background: var(--el-fill-color-blank);
   &:hover {
     color: var(--dd-accent-ink);
     border-color: var(--el-color-primary-light-5);
     background: var(--el-color-primary-light-9);
-  }
-}
-
-:deep(.el-table) {
-  // 边框统一走令牌，明暗自动适配（原写死浅灰会在暗色串色）
-  --el-table-border-color: var(--el-border-color-lighter);
-  .el-table__header-wrapper th {
-    border-bottom: 1px solid var(--el-border-color-light);
-  }
-  .el-table__row td {
-    border-bottom: 1px solid var(--el-border-color-lighter);
-  }
-  .el-table__cell {
-    padding: 12px 0;
   }
 }
 
@@ -1359,13 +1400,13 @@ onMounted(loadApps);
 }
 
 .info-card {
-  // 信息卡：1px 边框，色面走令牌明暗自动适配；hover 只加深描边，不上浮
+  // 信息卡：描边宽走主题令牌，色面走令牌明暗自动适配；hover 只加深描边，不上浮
   background: var(--el-bg-color);
   transition: border-color var(--dd-motion-fast) var(--dd-ease-standard);
   // 信息卡属容器类表面 → surface 档
   border-radius: var(--dd-radius-surface);
   padding: 24px;
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
 
   &:hover {
     border-color: color-mix(
@@ -1427,14 +1468,14 @@ onMounted(loadApps);
   // 弹窗内的密钥展示区块属容器类表面 → surface 档
   border-radius: var(--dd-radius-surface);
   padding: 20px;
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--el-border-color-lighter));
 }
 
 .secret-row {
   &:not(:last-child) {
     margin-bottom: 16px;
     padding-bottom: 16px;
-    border-bottom: 1px dashed var(--el-border-color-lighter);
+    border-bottom: 1px dashed var(--dd-divider, var(--el-border-color-lighter));
   }
 }
 
@@ -1451,7 +1492,7 @@ onMounted(loadApps);
   align-items: center;
   gap: 8px;
   background: var(--el-fill-color-blank);
-  border: 1px solid var(--el-border-color);
+  border: var(--dd-border-width, 1px) solid var(--el-border-color);
   // 只读取值框（外观等同 input，且卡片有 20px 内边距不贴边）→ control 档
   border-radius: var(--dd-radius-control);
   padding: 10px 12px;
@@ -1463,6 +1504,26 @@ onMounted(loadApps);
   font-family: var(--dd-font-mono);
   word-break: break-all;
   line-height: 1.5;
+}
+
+.rate-limit-unit {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+}
+
+// 速率限制提示行：el-form-item__content 为 flex + wrap，必须占满整行避免挤在输入框右侧
+.form-item-hint {
+  flex: 0 0 100%;
+  width: 100%;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+}
+
+.call-log-endpoint {
+  font-family: var(--dd-font-mono);
+  word-break: break-all;
 }
 
 // 触发链接弹窗里的说明文字：警告条正文 + 各表单项下的补充说明
@@ -1480,6 +1541,14 @@ onMounted(loadApps);
   // 独立成段的前置条件说明（不跟在某个表单项下面），上方留出与卡片的间距
   &--block {
     margin-top: 16px;
+  }
+}
+
+.open-api-card__actions {
+  flex-wrap: wrap;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
   }
 }
 
@@ -1550,37 +1619,5 @@ onMounted(loadApps);
   .info-cards {
     grid-template-columns: 1fr;
   }
-}
-
-// ===== 入场动画 =====
-// 与定时任务页/订阅页统一：只对卡片级容器（工具条 / 表格卡 / 移动列表）做克制的淡入上移 + 轻微错落；
-// 不给表格每一行或每张移动卡做 stagger。时长走令牌，prefers-reduced-motion 时令牌自动降为 1ms 即等效关闭。
-@keyframes dd-openapi-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-// .info-cards 是本页唯一还没入场的卡片级容器（安全建议 / 开发者文档两张说明卡）。
-// 它跟表格卡是同一层级的内容块，漏掉它会让页面下半截显得是「另一张页面拼上来的」。
-.toolbar,
-.table-card,
-.dd-mobile-list,
-.info-cards {
-  animation: dd-openapi-rise-in var(--dd-motion-page) var(--dd-ease-decelerate)
-    both;
-}
-
-// 轻微错落：工具条先入，表格卡/移动列表/说明卡略晚。
-// 只分两档、间隔 60ms —— 不给表格每一行做 stagger（行多会卡，且是设计系统硬约束）。
-.table-card,
-.dd-mobile-list,
-.info-cards {
-  animation-delay: 60ms;
 }
 </style>

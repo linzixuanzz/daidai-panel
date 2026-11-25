@@ -72,6 +72,7 @@ const selectedSummaryItems = computed(() => {
   if (restoreSelection.value.scripts) items.push('脚本')
   if (restoreSelection.value.logs) items.push('日志')
   if (restoreSelection.value.dependencies) items.push('依赖')
+  if (restoreSelection.value.task_views) items.push('任务视图')
   return items
 })
 
@@ -87,7 +88,8 @@ const restoreSteps = computed<RestoreStep[]>(() => {
     restoreSelection.value.configs ||
     restoreSelection.value.tasks ||
     restoreSelection.value.subscriptions ||
-    restoreSelection.value.env_vars
+    restoreSelection.value.env_vars ||
+    restoreSelection.value.task_views
 
   const hasFiles =
     restoreSelection.value.scripts ||
@@ -102,6 +104,7 @@ const restoreSteps = computed<RestoreStep[]>(() => {
   if (restoreSelection.value.tasks) writeHintParts.push('任务定义')
   if (restoreSelection.value.subscriptions) writeHintParts.push('订阅与 SSH 密钥')
   if (restoreSelection.value.env_vars) writeHintParts.push('环境变量')
+  if (restoreSelection.value.task_views) writeHintParts.push('任务视图')
 
   const settleHintParts: string[] = []
   if (restoreSelection.value.scripts) settleHintParts.push('脚本文件')
@@ -387,7 +390,7 @@ onBeforeUnmount(() => {
         </span>
       </div>
 
-      <div class="restore-progress-steps">
+      <div class="restore-progress-steps" :class="{ 'is-single': restoreSteps.length === 1 }">
         <div
           v-for="(step, index) in restoreSteps"
           :key="step.key"
@@ -492,8 +495,17 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   border-radius: 50%;
+  // 副光弧走主题混色，避免亮色下硬编码纯白与卡片底色融在一起
   background:
-    conic-gradient(from 210deg, transparent 0deg, transparent 42deg, var(--dd-restore-accent) 120deg, transparent 188deg, rgba(255, 255, 255, 0.8) 320deg, transparent 360deg);
+    conic-gradient(
+      from 210deg,
+      transparent 0deg,
+      transparent 42deg,
+      var(--dd-restore-accent) 120deg,
+      transparent 188deg,
+      color-mix(in srgb, var(--dd-restore-accent) 42%, transparent) 320deg,
+      transparent 360deg
+    );
   filter: blur(0.4px);
   animation: restore-spin 5s linear infinite;
 }
@@ -555,6 +567,9 @@ onBeforeUnmount(() => {
 
   h3 {
     margin: 8px 0 10px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     font-size: 24px;
     line-height: 1.2;
     color: var(--el-text-color-primary);
@@ -622,14 +637,15 @@ onBeforeUnmount(() => {
   height: 100%;
   // 进度条填充跟随轨道 → pill 档
   border-radius: var(--dd-radius-pill);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--dd-restore-accent) 82%, white), var(--dd-restore-accent));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--dd-restore-accent) 82%, var(--dd-surface-solid)), var(--dd-restore-accent));
   transition: width 0.45s ease;
 
   &::after {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    // 流光高光走主题正文色混色，适配明暗双态而不写死纯白
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--dd-text) 28%, transparent), transparent);
     transform: translateX(-100%);
     animation: restore-shimmer 1.8s ease-in-out infinite;
   }
@@ -639,11 +655,18 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
   margin-top: 12px;
   font-size: 13px;
   color: var(--el-text-color-secondary);
 
+  span {
+    flex: 1;
+    min-width: 0;
+  }
+
   strong {
+    flex-shrink: 0;
     font-size: 15px;
     color: var(--dd-restore-accent-ink);
   }
@@ -659,8 +682,9 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
   min-height: 34px;
-  padding: 0 14px;
+  padding: 6px 14px;
   // 恢复目标标签（不是状态灯）→ control 档
   border-radius: var(--dd-radius-control);
   font-size: 12px;
@@ -668,17 +692,25 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-primary);
   background: var(--el-fill-color-lighter);
   border: 1px solid var(--el-border-color-lighter);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 
   .el-icon {
+    flex-shrink: 0;
     color: var(--dd-restore-accent);
     font-size: 13px;
   }
 }
 
+// 步进卡按实际步骤数自适应：单步全宽，多步自动 2~3 列排布，不再 5 列压成 82px
 .restore-progress-steps {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
+
+  &.is-single {
+    grid-template-columns: 1fr;
+  }
 }
 
 .restore-step {

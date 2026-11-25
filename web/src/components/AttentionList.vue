@@ -247,10 +247,10 @@ function openDependency(item: AttentionItem) {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  // 列表里的内嵌块：低卡片一档 → surface 档
+  // 列表里的内嵌块：低卡片一档 → surface 档；边框用内部分隔线令牌避免素白/晨雾亮色隐身
   border-radius: var(--dd-radius-surface);
   background: var(--dd-surface-2);
-  border: var(--dd-border-width, 1px) solid var(--dd-border);
+  border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--dd-border-strong));
 }
 
 .attn-row__icon {

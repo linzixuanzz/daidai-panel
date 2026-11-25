@@ -143,15 +143,17 @@ watch(() => [props.keyword, props.level, props.lines], () => {
             恢复默认视图
           </el-button>
         </div>
-        <el-button @click="onRefresh">
-          <el-icon><Refresh /></el-icon>刷新
-        </el-button>
-        <el-button :disabled="logs.length === 0" @click="onCopy">
-          <el-icon><CopyDocument /></el-icon>复制
-        </el-button>
-        <el-button :disabled="logs.length === 0" @click="onDownload">
-          <el-icon><Download /></el-icon>下载
-        </el-button>
+        <div class="panel-log-toolbar__ops">
+          <el-button @click="onRefresh">
+            <el-icon><Refresh /></el-icon>刷新
+          </el-button>
+          <el-button :disabled="logs.length === 0" @click="onCopy">
+            <el-icon><CopyDocument /></el-icon>复制
+          </el-button>
+          <el-button :disabled="logs.length === 0" @click="onDownload">
+            <el-icon><Download /></el-icon>下载
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -170,7 +172,7 @@ watch(() => [props.keyword, props.level, props.lines], () => {
 .panel-log-card {
   // 卡片本体属容器类表面 → surface 档
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
 }
 
 .panel-log-card__meta {
@@ -193,37 +195,69 @@ watch(() => [props.keyword, props.level, props.lines], () => {
   background: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
 }
 
+// 双行 Flex 换行布局：筛选行与操作行解耦，防止 769~1366px 中等屏宽下操作按钮压垮搜索框或横向溢出
 .panel-log-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) 180px 140px auto;
-  gap: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
   margin-bottom: 16px;
 }
 
 .panel-log-toolbar__search {
-  min-width: 0;
+  flex: 1 1 220px;
+  min-width: 180px;
 }
 
 .panel-log-toolbar__select {
-  width: 100%;
+  flex: 0 0 160px;
+  width: 160px;
+
+  &--lines {
+    flex-basis: 136px;
+    width: 136px;
+  }
 }
 
 .panel-log-toolbar__actions {
-  padding: 4px;
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 4px 6px;
   // 按钮组的灰底槽 → control 档（与槽内按钮同档，圆角一致才不会露出内外错位的角）
   border-radius: var(--dd-radius-control);
   background: color-mix(in srgb, var(--el-fill-color-light) 84%, transparent);
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   flex-wrap: wrap;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .panel-log-toolbar__presets {
   display: inline-flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
+.panel-log-toolbar__ops {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .panel-log-view {
@@ -252,12 +286,20 @@ watch(() => [props.keyword, props.level, props.lines], () => {
 }
 
 @media (max-width: 768px) {
-  .panel-log-toolbar {
-    grid-template-columns: 1fr;
+  .panel-log-toolbar__search,
+  .panel-log-toolbar__select,
+  .panel-log-toolbar__select--lines {
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   .panel-log-toolbar__actions {
-    justify-content: stretch;
+    justify-content: flex-start;
+  }
+
+  .panel-log-toolbar__ops {
+    margin-left: 0;
+    width: 100%;
   }
 
   .panel-log-view {

@@ -46,14 +46,11 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const { isMobile, width: viewportWidth } = useResponsive()
-// 窄桌面：还没到移动端卡片布局，但表格已经装不下全部列。
-// 1600 这个阈值来自实测：固定宽列合计 930px，加上三个弹性列的 min-width 230px 共 1160px，
-// 再算上侧栏 218px 与 .layout-main 的左右 20px 内边距，窗口宽 <1600 时弹性列就开始被压到下限，
-// 命令/标签/定时规则接连换行，行高从 ~50px 涨到 100~190px（1280×720 下只剩 3~4 行可见）。
-// 典型受害者是 14 寸笔记本 1920×1080 + 150% 系统缩放 = 等效 1280×720。
-// v3.3.8（issue #163）把「最后运行」「下次运行」两列（各 160）合成一列「运行时间」（184），宽桌面固定列少了 136px；
-// 阈值没跟着重算，仍按 1600 切换——窄桌面要省的主要是「耗时」与名称标签，这条线本身没变。
-const isNarrowDesktop = computed(() => !isMobile.value && viewportWidth.value < 1600)
+// 窄桌面：还没到移动端卡片布局，但表格已经装不下宽桌全部列（含「最近 20 次」与「耗时」）。
+// 1760 阈值来自实测：v4.0 新增「最近 20 次」（124px）与展开列（32px）后，宽桌固定列合计超过 1020px，
+// 算上侧栏 218px 与 .layout-main 左右 20px 内边距，1600~1759px 下仍会把名称/命令列挤得偏窄；
+// 提高至 1760 后，1600px 级桌面默认走窄桌精简列，宽屏再放出「最近 20 次」与「耗时」。
+const isNarrowDesktop = computed(() => !isMobile.value && viewportWidth.value < 1760)
 const { isPageActive, isViewActive } = usePageActivity()
 let statusTimer: ReturnType<typeof setInterval> | null = null
 // 列表请求序号闸。loadTasks 在整页十几处被调用（切视图 / 分组、翻页、筛选、排序、增删改后重拉、keep-alive 回页……），
@@ -2140,21 +2137,17 @@ async function handleImport(event: Event) {
       >
         <!-- 展开行（v4.0 F5）：健康画像。组件只在展开时挂载，收起即卸载，不会在后台取数。
              同一时刻只展开一行（handleExpandChange）；有展开行时拖拽排序暂停（理由见 dragSortDisabledReason）。 -->
-        <el-table-column type="expand" width="32" class-name="task-expand-col">
+        <el-table-column type="expand" :width="isNarrowDesktop ? 28 : 32" class-name="task-expand-col">
           <template #default="{ row }">
             <div class="task-expand-body">
               <TaskHealthPanel :task-id="row.id" />
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="canOperateTasks" type="selection" width="40" />
-        <!-- 拖拽列：40px，与环境变量页同宽同形（那边是 .env-drag-col）。
-             只对有操作权限的账号渲染 —— 观察者拖不动，也不该白吃这 40px 列宽
-             （窄桌面三个弹性列已经在抢像素了）。
-             手柄按 sortableEnabled 置灰：按列排序 / 视图自带排序 / 只有一行 / 有任务正在运行时，
-             拖出来的位置要么刷新就被排序规则覆盖回去，要么落点根本算错（理由见 dragSortDisabledReason），
-             所以直接禁掉并用 tooltip 说明原因与出路。 -->
-        <el-table-column v-if="canOperateTasks" width="40" align="center" class-name="task-drag-col">
+        <el-table-column v-if="canOperateTasks" type="selection" :width="isNarrowDesktop ? 34 : 40" />
+        <!-- 拖拽列：宽桌 40px、窄桌略收至 32px，把省出的像素让给任务名称列。
+             只对有操作权限的账号渲染 —— 观察者拖不动，也不该白吃这列宽。 -->
+        <el-table-column v-if="canOperateTasks" :width="isNarrowDesktop ? 32 : 40" align="center" class-name="task-drag-col">
           <template #default>
             <el-tooltip :content="dragSortHint" placement="top">
               <el-icon class="task-drag-handle" :class="{ 'is-disabled': !sortableEnabled }"><Rank /></el-icon>
@@ -2162,9 +2155,8 @@ async function handleImport(event: Event) {
           </template>
         </el-table-column>
         <!-- 三个弹性列按 min-width 的比例瓜分剩余宽度（EP 的分配规则）。
-             窄桌面改成 90 : 70 : 95：cron 表达式长度固定且短，全显出来价值最高；
-             命令是长路径，任何窄宽度下都得省略，让它少分一点最划算。 -->
-        <el-table-column label="任务名称" :min-width="isNarrowDesktop ? 90 : 80">
+             窄桌面把任务名称保底提至 140px，避免 1024px 级窗口下被挤压成 66px 读不清标题。 -->
+        <el-table-column label="任务名称" :min-width="isNarrowDesktop ? 140 : 120">
           <template #default="{ row }">
             <div class="task-name-cell">
               <div class="task-name-info">
@@ -2240,9 +2232,9 @@ async function handleImport(event: Event) {
             <span v-else class="text-muted">{{ getTaskTypeLabel(row.task_type) }}</span>
           </template>
         </el-table-column>
-        <!-- 窄桌面把「状态」「上次结果」收到刚好装下标签的宽度，省出的 36px 还给
-             名称/命令/定时规则三个弹性列，让 cron 表达式尽量不被省略号截断 -->
-        <el-table-column label="状态" :width="isNarrowDesktop ? 90 : 110" align="center">
+        <!-- 窄桌面把「状态」「运行时间」「上次结果」「操作」适当收紧，配合 compact 单元格左右 8px 内边距，
+             把省出的像素让给名称/命令/定时规则三个弹性列，缓解 1024px 级窗口的表格横向溢出 -->
+        <el-table-column label="状态" :width="isNarrowDesktop ? 82 : 110" align="center">
           <template #default="{ row }">
             <!-- 3 秒一轮的状态轮询会让这枚 tag 在 禁用中/排队中/运行中/空闲中 之间来回跳，
                  硬切时用户只看到文字忽然变了、不确定是自己看花眼还是真的变了。
@@ -2262,17 +2254,11 @@ async function handleImport(event: Event) {
           </template>
         </el-table-column>
         <!-- 「运行时间」（issue #163）：原来的「最后运行」「下次运行」两列合成一列，单元格上下两行「上次 / 下次」。
-             原先窄桌面（<1600px）为省宽把「最后运行」整列 v-if 掉了，报告人在窄屏上就看不到上次运行；
-             合并后一列 184px 两档桌面都显示。宽度这么算：一行最长是「下次」(12px×2=24) + 间距 6 +
-             `MM-DD HH:mm:ss` 14 个等宽字符（JetBrains Mono 13px 约 7.8px/字，≈109）+ 间距 4 + schedule_hint 图标 14 ≈ 157px，
-             再加 .cell 左右各 12px 内边距 = 181px，取 184 留一点字体回落的余量；两行都 nowrap，宁可贴边也不折行。
-             比原来窄桌面单列「下次运行」的 160 多 24px，宽桌面则比两列合计 320 省出 136px。
-             sortable="custom" = 只出箭头、排序交给后端；prop 用 next_run_at（后端 sort_rules 的 field 名），
-             @sort-change 把它写进 quickSort（不另起一份排序状态）。按最后运行排序走工具栏排序下拉（quickSortOptions 的 last_run_* 两项）。 -->
+             宽桌面 184px；窄桌面配合紧凑字号与左右 8px 内边距收到 168px，仍保证单行不折行。 -->
         <el-table-column
           prop="next_run_at"
           label="运行时间"
-          width="184"
+          :width="isNarrowDesktop ? 168 : 184"
           align="center"
           sortable="custom"
         >
@@ -2303,7 +2289,7 @@ async function handleImport(event: Event) {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="上次结果" :width="isNarrowDesktop ? 84 : 100" align="center">
+        <el-table-column label="上次结果" :width="isNarrowDesktop ? 76 : 100" align="center">
           <template #default="{ row }">
             <div class="last-run-result">
               <!-- 同一轮轮询里，任务跑完的那一刻这里会从「未运行」翻成「成功 / 失败 / 已终止」，
@@ -2555,27 +2541,22 @@ async function handleImport(event: Event) {
   }
 }
 
-// 状态分段控件：对齐全站统一的 .dd-seg-group / .dd-seg-btn 观感（灰底槽 + 选中态白底品牌色 + 1px 描边）
+// 状态分段控件：统一接入 --dd-seg-* 排版级令牌，与全站 .dd-seg-group / .dd-seg-btn 保持同源观感
 .status-tabs {
   display: inline-flex;
-  background: var(--el-fill-color-light);
-  // 灰底槽取 control 档，与全站通用类 .dd-seg-group 以及槽内的 .status-tab 同档。
-  // 为什么不是 surface：槽 padding 3px，内侧曲率 = 槽圆角 - 3px。
-  // 槽取 control(6px) 时内侧曲率 3px < 项的 6px，选中项的白底角始终落在槽内侧曲线之内；
-  // 槽取 surface(10px) 时内侧曲率 7px > 6px，选中项的角会略微越过内侧曲线露出错位，方向是反的。
-  border-radius: var(--dd-radius-control);
+  background: var(--dd-seg-bg);
+  border-radius: var(--dd-seg-radius);
   padding: 3px;
   gap: 2px;
 }
 
 .status-tab {
   padding: 6px 14px;
-  // 槽内的分段项 → control 档，与灰底槽同档（理由见上面 .status-tabs 的注释）
-  border-radius: var(--dd-radius-control);
+  border-radius: var(--dd-seg-radius);
   // 透明描边占位，选中时只换 border-color，避免出现 1px 的尺寸跳动
   border: 1px solid transparent;
   background: transparent;
-  color: var(--dd-text-2);
+  color: var(--dd-seg-fg, var(--dd-text-2));
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -2590,9 +2571,10 @@ async function handleImport(event: Event) {
   }
 
   &.active {
-    background: var(--dd-surface-solid);
-    color: var(--dd-accent-ink);
-    border-color: var(--dd-border);
+    background: var(--dd-seg-thumb-bg);
+    box-shadow: var(--dd-seg-thumb-shadow);
+    color: var(--dd-seg-active-fg);
+    border-color: var(--el-border-color-lighter);
     font-weight: 600;
   }
 }
@@ -2611,11 +2593,13 @@ async function handleImport(event: Event) {
   // 39px 本来就是左槽的 min-height，补上不会改变左槽高度，高度不变式照旧成立。
   min-height: 39px;
 
-  // 窄桌面再收 2px 间距。短文案之后 1280px 下实测内容宽 711.4px、左槽 712.1px，只剩 0.7px 余量，
-  // 窗口再窄 1px 就换行；这一排是 9 个子项 8 个 gap，8px→6px 省出 16px，余量回到约 16.7px。
-  // 判定源与短文案共用 isNarrowDesktop：文案长短是 JS 算的，媒体查询没法跟着它走。
-  // 注意对有操作权限的账号它【常驻 DOM】（见模板注释），所以哪怕没勾选，这一排也在按当前文案长度参与撑高左槽 ——
-  // 这正是勾选前后工具栏等高的原因，不是多余开销；观察者那边整支被 v-if 掉，不会白撑这份高度。
+  // 清掉 EP 默认 `.el-button + .el-button { margin-left: 12px }`，立即回收 7×12=84px，
+  // 消除 1280px 下的永久双行与折行后首项缩进 12px
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+
+  // 窄桌面再收 2px 间距。判定源与短文案共用 isNarrowDesktop：文案长短是 JS 算的，媒体查询没法跟着它走。
   &.is-narrow {
     gap: 6px;
   }
@@ -2675,12 +2659,13 @@ async function handleImport(event: Event) {
   opacity: 0;
 }
 
-// 表格卡：无阴影，仅靠 1px 边框与页面底色区分（dd-fixed-page 下的 flex:1 + 内部滚动由全局规则接管）
+// 表格卡：吃主题描边宽度与卡片阴影（dd-fixed-page 下的 flex:1 + 内部滚动由全局规则接管）
 .table-card {
   background: var(--dd-surface-solid);
   // 表格容器 → surface 档
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--dd-border);
+  border: var(--dd-border-width, 1px) solid var(--dd-border);
+  box-shadow: var(--dd-shadow-card);
   overflow: hidden;
 }
 
@@ -2941,19 +2926,19 @@ async function handleImport(event: Event) {
 }
 
 :deep(.el-table) {
-  // 边框统一走令牌，明暗自动适配（原写死浅灰会在暗色串色）
-  --el-table-border-color: var(--dd-border);
+  // 行分隔线走内部分隔线令牌 --dd-divider，避免素白 clean 下外框 --dd-border: transparent 导致表格行线消失
+  --el-table-border-color: var(--dd-divider, var(--el-border-color-light));
 
   .el-table__header-wrapper th {
-    border-bottom: 1px solid var(--el-border-color-light);
+    border-bottom: 1px solid var(--el-table-border-color);
   }
 
   .el-table__row td {
-    border-bottom: 1px solid var(--dd-border);
+    border-bottom: 1px solid var(--el-table-border-color);
   }
 
   .el-table__cell {
-    padding: 12px 0;
+    padding: var(--dd-table-cell-py, 9px) 0;
   }
 
   .el-table-column--selection .cell {
@@ -2977,17 +2962,35 @@ async function handleImport(event: Event) {
   box-shadow: inset 4px 0 0 var(--dd-warn);
 }
 
-// ===== 窄桌面紧凑模式（视口 <1600px，由 isNarrowDesktop 挂 .is-compact）=====
-// 目标是把行高从 94~186px 压回 40px 上下。三件事一起做才有效，缺一件都会被最高的那格顶回去：
-//   1) 定时规则单行省略（不省略就是 3 行）。命令列的省略已提升到 .command-text 基态、两档桌面共用，
-//      所以这里不再重复声明；
-//   2) 名称行不再换行（配合模板里隐藏任务类型标签，多数行只剩一行文字）；
-//   3) 收紧单元格上下内边距。
+// ===== 窄桌面紧凑模式（视口 <1760px，由 isNarrowDesktop 挂 .is-compact）=====
+// 目标是把行高从 94~186px 压回 40px 上下，并在 1024px 级窗口下为任务名称列腾出空间。三件事一起做才有效：
+//   1) 定时规则单行省略（不省略就是 3 行）。命令列的省略已提升到 .command-text 基态、两档桌面共用；
+//   2) 名称行保持 wrap（配合模板里隐藏任务类型标签，多数行只剩一行文字）；
+//   3) 收紧单元格内边距与运行时间紧凑字号。
 // 列的隐藏在模板里做（v-if="!isNarrowDesktop"），不在这里用 display:none —— el-table 的
 // 列宽是 JS 算出来写进 <colgroup> 的，CSS 藏列只会留下一段空白，宽度并不会还给其它列。
 .table-card.is-compact {
   :deep(.el-table__cell) {
     padding: 6px 0;
+  }
+
+  :deep(.el-table__cell > .cell) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  :deep(.task-expand-col > .cell),
+  :deep(.el-table-column--selection > .cell) {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .run-time-cell .time-text {
+    font-size: 12px;
+  }
+
+  .run-time-cell__label {
+    font-size: 11px;
   }
 
   // 名称行保持 wrap：一旦改成 nowrap，标签（flex-shrink:0）会把任务名挤成 0 宽，
@@ -3016,6 +3019,15 @@ async function handleImport(event: Event) {
 .task-card--pinned {
   border-color: color-mix(in srgb, var(--dd-warn) 28%, transparent);
   box-shadow: inset 4px 0 0 var(--dd-warn);
+}
+
+// 置顶且运行中的移动卡：.dd-running-flow::before 沿外圈画 1.5px 流光边，
+// 这里让置顶橙色竖条轻微内移避开外圈流光，避免左侧双描边叠边冲突
+.task-card--pinned.dd-running-flow {
+  border-color: transparent;
+  box-shadow:
+    inset 2px 0 0 var(--dd-surface-solid),
+    inset 5px 0 0 var(--dd-warn);
 }
 
 // 移动卡片的任务名：同挂 .task-name-link（蓝字、点击打开日志文件）与全局 .dd-mobile-card__name（16px 单行省略）。
@@ -3051,7 +3063,7 @@ async function handleImport(event: Event) {
 
 // ===== 入场动画 =====
 // 只对卡片级容器（工具条 / 表格卡 / 移动列表）做克制的淡入上移 + 轻微错落；
-// 不给表格每一行做 stagger（行数多会卡）。时长走令牌，prefers-reduced-motion 时令牌自动降为 1ms 即等效关闭。
+// 不给表格每一行做 stagger（行数多会卡）。用 backwards 避免动画结束后永久残留 transform 破坏固定列/弹层层叠上下文。
 @keyframes dd-tasks-rise-in {
   from {
     opacity: 0;
@@ -3067,7 +3079,7 @@ async function handleImport(event: Event) {
 .task-mobile-toolbar,
 .table-card,
 .dd-mobile-list {
-  animation: dd-tasks-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) both;
+  animation: dd-tasks-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) backwards;
 }
 
 // 轻微错落：工具条先入，表格卡/移动列表略晚

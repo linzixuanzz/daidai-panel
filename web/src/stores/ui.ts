@@ -20,6 +20,11 @@ export const useUiStore = defineStore('ui', () => {
 
   function openPalette() {
     studioOpen.value = false
+    // 关闭铃铛弹出层并主动失焦收起可能打开的下拉菜单，避免 EP 2000+ 浮层反向压住 1991 的命令面板
+    attentionOpen.value = false
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
     paletteOpen.value = true
   }
 
@@ -37,6 +42,7 @@ export const useUiStore = defineStore('ui', () => {
 
   function openStudio() {
     paletteOpen.value = false
+    attentionOpen.value = false
     studioOpen.value = true
   }
 

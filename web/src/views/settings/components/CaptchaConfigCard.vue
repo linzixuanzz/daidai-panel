@@ -3,6 +3,7 @@ import { Document, Key } from '@element-plus/icons-vue'
 import type { SettingsConfigForm } from '../types'
 
 defineProps<{
+  configsLoading?: boolean
   configsSaving: boolean
   form: SettingsConfigForm
   captchaFeatureImplemented: boolean
@@ -11,7 +12,7 @@ defineProps<{
 </script>
 
 <template>
-  <el-card shadow="never">
+  <el-card shadow="never" v-loading="configsLoading">
     <template #header>
       <div class="card-header">
         <span class="card-title"><el-icon><Key /></el-icon> 验证码设置</span>
@@ -71,5 +72,9 @@ defineProps<{
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 </style>

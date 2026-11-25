@@ -251,7 +251,7 @@ function handleClose() {
   <el-dialog
     :model-value="visible"
     :title="`日志文件 - ${taskName}`"
-    width="1200px"
+    width="min(1200px, 92vw)"
     class="task-log-files-dialog"
     :fullscreen="dialogFullscreen"
     :lock-scroll="false"
@@ -288,7 +288,7 @@ function handleClose() {
           >
             <div class="file-info">
               <el-icon><Document /></el-icon>
-              <span class="file-name">{{ file.filename }}</span>
+              <span class="file-name" :title="file.filename">{{ file.filename }}</span>
             </div>
             <div class="file-actions">
               <span class="file-size">{{ formatBytes(file.size) }}</span>
@@ -385,8 +385,9 @@ function handleClose() {
   align-items: center;
   padding: 10px 12px;
   cursor: pointer;
-  border-bottom: 1px solid var(--dd-border);
-  transition: background 0.2s;
+  // 列表项分隔线走 --dd-divider，避免素白 clean 下外框透明导致行线隐身
+  border-bottom: 1px solid var(--dd-divider, var(--dd-border));
+  transition: background-color var(--dd-motion-fast) var(--dd-ease-standard);
 
   &:hover {
     background: var(--el-fill-color-light);
@@ -422,6 +423,11 @@ function handleClose() {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+
+  // 间距统一交给 flex gap，清掉 EP 默认相邻按钮 12px 左外边距，释放文件名展示空间
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .file-size {
@@ -471,6 +477,13 @@ function handleClose() {
   padding: 40px 20px;
   text-align: center;
   color: var(--dd-text-3);
+}
+
+// 中窄屏收窄左侧文件列表栏宽至 240px，给右侧日志正文留足可读宽度
+@media (max-width: 960px) {
+  .file-list-pane {
+    width: 240px;
+  }
 }
 
 @media (max-width: 768px) {

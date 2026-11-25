@@ -22,8 +22,17 @@ const allSupported = ref(false)
 const showAll = ref(false)
 // 正在结束的那一行，按钮转圈、防连点
 const killingPid = ref(0)
+// 移动端命令行展开态：按 pid 记录，点击两行截断区域切换查看完整命令
+const expandedPids = ref<Record<number, boolean>>({})
 // 「已运行」按这个时刻算，每次刷新列表时更新
 const now = ref(Date.now())
+
+function toggleCmdline(pid: number) {
+  expandedPids.value = {
+    ...expandedPids.value,
+    [pid]: !expandedPids.value[pid],
+  }
+}
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 // 每次请求编号，只认最后一次的结果：切换「显示全部进程」时，之前那次自动刷新晚回来也不能把列表盖回去
@@ -183,56 +192,69 @@ async function handleKill(row: PanelProcess) {
 
 <template>
   <div class="processes-page dd-fixed-page dd-page-hide-heading">
-    <!-- 入场：全局 .dd-rise，内联 --dd-i 控制错落（工具条 0、列表 1） -->
-    <div class="toolbar dd-rise" style="--dd-i: 0">
+    <!-- 入场：全局 .dd-rise，内联 --dd-i 控制错落（工具条 0、列表 1）；非 Linux 不支持时隐藏无效 Linux 提示条 -->
+    <div v-if="supported" class="toolbar dd-rise" style="--dd-i: 0">
       <div class="toolbar__left">
         <el-icon class="toolbar__icon"><Cpu /></el-icon>
         <span class="toolbar__tip">任务里用 <code>setsid nohup … &amp;</code> 拉起的进程会脱离任务继续运行，在这里查看和结束</span>
       </div>
       <div class="toolbar__right">
-        <el-switch v-if="supported && allSupported" v-model="showAll" active-text="显示全部进程" />
+        <el-switch v-if="allSupported" v-model="showAll" active-text="显示全部进程" />
         <el-button :icon="Refresh" :loading="loading" @click="loadProcesses(true)">刷新</el-button>
       </div>
     </div>
 
-    <el-empty v-if="!supported" description="仅 Linux 部署支持" />
+    <div v-if="!supported" class="processes-unsupported">
+      <el-empty description="仅 Linux 部署支持" />
+    </div>
 
     <template v-else>
       <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 1">
         <div v-for="row in processes" :key="row.pid" class="dd-mobile-card">
-          <div class="dd-mobile-card__header">
-            <div class="dd-mobile-card__title-wrap">
-              <span class="dd-mobile-card__title">PID {{ row.pid }}</span>
-              <div class="dd-mobile-card__badges">
-                <el-tag size="small" :type="stateTagType(row.state)">{{ stateLabel(row.state) }}</el-tag>
-              </div>
+          <div class="dd-mobile-card__head">
+            <span class="dd-mobile-card__name dd-mono" :title="`PID ${row.pid}`">PID {{ row.pid }}</span>
+            <div class="dd-mobile-card__head-tags">
+              <el-tag size="small" :type="stateTagType(row.state)">{{ stateLabel(row.state) }}</el-tag>
             </div>
           </div>
-          <div class="dd-mobile-card__body">
-            <div class="process-cmdline" :title="row.cmdline">{{ row.cmdline || '-' }}</div>
-            <div class="dd-mobile-card__grid">
-              <div class="dd-mobile-card__field">
-                <span class="dd-mobile-card__label">所属任务</span>
-                <span class="dd-mobile-card__value">
-                  <el-link v-if="row.task_id != null && row.task_name" type="primary" @click="goToTask(row)">{{ row.task_name }}</el-link>
-                  <span v-else class="text-secondary">{{ taskLabel(row) }}</span>
-                </span>
-              </div>
-              <div class="dd-mobile-card__field">
-                <span class="dd-mobile-card__label">已运行</span>
-                <span class="dd-mobile-card__value">{{ formatElapsed(row.started_at) }}</span>
-              </div>
-              <div class="dd-mobile-card__field">
-                <span class="dd-mobile-card__label">内存</span>
-                <span class="dd-mobile-card__value">{{ formatMemory(row.rss_bytes) }}</span>
-              </div>
-              <div class="dd-mobile-card__field">
-                <span class="dd-mobile-card__label">启动时间</span>
-                <span class="dd-mobile-card__value">{{ formatDateTime(row.started_at) }}</span>
-              </div>
+          <div class="dd-mobile-card__rows">
+            <div class="dd-mobile-card__row process-cmdline-row">
+              <span class="dd-mobile-card__row-label">命令</span>
+              <!-- 移动端默认两行截断，点击切换展开全文，避免触屏看不到完整命令行 -->
+              <button
+                type="button"
+                class="dd-mobile-card__row-value process-cmdline-btn"
+                :class="expandedPids[row.pid] ? 'is-expanded' : 'dd-mobile-card__row-value--clamp2'"
+                :aria-expanded="!!expandedPids[row.pid]"
+                :title="row.cmdline || '-'"
+                @click="toggleCmdline(row.pid)"
+              >
+                {{ row.cmdline || '-' }}
+              </button>
             </div>
-            <div class="dd-mobile-card__actions">
-              <el-button size="small" type="danger" plain :loading="killingPid === row.pid" @click="handleKill(row)">结束</el-button>
+            <div class="dd-mobile-card__row">
+              <span class="dd-mobile-card__row-label">所属任务</span>
+              <span class="dd-mobile-card__row-value">
+                <el-link v-if="row.task_id != null && row.task_name" type="primary" @click="goToTask(row)">{{ row.task_name }}</el-link>
+                <span v-else class="text-secondary">{{ taskLabel(row) }}</span>
+              </span>
+            </div>
+            <div class="dd-mobile-card__row">
+              <span class="dd-mobile-card__row-label">已运行</span>
+              <span class="dd-mobile-card__row-value">{{ formatElapsed(row.started_at) }}</span>
+            </div>
+            <div class="dd-mobile-card__row">
+              <span class="dd-mobile-card__row-label">内存</span>
+              <span class="dd-mobile-card__row-value">{{ formatMemory(row.rss_bytes) }}</span>
+            </div>
+            <div class="dd-mobile-card__row">
+              <span class="dd-mobile-card__row-label">启动时间</span>
+              <span class="dd-mobile-card__row-value time-text">{{ formatDateTime(row.started_at) }}</span>
+            </div>
+          </div>
+          <div class="dd-mobile-card__footer">
+            <div class="dd-mobile-card__footer-actions">
+              <el-button type="danger" plain :loading="killingPid === row.pid" @click="handleKill(row)">结束</el-button>
             </div>
           </div>
         </div>
@@ -244,41 +266,47 @@ async function handleKill(row: PanelProcess) {
           :data="processes"
           v-loading="loading"
           row-key="pid"
+          height="100%"
           style="width: 100%"
           :header-cell-style="{ background: 'var(--el-fill-color-light)', color: 'var(--el-text-color-regular)', fontWeight: 600, fontSize: '13px' }"
         >
           <template #empty>
             <span class="text-secondary">{{ showAll ? '没有可显示的进程' : '没有任务拉起的后台进程' }}</span>
           </template>
-          <el-table-column prop="pid" label="PID" width="90" />
-          <el-table-column label="所属任务" min-width="160">
+          <el-table-column prop="pid" label="PID" width="80" />
+          <el-table-column label="所属任务" min-width="130" show-overflow-tooltip>
             <template #default="{ row }">
-              <el-link v-if="row.task_id != null && row.task_name" type="primary" @click="goToTask(row)">{{ row.task_name }}</el-link>
-              <span v-else class="text-secondary">{{ taskLabel(row) }}</span>
+              <el-link
+                v-if="row.task_id != null && row.task_name"
+                class="process-task-link"
+                type="primary"
+                @click="goToTask(row)"
+              >{{ row.task_name }}</el-link>
+              <span v-else class="process-task-text text-secondary">{{ taskLabel(row) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="命令" min-width="260" show-overflow-tooltip>
+          <el-table-column label="命令" min-width="200" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="process-cmdline-cell">{{ row.cmdline || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="启动时间" width="170">
+          <el-table-column label="启动时间" width="156">
             <template #default="{ row }">
               <span class="time-text">{{ formatDateTime(row.started_at) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="已运行" width="120">
+          <el-table-column label="已运行" width="104">
             <template #default="{ row }">{{ formatElapsed(row.started_at) }}</template>
           </el-table-column>
-          <el-table-column label="内存" width="100">
+          <el-table-column label="内存" width="88">
             <template #default="{ row }">{{ formatMemory(row.rss_bytes) }}</template>
           </el-table-column>
-          <el-table-column label="状态" width="130" align="center">
+          <el-table-column label="状态" width="116" align="center">
             <template #default="{ row }">
               <el-tag size="small" :type="stateTagType(row.state)">{{ stateLabel(row.state) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="90" fixed="right" align="center">
+          <el-table-column label="操作" width="76" fixed="right" align="center">
             <template #default="{ row }">
               <el-button size="small" text type="danger" :loading="killingPid === row.pid" @click="handleKill(row)">结束</el-button>
             </template>
@@ -292,6 +320,15 @@ async function handleKill(row: PanelProcess) {
 <style scoped lang="scss">
 .processes-page { padding: 0; }
 
+// 非 Linux 不支持态：整页垂直居中展示空状态
+.processes-unsupported {
+  flex: 1 1 auto;
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 // 工具条：与用户管理等页一致——左右两区一行排布，窄屏自动换行
 .toolbar {
   display: flex; justify-content: space-between; align-items: center; margin: 14px 0; gap: 12px; flex-wrap: wrap;
@@ -304,30 +341,101 @@ async function handleKill(row: PanelProcess) {
   }
 }
 
-// 表格卡：与其它列表页同一套表面（dd-fixed-page 下的 flex + 内部滚动由全局规则接管）
+// 表格卡：与其它列表页同一套表面（外框吃 --dd-border-width + --dd-shadow-card）
 .table-card {
-  background: var(--el-bg-color); border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter); overflow: hidden;
+  background: var(--dd-surface-solid);
+  border-radius: var(--dd-radius-surface);
+  border: var(--dd-border-width, 1px) solid var(--dd-border);
+  box-shadow: var(--dd-shadow-card);
+  overflow: hidden;
 }
 
-.process-cmdline-cell { font-family: var(--dd-font-mono); font-size: 12px; }
+// 桌面端压过 global.scss 的 `.dd-fixed-page.dd-fixed-page > .table-card { overflow: auto }`：
+// 滚动由 el-table height="100%" 内部承担，确保表头吸顶、横滚条固定底边、fixed="right" 生效且 .dd-spot 不滚走
+@media screen and (min-width: 769px) {
+  .processes-page.dd-fixed-page > .table-card {
+    overflow: hidden;
+  }
 
-// 移动端卡片里的命令行：单行省略，长按 / 悬停看 title 全文
-.process-cmdline {
-  font-family: var(--dd-font-mono); font-size: 12px; color: var(--el-text-color-regular);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px;
+  .table-card :deep(.el-table) {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+}
+
+.process-task-link {
+  max-width: 100%;
+  vertical-align: middle;
+
+  :deep(.el-link__inner) {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.process-task-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-cmdline-cell {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--dd-font-mono);
+  font-size: 12px;
+}
+
+// 移动端命令行行：标签顶端对齐，按钮支持两行截断与点击展开全文
+.process-cmdline-row {
+  align-items: flex-start;
+}
+
+.process-cmdline-btn {
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-family: var(--dd-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+
+  &.is-expanded {
+    white-space: pre-wrap;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
 }
 
 .text-secondary { color: var(--el-text-color-secondary); }
 .time-text { font-family: var(--dd-font-mono); font-size: 12px; color: var(--el-text-color-regular); }
 
 :deep(.el-table) {
-  --el-table-border-color: var(--el-border-color-lighter);
+  // 行分隔线走内部分隔线令牌，避免素白 clean 下外框透明连带隐藏表格行线
+  --el-table-border-color: var(--dd-divider, var(--el-border-color-light));
+
+  .el-table__header-wrapper th,
+  .el-table__row td {
+    border-bottom-color: var(--el-table-border-color);
+  }
 }
 
-// 窄屏：与用户管理页同一个断点、同一套写法——说明独占一行（全宽），开关与刷新放到下一行靠右
+// 窄屏：说明独占一行（全宽），开关与刷新放到下一行靠右；顶部外边距归零避免与移动端 layout-main 内边距叠出双倍留白
 @media (max-width: 768px) {
-  .toolbar { flex-direction: column; align-items: stretch; gap: 10px;
+  .toolbar {
+    margin-top: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+
     &__left { align-items: flex-start; }
     &__icon { margin-top: 3px; }
     &__right { justify-content: flex-end; }

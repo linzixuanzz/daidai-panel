@@ -146,6 +146,7 @@ html[data-dd-motion="off"] .dd-rise {
   padding: 1.5px;
   background: radial-gradient(380px circle at var(--dd-mx, 50%) var(--dd-my, 50%), var(--dd-spot-border), transparent 42%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
 }
@@ -194,6 +195,7 @@ html:not([data-dd-motion="rich"]) .dd-spot::after {
   padding: 1.5px;
   background: conic-gradient(from var(--dd-angle), transparent 0 62%, var(--dd-accent) 80%, var(--dd-accent-2) 92%, transparent 100%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
@@ -278,6 +280,19 @@ html.dd-vt-page .route-shell {
     transform: translateY(22px) scale(0.985);
     filter: blur(8px);
   }
+}
+
+html.dd-vt-page::view-transition-group(dd-main) {
+  overflow: clip;
+}
+
+// 禁用默认 plus-lighter 混合避免亮色重叠泛白；object-fit: none + top 防止高度变化时内容被拉伸变形
+html.dd-vt-page::view-transition-old(dd-main),
+html.dd-vt-page::view-transition-new(dd-main) {
+  mix-blend-mode: normal;
+  height: 100%;
+  object-fit: none;
+  object-position: top;
 }
 
 html.dd-vt-page::view-transition-old(dd-main) {

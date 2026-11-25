@@ -36,9 +36,9 @@ const { isMobile, dialogFullscreen } = useResponsive()
       </div>
     </template>
     <p class="card-tip">
-      支持单个 IP、CIDR 网段，以及更易输入的 IPv4 通配格式，例如 `203.0.113.7`、`203.0.113.0/24`、`203.0.113.*`。
+      支持单个 IP、CIDR 网段，以及更易输入的 IPv4 通配格式，例如 <code>203.0.113.7</code>、<code>203.0.113.0/24</code>、<code>203.0.113.*</code>。
     </p>
-    <div v-if="isMobile" class="dd-mobile-list">
+    <div v-if="isMobile" v-loading="ipWhitelistLoading" class="dd-mobile-list">
       <div
         v-for="row in ipWhitelist"
         :key="row.id"
@@ -90,7 +90,7 @@ const { isMobile, dialogFullscreen } = useResponsive()
       <el-form-item label="IP / 网段">
         <el-input v-model="newIP" placeholder="如: 203.0.113.7 / 203.0.113.0/24 / 203.0.113.*" />
         <div class="field-hint">
-          适合固定公网填单个 IP；动态公网但前缀稳定时，可填网段或 `*` 通配格式。
+          适合固定公网填单个 IP；动态公网但前缀稳定时，可填网段或 <code>*</code> 通配格式。
         </div>
       </el-form-item>
       <el-form-item label="备注">
@@ -114,6 +114,10 @@ const { isMobile, dialogFullscreen } = useResponsive()
   background: color-mix(in srgb, var(--el-fill-color-light) 84%, transparent);
   display: flex;
   gap: 8px;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 
 .card-tip {
@@ -128,6 +132,16 @@ const { isMobile, dialogFullscreen } = useResponsive()
   font-size: 12px;
   line-height: 1.5;
   color: var(--el-text-color-secondary);
+}
+
+.card-tip code,
+.field-hint code {
+  font-family: var(--dd-font-mono);
+  font-size: 0.92em;
+  padding: 1px 5px;
+  border-radius: var(--dd-radius-control);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
 }
 
 .ip-card__actions > * {

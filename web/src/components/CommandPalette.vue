@@ -15,6 +15,7 @@ import { ElMessage } from 'element-plus'
 import {
   Brush,
   Clock,
+  Close,
   Document,
   Download,
   MagicStick,
@@ -499,7 +500,15 @@ function restoreFocus() {
             spellcheck="false"
             placeholder="跳转页面、运行任务、切换风格…  试试输入「dsrw」"
           >
-          <kbd class="dd-cmdk__kbd">Esc</kbd>
+          <kbd class="dd-cmdk__kbd dd-cmdk__esc">Esc</kbd>
+          <button
+            type="button"
+            class="dd-cmdk__close"
+            aria-label="关闭命令面板"
+            @click="ui.closePalette()"
+          >
+            <el-icon><Close /></el-icon>
+          </button>
         </div>
 
         <ul id="dd-cmdk-list" ref="listRef" class="dd-cmdk__list" role="listbox" aria-label="命令">
@@ -526,7 +535,11 @@ function restoreFocus() {
               <small v-if="query.trim()" class="dd-cmdk__tag">{{ row.item.group }}</small>
             </li>
           </template>
-          <li v-if="!rows.length && !searching" class="dd-cmdk__empty" role="presentation">
+          <!-- 远程防抖搜索期间如本地无匹配项，先保留占位高度，避免列表瞬间塌陷 -->
+          <li v-if="!rows.length && searching" class="dd-cmdk__empty" role="presentation">
+            正在搜索…
+          </li>
+          <li v-else-if="!rows.length && !searching" class="dd-cmdk__empty" role="presentation">
             没有找到「{{ query.trim() }}」相关的内容
           </li>
         </ul>
@@ -583,7 +596,28 @@ function restoreFocus() {
   gap: 12px;
   height: 60px;
   padding: 0 18px;
-  border-bottom: var(--dd-border-width, 1px) solid var(--dd-border);
+  border-bottom: var(--dd-border-width, 1px) solid var(--dd-divider, var(--el-border-color-lighter));
+}
+
+.dd-cmdk__close {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--dd-radius-control);
+  background: transparent;
+  color: var(--dd-text-2);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.dd-cmdk__close:hover {
+  background: var(--dd-surface-3);
+  color: var(--dd-text);
 }
 
 .dd-cmdk__search-icon {
@@ -607,7 +641,7 @@ function restoreFocus() {
 }
 
 .dd-cmdk__list {
-  max-height: min(420px, 52vh);
+  max-height: min(420px, 52dvh);
   margin: 0;
   padding: 8px;
   overflow: auto;
@@ -648,8 +682,14 @@ function restoreFocus() {
   top: 10px;
   bottom: 10px;
   width: 3px;
-  border-radius: 3px;
+  border-radius: var(--dd-radius-pill);
   background: var(--dd-accent);
+}
+
+/* 选中行叠了主色浅底（--dd-accent-soft），弱化文字在经典亮色下会跌破 4.5:1，这里提至次要文字色 */
+.dd-cmdk__item.is-sel .dd-cmdk__hint,
+.dd-cmdk__item.is-sel .dd-cmdk__tag {
+  color: var(--dd-text-2);
 }
 
 .dd-cmdk__icon {
@@ -704,7 +744,7 @@ function restoreFocus() {
   align-items: center;
   gap: 16px;
   padding: 10px 16px;
-  border-top: var(--dd-border-width, 1px) solid var(--dd-border);
+  border-top: var(--dd-border-width, 1px) solid var(--dd-divider, var(--el-border-color-lighter));
   font-size: 12px;
   color: var(--dd-text-3);
 }
@@ -724,7 +764,7 @@ function restoreFocus() {
   min-width: 20px;
   padding: 1px 6px;
   border: 1px solid var(--dd-border-strong);
-  border-radius: 6px;
+  border-radius: var(--dd-radius-control);
   background: var(--dd-surface-2);
   color: var(--dd-text-2);
   font-family: var(--dd-font-mono, ui-monospace, monospace);
@@ -733,9 +773,61 @@ function restoreFocus() {
   text-align: center;
 }
 
+/* 用户显式关闭玻璃或低端设备降级：关闭 backdrop-filter 并退回不透明实色底 */
+html[data-dd-glass='disabled'] .dd-cmdk-scrim {
+  background: color-mix(in srgb, var(--dd-bg) 72%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-dd-glass='disabled'] .dd-cmdk {
+  background: var(--dd-surface-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .dd-cmdk-scrim {
+    background: color-mix(in srgb, var(--dd-bg) 82%, transparent);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .dd-cmdk {
+    background: var(--dd-surface-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 @media (max-width: 640px) {
   .dd-cmdk {
-    top: 8vh;
+    top: 4dvh;
+  }
+
+  .dd-cmdk__input {
+    height: 52px;
+    padding: 0 12px 0 14px;
+    gap: 10px;
+  }
+
+  /* 移动端没有物理 Esc 键，改为可点击关闭按钮 */
+  .dd-cmdk__esc {
+    display: none;
+  }
+
+  .dd-cmdk__close {
+    display: inline-flex;
+  }
+
+  /* 预留虚拟键盘弹出后的可视空间 */
+  .dd-cmdk__list {
+    max-height: min(420px, 46dvh);
+  }
+
+  /* 窄屏隐藏右侧副文案，把整行宽度让给长标题 */
+  .dd-cmdk__hint {
+    display: none;
   }
 
   /* 手机上的键位提示没意义，只留右侧说明 */

@@ -334,6 +334,8 @@ export const useThemeStore = defineStore('theme', () => {
         mode.value = applyThemeMode()
       } else if (event.key === 'dd:appearance:motion') {
         motion.value = applyMotionPreference()
+        // 低端设备切 system <-> rich 时模糊降级状态会随之变化，补同步一次外观
+        applyThemeAppearance()
         motionRevision.value += 1
       } else if (event.key?.startsWith('dd:appearance:') && event.key !== 'dd:appearance:site' && event.key !== 'dd:appearance:shape') {
         refreshLocal()

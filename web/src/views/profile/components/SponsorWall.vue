@@ -229,6 +229,8 @@ function rankLabel(rank: number) {
 }
 
 .sponsor-wall__header {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
   flex-wrap: wrap;
@@ -377,6 +379,7 @@ function rankLabel(rank: number) {
 
 .podium-card {
   position: relative;
+  min-width: 0;
   min-height: 144px;
   display: flex;
   flex-direction: column;
@@ -384,11 +387,12 @@ function rankLabel(rank: number) {
   justify-content: center;
   gap: 10px;
   padding: 18px 16px 16px;
-  /* 纯色卡：去掉顶部圆形高光、投影与 hover 上浮，层次交给 1px 描边。卡片本体 → surface 档 */
+  overflow: hidden;
+  /* 纯色卡：去掉顶部圆形高光、投影与 hover 上浮，层次交给描边。卡片本体 → surface 档 */
   border-radius: var(--dd-radius-surface);
   text-align: center;
   background: var(--dd-surface-solid);
-  border: 1px solid color-mix(in srgb, var(--dd-warn) 18%, var(--dd-border));
+  border: var(--dd-border-width, 1px) solid color-mix(in srgb, var(--dd-warn) 18%, var(--dd-border));
 }
 
 /* 第一名：用更暖的琥珀底与其余两名区分（原为渐变） */
@@ -450,6 +454,9 @@ function rankLabel(rank: number) {
 }
 
 .podium-card__amount {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 18px;
   font-weight: 800;
   color: var(--dd-warn-ink);
@@ -539,7 +546,28 @@ function rankLabel(rank: number) {
   white-space: nowrap;
 }
 
-@media (max-width: 768px) {
+/* 中等桌面视口下个人中心内容区较窄，名次角标改回正常文档流居中排布，避免压盖头像 */
+@media (max-width: 1280px) {
+  .podium-card {
+    padding: 14px 12px;
+  }
+
+  .podium-card__rank {
+    position: static;
+    align-self: center;
+  }
+
+  .podium-card__amount {
+    font-size: 16px;
+  }
+
+  .podium-card--first .podium-card__amount {
+    font-size: 17px;
+  }
+}
+
+/* ≤1100px 提前折叠领奖台为纵向单列，避免三列并排挤爆头像与金额 */
+@media (max-width: 1100px) {
   .sponsor-podium {
     grid-template-columns: 1fr;
     grid-template-areas:
@@ -559,7 +587,9 @@ function rankLabel(rank: number) {
   .podium-base {
     height: 18px !important;
   }
+}
 
+@media (max-width: 768px) {
   .sponsor-grid {
     grid-template-columns: 1fr;
   }

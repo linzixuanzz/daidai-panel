@@ -65,14 +65,17 @@ function rgba(c: [number, number, number, number], alpha?: number) {
 }
 
 function readPalette() {
+  const text3 = readTokenRgba('--dd-text-3', [140, 140, 140, 1])
+  // Tooltip 边框先读 --dd-border-strong，若缺失或透明则兜底 text3，避免 clean(--dd-border: transparent) 掉回亮灰
+  const borderStrong = readTokenRgba('--dd-border-strong', text3)
   return {
-    total: readTokenRgba('--dd-text-3', [140, 140, 140, 1]),
+    total: text3,
     ok: readTokenRgba('--dd-chart-ok', [16, 185, 129, 1]),
     err: readTokenRgba('--dd-err', [239, 68, 68, 1]),
     warn: readTokenRgba('--dd-warn', [245, 158, 11, 1]),
     text: readTokenRgba('--dd-text', [30, 30, 30, 1]),
-    text3: readTokenRgba('--dd-text-3', [140, 140, 140, 1]),
-    border: readTokenRgba('--dd-border', [220, 220, 220, 1]),
+    text3,
+    borderStrong,
     overlay: readTokenRgba('--dd-overlay', [255, 255, 255, 1]),
     surface: readTokenRgba('--dd-surface-solid', [255, 255, 255, 1]),
   }
@@ -171,6 +174,8 @@ function renderChart() {
       animation: motionLevel() === 'rich',
       tooltip: {
         trigger: 'axis',
+        // 窄屏边缘悬停时把提示框限制在图表容器内，防止冲出卡片或视口
+        confine: true,
         // hover 掉帧的根因是 ECharts 默认的三层交互动画叠在一起（#132），这里逐层关掉：
         //   ① transitionDuration 默认 0.4s：提示框位置走 CSS transform 过渡并被 50ms 节流，表现为拖影、跳格；
         //   ② axisPointer.animation：类目轴带宽 >15px 时指示线移动带 200ms 动画；
@@ -178,7 +183,7 @@ function renderChart() {
         transitionDuration: 0,
         axisPointer: { type: 'line', animation: false, triggerEmphasis: false, lineStyle: { color: rgba(p.text3, 0.6), type: 'dashed' } },
         backgroundColor: rgba(p.overlay),
-        borderColor: rgba(p.border),
+        borderColor: rgba(p.borderStrong || p.text3, 0.35),
         borderWidth: 1,
         textStyle: { color: rgba(p.text, 1), fontSize: fs(12) },
         // ECharts 把 tooltip 挂在 <body> 下，CSS 变量沿 :root 继承下来，圆角与阴影直接读令牌
@@ -207,7 +212,8 @@ function renderChart() {
         icon: 'rect',
         itemWidth: 8,
         textStyle: { fontSize: fs(12), color: rgba(p.text3, 1) },
-        inactiveColor: rgba(p.border),
+        // 禁用图例统一走 text3 半透明，避免 clean(--dd-border: transparent) 与 daidai(纯黑/纯白) 出现反相串色
+        inactiveColor: rgba(p.text3, 0.45),
         top: 0,
       },
       // 这里改用 outerBounds 语义，避免新版 ECharts 对 containLabel 给出兼容性警告。
@@ -222,7 +228,7 @@ function renderChart() {
       xAxis: {
         type: 'category',
         data: stats.map((item) => item.date),
-        axisLine: { lineStyle: { color: rgba(p.border) } },
+        axisLine: { lineStyle: { color: rgba(p.text3, 0.3) } },
         axisTick: { show: false },
         axisLabel: {
           color: rgba(p.text3, 1),
@@ -234,7 +240,7 @@ function renderChart() {
         type: 'value',
         minInterval: 1,
         axisLine: { show: false },
-        splitLine: { lineStyle: { color: rgba(p.border), type: 'dashed' } },
+        splitLine: { lineStyle: { color: rgba(p.text3, 0.22), type: 'dashed' } },
         axisLabel: { color: rgba(p.text3, 1), fontSize: fs(11) },
       },
       series,

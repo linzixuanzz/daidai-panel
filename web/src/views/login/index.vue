@@ -21,7 +21,7 @@ import {
   type GeeTestInstance,
   type GeeTestValidateResult,
 } from "@/utils/geetest";
-import { shouldReduceMotion } from "@/utils/panelAppearance";
+import { motionLevel } from "@/utils/motion";
 import {
   isPasskeyCancelError,
   isPasskeySupported,
@@ -93,6 +93,10 @@ function startLockCountdown(seconds: number) {
 
 onUnmounted(() => {
   if (lockTimer) clearInterval(lockTimer);
+  if (mouseRaf) {
+    window.cancelAnimationFrame(mouseRaf);
+    mouseRaf = 0;
+  }
   resetCaptchaProof();
 });
 
@@ -153,22 +157,39 @@ onMounted(async () => {
 /**
  * 卡通形象跟随鼠标。
  *
- * 需要减少动效时直接不更新位移 —— 插画保持在中位不动。
- * CSS 那边的 transition 时长虽然会被令牌降到 1ms，但那只是让位移【瞬间完成】，
- * 插画仍然会跟着鼠标跳；对明确要求减少动效的用户来说，这比平滑跟随更难受。
- * 真正要关掉的是位移本身，只能在 JS 层判断。
- *
- * 「需要减少动效」要综合个人设置页的「界面动效」三档（C8），口径见 utils/panelAppearance.ts 的 shouldReduceMotion()。
+ * 仅在动效档位为 rich 时生效（克制 / 关闭档均保持中位静止），并通过 rAF 节流保证每帧最多计算一次。
  */
-function handleMouseMove(e: MouseEvent) {
-  if (!containerRef.value) return;
-  if (shouldReduceMotion()) return;
-  const rect = containerRef.value.getBoundingClientRect();
+let mouseRaf = 0;
+let pendingMouseX = 0;
+let pendingMouseY = 0;
+
+function flushMousePos() {
+  mouseRaf = 0;
+  const el = containerRef.value;
+  if (!el) return;
+  if (motionLevel() !== "rich") {
+    if (mousePos.value.x !== 0 || mousePos.value.y !== 0) {
+      mousePos.value = { x: 0, y: 0 };
+    }
+    return;
+  }
+  const rect = el.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
   const cx = rect.left + rect.width / 2;
   const cy = rect.top + rect.height / 2;
-  const x = Math.max(-1, Math.min(1, (e.clientX - cx) / (rect.width / 2)));
-  const y = Math.max(-1, Math.min(1, (e.clientY - cy) / (rect.height / 2)));
+  const x = Math.max(-1, Math.min(1, (pendingMouseX - cx) / (rect.width / 2)));
+  const y = Math.max(-1, Math.min(1, (pendingMouseY - cy) / (rect.height / 2)));
   mousePos.value = { x, y };
+}
+
+function handleMouseMove(e: MouseEvent) {
+  if (!containerRef.value) return;
+  if (motionLevel() !== "rich") return;
+  pendingMouseX = e.clientX;
+  pendingMouseY = e.clientY;
+  if (!mouseRaf) {
+    mouseRaf = window.requestAnimationFrame(flushMousePos);
+  }
 }
 
 function resetCaptchaProof(keepVisible = false) {
@@ -645,6 +666,15 @@ const themeTitle = computed(() => {
                 @keyup.enter="handleSubmit"
               />
             </el-form-item>
+            <div
+              v-if="captchaStatusText"
+              class="captcha-status"
+              :class="{ 'is-verified': captchaVerified }"
+              role="status"
+              aria-live="polite"
+            >
+              {{ captchaStatusText }}
+            </div>
             <el-form-item>
               <el-button
                 type="primary"
@@ -768,16 +798,15 @@ const themeTitle = computed(() => {
 
 <style scoped lang="scss">
 /* ================= 2FA dialog ================= */
-:deep(.totp-dialog) {
-  .el-dialog {
-    border-radius: var(--dd-radius-surface);
-    overflow: hidden;
-  }
+// class="totp-dialog" 挂在 .el-dialog 自身节点上，必须写成同元素复合选择器
+:deep(.el-dialog.totp-dialog) {
+  border-radius: var(--dd-radius-surface);
+  overflow: hidden;
 
   .el-dialog__header {
     padding: 20px 22px 14px;
     margin: 0;
-    border-bottom: 1px solid var(--el-border-color-lighter);
+    border-bottom: 1px solid var(--dd-divider, var(--el-border-color-lighter));
   }
 
   .el-dialog__body {
@@ -859,23 +888,30 @@ const themeTitle = computed(() => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+
+  // 两颗按钮统一读 --dd-btn-radius，消除移动端 2FA 弹窗「取消」与「验证并登录」圆角不一致
+  :deep(.el-button) {
+    border-radius: var(--dd-btn-radius);
+  }
 }
 
-/* 提交按钮：颜色交给 EP 主按钮（已接 --dd-btn-primary-* 令牌），这里只管尺寸；圆角吃控件档令牌 */
+/* 提交按钮：颜色交给 EP 主按钮（已接 --dd-btn-primary-* 令牌），这里只管尺寸；圆角吃按钮档令牌 */
 .totp-submit-btn {
-  border-radius: var(--dd-radius-control);
+  border-radius: var(--dd-btn-radius);
   padding: 0 18px;
 }
 
 .login-page {
-  min-height: 100vh;
+  // 扣除演示横幅与安全模式横幅高度并允许纵向滚动；配合卡片 margin: auto，桌面矮屏（≤650px）不裁切顶部与底部
+  height: calc(100dvh - var(--dd-demo-banner-height, 0px) - var(--dd-safe-banner-h, 0px));
+  min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   /* v4.0：整页不铺底色，让 App.vue 的 AppBackdrop（主题背景层）透出来 */
   background: transparent;
   padding: 24px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
 }
 
@@ -912,6 +948,8 @@ const themeTitle = computed(() => {
 /* 登录卡：主题卡片的边框 / 阴影 / 玻璃模糊（aurora 等主题是半透明玻璃卡，背后的极光透过来）；圆角吃表面档令牌 */
 .login-container {
   display: flex;
+  flex-shrink: 0;
+  margin: auto;
   width: 940px;
   max-width: 100%;
   min-height: 560px;
@@ -1063,11 +1101,23 @@ const themeTitle = computed(() => {
   }
 }
 
-/* 登录按钮：颜色交给 EP 主按钮（已接 --dd-btn-primary-* 令牌，素白主题是黑底白字），这里只管尺寸；圆角吃控件档令牌 */
+.captcha-status {
+  margin: -8px 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--dd-text-2);
+
+  &.is-verified {
+    color: var(--dd-ok-ink);
+  }
+}
+
+/* 登录按钮：颜色交给 EP 主按钮（已接 --dd-btn-primary-* 令牌，素白主题是黑底白字），这里只管尺寸；圆角吃按钮档令牌 */
 .login-btn {
   width: 100%;
   height: 46px;
-  border-radius: var(--dd-radius-control);
+  border-radius: var(--dd-btn-radius);
   font-weight: 600;
   font-size: 15px;
 }
@@ -1085,7 +1135,7 @@ const themeTitle = computed(() => {
 .passkey-btn {
   width: 100%;
   height: 46px;
-  border-radius: var(--dd-radius-control);
+  border-radius: var(--dd-btn-radius);
   font-weight: 600;
   font-size: 15px;
 }
@@ -1121,35 +1171,103 @@ const themeTitle = computed(() => {
 }
 
 @media (max-width: 768px) {
+  // 2FA 弹窗在移动端保持紧凑居中（覆写 global.scss 全站移动端弹窗 100% 全屏规则）
+  :deep(.el-dialog.totp-dialog) {
+    --el-dialog-width: calc(100vw - 32px) !important;
+    width: calc(100vw - 32px) !important;
+    max-width: 420px !important;
+    height: auto !important;
+    max-height: calc(100dvh - 32px) !important;
+    margin: auto !important;
+    border-radius: var(--dd-radius-surface) !important;
+  }
+
+  .login-page {
+    padding: 12px 14px calc(16px + env(safe-area-inset-bottom));
+  }
+
+  // 移动端改为相对页面流绝对定位在插画区右上角，随页面滚走，不再固定悬浮压挡输入区
+  .theme-toggle {
+    position: absolute;
+    top: 20px;
+    right: 22px;
+
+    .theme-toggle-btn {
+      width: 36px;
+      height: 36px;
+      font-size: 18px;
+    }
+  }
+
   .login-container {
     flex-direction: column;
     width: 100%;
     min-height: auto;
   }
 
+  // 收紧插画区与表单区内边距，确保主登录按钮稳稳落进移动端首屏
   .login-left {
-    min-height: 200px;
-    padding: 30px 20px 0;
+    min-height: 128px;
+    padding: 12px 16px 0;
   }
 
   .characters-wrap {
-    max-width: 240px;
+    max-width: 150px;
   }
 
   .login-right {
-    padding: 32px 24px;
+    padding: 20px 18px 22px;
+  }
+
+  .login-header {
+    margin-bottom: 18px;
+
+    .login-logo {
+      width: 38px;
+      height: 38px;
+      margin-bottom: 10px;
+
+      img {
+        width: 38px;
+        height: 38px;
+      }
+    }
+
+    h2 {
+      font-size: 22px;
+      margin-bottom: 4px;
+    }
+  }
+
+  .login-form :deep(.el-form-item) {
+    margin-bottom: 14px;
   }
 }
 </style>
 
 <style lang="scss">
 /* v4.0：原来这里是一整段 html.dark 写死颜色的暗色补丁。登录页改读主题令牌后明暗两面由令牌自己切，补丁删除。
-   只剩「玻璃关闭」这个开关分支：模糊为 0 时登录卡与主题按钮不再 backdrop-filter（--dd-surface 已被换成实色）。 */
-html[data-dd-glass="off"] {
+   玻璃关闭（off / disabled）与系统「降低透明度」时，登录卡与主题按钮关闭 backdrop-filter 并退回实色底。 */
+html[data-dd-glass="off"],
+html[data-dd-glass="disabled"] {
   .login-page .login-container,
   .login-page .theme-toggle .theme-toggle-btn {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .login-page .login-container,
+  .login-page .login-right,
+  .login-page .theme-toggle .theme-toggle-btn {
+    background: var(--dd-surface-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .login-page .login-left {
+    background: color-mix(in srgb, var(--dd-accent) 6%, var(--dd-surface-solid));
   }
 }
 </style>

@@ -331,11 +331,11 @@ a {
   // v4.0：读排版级令牌 --dd-btn-radius（默认就是 control 档；素白取 pill 档，见 themes/_layout.scss / clean.scss）
   border-radius: var(--dd-btn-radius);
   font-weight: 500;
-  // 纯扁平：按钮只做颜色过渡，不再有按下缩放与浮起阴影
+  // 纯扁平：按钮只做颜色过渡，加 !important 防止按需懒注入的 el-button.css 把过渡打回 transition: all .1s
   transition:
     background-color var(--dd-motion-fast) var(--dd-ease-standard),
     color var(--dd-motion-fast) var(--dd-ease-standard),
-    border-color var(--dd-motion-fast) var(--dd-ease-standard);
+    border-color var(--dd-motion-fast) var(--dd-ease-standard) !important;
 }
 
 // 主按钮不再做渐变 + 辉光覆盖，直接沿用 Element Plus 原生实心色：
@@ -343,41 +343,31 @@ a {
 
 // 圆角走 --el-card-border-radius，刻度化见文件末尾的「Element Plus 圆角兜底」一块。
 .el-card {
-  // 去阴影后，卡片与页面底色的分隔完全依赖这条 1px 边框
-  border: 1px solid var(--el-border-color-lighter);
-  transition: border-color var(--dd-motion-fast) var(--dd-ease-standard);
+  // 外框读 --dd-border（素白无边、呆呆 1.5px 粗边），内部分隔线读 --dd-divider
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
+  transition: border-color var(--dd-motion-fast) var(--dd-ease-standard) !important;
   // 表格等宽内容溢出时靠它裁切，与圆角无关，不能删
   overflow: hidden;
 
   .el-card__header {
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--el-border-color-lighter);
+    padding: calc(var(--dd-pad, 20px) * 0.8) var(--dd-pad, 20px);
+    border-bottom: 1px solid var(--dd-divider, var(--el-border-color-lighter));
     font-weight: 600;
   }
 
   .el-card__body {
-    padding: 20px;
+    padding: var(--dd-pad, 20px);
   }
 }
 
 .el-dialog {
   --el-dialog-margin-top: clamp(16px, 4vh, 40px) !important;
-  // ⚠️ 这里原来有一条 `animation: dd-dialog-surface-in ...`，已移除。
-  //    .el-dialog 不是 <transition> 的作用元素，它上面的 animation 只在【元素首次创建】
-  //    时跑一次；EP 的 el-dialog 默认 destroy-on-close=false，同一个弹窗第二次打开
-  //    DOM 被复用，动画不会重放。实测过：第 2、3 次打开时 getAnimations() 返回空数组。
-  //    进场位移已改挂到 `.dialog-fade-enter-active .el-overlay-dialog`，见下方浮层动画段。
-  // 弹窗属容器类表面，吃 surface 档
-  border-radius: var(--dd-radius-surface);
+  // 弹窗属容器类表面，吃 surface 档；!important 防止按需懒注入的 el-dialog.css（同特异性 0,1,0）把圆角打回 control 档
+  border-radius: var(--dd-radius-surface) !important;
+  max-width: calc(100vw - 32px);
   overflow: hidden;
-  // 注意：这条 margin-bottom 不能删。Element Plus 原生写的是
-  //     `margin: var(--el-dialog-margin-top, 15vh) auto 50px;`
-  // ——下边距是写死的 50px，跟上边距不对称。而下面的 max-height 是按「上下等距」算的
-  // （margin-top × 2），于是弹窗的垂直实占是 (margin-top + 50px)，永远比预留的
-  // (margin-top × 2) 多出 (50px - margin-top)；margin-top 取到 clamp 上限 40px 时正好差 10px。
-  // .el-overlay-dialog 自带 overflow:auto，这点差额不会让内容在弹窗内滚动，
-  // 而是变成「整个弹窗能上下挪一点」的无意义滚动条。这里把下边距显式对齐回上边距，把差额消掉。
-  margin-bottom: var(--el-dialog-margin-top);
+  // 显式把下边距对齐回上边距并带 !important，防止后加载的 el-dialog.css 把 margin-bottom 顶回 50px 产生 10px 无意义滚动条
+  margin-bottom: var(--el-dialog-margin-top) !important;
   max-height: calc(100dvh - (var(--el-dialog-margin-top) * 2));
   display: flex;
   flex-direction: column;
@@ -385,7 +375,7 @@ a {
   .el-dialog__header {
     padding: 20px 24px 16px;
     margin-right: 0;
-    border-bottom: 1px solid var(--el-border-color-lighter);
+    border-bottom: 1px solid var(--dd-divider, var(--el-border-color-lighter));
     flex-shrink: 0;
   }
 
@@ -412,7 +402,7 @@ a {
   // （`.el-dialog--center .el-dialog__footer { text-align: inherit }` 因此不会被影响）。
   .el-dialog__footer {
     padding: 16px 24px 20px;
-    border-top: 1px solid var(--el-border-color-lighter);
+    border-top: 1px solid var(--dd-divider, var(--el-border-color-lighter));
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -434,26 +424,38 @@ a {
   &.is-fullscreen {
     // 全屏模式复位上面的通用留白，确保真正边到边铺满：
     // margin-top 抵消上面那条带 !important 的留白，否则全屏框被顶下来一截露缝。
-    // 这里的 margin 简写（.el-dialog.is-fullscreen，特异性 0,2,0）高于上面那条
-    // .el-dialog { margin-bottom }（0,1,0），所以上面的下边距对齐不会漏进全屏态；
-    // 与源码顺序无关，不要因为「后写的覆盖先写的」而把这条挪走。
+    max-width: 100vw;
     max-height: 100dvh;
     --el-dialog-margin-top: 0 !important;
-    margin: 0;
+    margin: 0 !important;
+    border-radius: 0 !important;
   }
 }
 
-// 🔴 遮罩只有 24% 暗度 + 1.5px 模糊，压不住底下的内容（v3.3.2 / issue #144）：
-// 任何没铺满视口的弹窗，移动端那条 sticky 顶栏都会从遮罩后面清晰透出来，观感上就是「顶栏还在占地方」。
-// 所以移动端不能指望遮罩去挡顶栏，必须靠弹窗自己铺满——见文件末尾 ≤768 媒体查询里的 `.el-dialog` 整屏规则。
-// 层级不归这里管：v3.3.3（issue #148）起移动端 .layout-main 不再自成层叠上下文（见 MainLayout.vue），
-// 原地渲染的遮罩直接在根上下文里用 EP 的 2000+ 压过顶栏；整屏规则只管几何，解决的是「弹窗没盖到那块区域」。
+// 桌面端任意未 append-to-body 的弹窗/抽屉打开时，临时撤掉 .route-shell 的 contain: layout style，
+// 防止 position: fixed 的 .el-overlay 被困在主内容区、导致宽弹窗在 769~1360px 水平裁切或全屏弹窗未盖住侧栏顶栏。
+.layout-main > .route-shell:has(.el-overlay:not([style*="display: none"])) {
+  contain: none;
+}
+
 .el-overlay {
   background-color: rgba(15, 23, 42, 0.24) !important;
   backdrop-filter: blur(1.5px);
   // 只过渡底色。原来连 backdrop-filter 一起过渡：它的值在开关过程中根本不变，过渡它没有任何可见收益，
   // 却会让低端机（Magisk 版用手机浏览器访问）在遮罩淡入的每一帧都重新模糊一次整屏。
   transition: background-color var(--dd-motion-fast) var(--dd-ease-standard);
+}
+
+html[data-dd-glass="disabled"] .el-overlay {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .el-overlay {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 // ============================================================================
@@ -684,18 +686,18 @@ a {
 }
 
 .el-table {
-  --el-table-border-color: var(--el-border-color-lighter);
+  --el-table-border-color: var(--dd-surface-3, var(--el-border-color-lighter));
   font-family: var(--dd-font-ui);
 
   th.el-table__cell {
     background: var(--el-fill-color-light) !important;
     font-weight: 600;
-    font-size: 13px;
+    font-size: calc(var(--dd-font-size, 14px) - 1px);
     color: var(--el-text-color-regular);
   }
 
   td.el-table__cell {
-    font-size: 13.5px;
+    font-size: calc(var(--dd-font-size, 14px) - 0.5px);
     line-height: 1.5;
   }
 
@@ -902,61 +904,37 @@ a {
   opacity: 1 !important;
 }
 
-// 实心按钮（非 plain）上改用 EP 自带的分隔线令牌 #ffffff80，
-// 它本来就是给 button-group 在实心底色上画分隔用的，明暗两套都合适。
-// plain / 默认按钮是浅底，继续用上面那条灰线，白线在它们身上等于没有。
+// 实心按钮（非 plain）中缝分隔线改由按钮自身文字色 currentColor 派生 35%：
+// 修复素白暗色纯白主按钮（#ffffff）上 EP 默认白线 #ffffff80 隐形、终端暗色亮绿/亮黄底上过淡的问题。
 .el-dropdown .el-dropdown__caret-button.el-button--primary:not(.is-plain)::before,
 .el-dropdown .el-dropdown__caret-button.el-button--success:not(.is-plain)::before,
 .el-dropdown .el-dropdown__caret-button.el-button--warning:not(.is-plain)::before,
 .el-dropdown .el-dropdown__caret-button.el-button--danger:not(.is-plain)::before,
 .el-dropdown .el-dropdown__caret-button.el-button--info:not(.is-plain)::before {
-  background: var(--el-button-divide-border-color) !important;
+  background: color-mix(in srgb, currentColor 35%, transparent) !important;
 }
 
-// 菜单普通项的字色（#133）：EP 默认取 --el-text-color-regular，在浮层白底上偏浅，不像可点的操作。
-// 这里在 popper 根节点上把这个令牌改指 --el-text-color-primary，菜单里吃它的地方一起加深。
-// 刻意不写 `.el-dropdown-menu__item { color }`：那样要和 EP 的 hover / focus 规则拼特异性，
-// 谁赢取决于注入顺序，赢了还会把 hover 时的主题色字压掉。改令牌不参与这场比较：
-//   - hover / focus：EP 写的是 --el-dropdown-menuItem-hover-color（主题色），照旧；
-//   - disabled：EP 写的是 --el-text-color-disabled，照旧；
-//   - 危险项：下面那条 (0,2,0) 直接写 color，不经过这个令牌，照旧是红字（hover 淡红底）。
-// 明暗两套都成立：--el-text-color-primary 在 html.dark 下由 EP 的 dark css-vars 换成浅色。
-// 作用范围 = 全站所有 DdSplitButton 的下拉菜单，外加显式挂了同一个 popper-class 的普通 el-dropdown
-// （任务页移动端卡片的「更多」菜单）。
 .dd-split-button__popper {
   --el-text-color-regular: var(--el-text-color-primary);
 }
 
-// 菜单里的危险项（删除 / 卸载 / 清空）。
-// 这类操作【不允许】出现在 Split Button 的主体上——主体是点了就执行的，
-// 把删除放在那里等于给用户一个一击致命的按钮。统一进菜单、标红、上方加分隔线。
-//
-// 菜单被 teleport 到 body，带不上 scoped 的 data-v 属性，所以只能写在全局块里。
+// 菜单危险项与正向项均改用墨色令牌（--dd-err-ink / --dd-ok-ink），避免亮色下仅 2.2~3.7:1
 .dd-split-button__popper .dd-split-button__item--danger {
-  color: var(--el-color-danger);
+  color: var(--dd-err-ink, var(--el-color-danger));
 
   &:not(.is-disabled):hover,
   &:not(.is-disabled):focus {
-    color: var(--el-color-danger);
+    color: var(--dd-err-ink, var(--el-color-danger));
     background-color: var(--el-color-danger-light-9);
   }
 }
 
-// 菜单里「可撤销的正向操作」（任务的「启用」，与「禁用」的红色对称）。
-// v3.3.2（issue #144）把 #143 D2 的口径翻了过来：常态就写绿字，与上面 danger 的常态红字完全对称。
-// 原先【刻意不写常态色】是怕它比同菜单中性项抢眼一档（#133「菜单项字色统一」），
-// 但用户反馈常态看不出这是正向操作，现按用户要求常驻着色；桌面操作列 ▾ 与移动端卡片「···」一起变。
-// 特异性：常态这条 (0,2,0) 压得过 EP 的 `.el-dropdown-menu__item`(0,1,0)；
-// hover 那两条 (0,4,0) 高于 EP 的 `.el-dropdown-menu__item:not(.is-disabled):hover`(0,3,0)，都不需要 !important。
-// 取值只用令牌：暗色下 --el-color-success / --el-color-success-light-9 由 EP 的 dark css-vars 换值，
-// 写死 #67c23a / #f0f9eb 会在暗色下失真（EP 的 --el-color-success 明色恰好就是 #67C23A）。
-// 使用方：DdSplitButton / DdMoreMenu 菜单项的 success 字段（目前是任务页桌面操作列与移动端卡片「···」）。
 .dd-split-button__popper .dd-split-button__item--success {
-  color: var(--el-color-success);
+  color: var(--dd-ok-ink, var(--el-color-success));
 
   &:not(.is-disabled):hover,
   &:not(.is-disabled):focus {
-    color: var(--el-color-success);
+    color: var(--dd-ok-ink, var(--el-color-success));
     background-color: var(--el-color-success-light-9);
   }
 }
@@ -970,89 +948,16 @@ a {
   color: var(--el-text-color-regular);
 }
 
-.el-menu {
-  border-right: none !important;
-
-  .el-menu-item {
-    // 侧栏菜单项属控件类表面（与下拉菜单项同档）。v4.0：读排版级令牌（默认 = control 档，素白 14px）
-    border-radius: var(--dd-nav-item-radius);
-    margin: 2px 8px;
-    height: 44px;
-    line-height: 44px;
-    // 只过渡会变的两项并吃令牌。原来是 `all 0.2s`：时长写死、绕过减少动效的降级；
-    // all 还会把 font-weight 这类不该动的属性一起带进来（选中态加粗时文字会「挤」一下）。
-    // (0,2,0) 同时压住了 EP 自带的 border-color / background-color / color 各 0.3s 的过渡。
-    transition:
-      background-color var(--dd-motion-fast) var(--dd-ease-standard),
-      color var(--dd-motion-fast) var(--dd-ease-standard);
-    position: relative;
-    overflow: hidden;
-
-    &.is-active {
-      // 纯扁平：选中态用单一浅底色，不再叠品牌色渐变与图标辉光。
-      // v4.0：底色 / 字色 / 竖条宽度读排版级令牌（默认与改前一致；素白是灰色药丸、竖条宽 0 即不显示）
-      background: var(--dd-nav-active-bg);
-      color: var(--dd-nav-active-fg);
-      font-weight: 600;
-
-      &::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: 20%;
-        height: 60%;
-        width: var(--dd-nav-indicator-width);
-        background: var(--el-color-primary);
-        // 选中竖条从中点向上下两端长出来（#132）。伪元素随 .is-active 生成、随它消失，
-        // 所以每次切到新菜单都会重放，不需要任何 JS；只动 transform / opacity，不触发重排。
-        // 这是「选中」这个状态的入场动效，不是 hover / active 态的形变，不违反扁平规则。
-        transform-origin: center;
-        animation: dd-menu-indicator-in var(--dd-motion-normal) var(--dd-ease-emphasized);
-      }
-    }
-
-    // hover 只换底色，不再做横向位移
-    &:hover:not(.is-active) {
-      background: var(--el-fill-color-light);
-    }
-  }
-
-  &.el-menu--collapse {
-    .el-menu-item {
-      margin: 2px 8px;
-      padding: 0 !important;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-
-      .el-icon {
-        margin: 0;
-      }
-    }
-  }
-}
-
-@keyframes dd-menu-indicator-in {
-  from {
-    opacity: 0;
-    transform: scaleY(0);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 // 圆角走 --el-messagebox-border-radius，刻度化见文件末尾的「Element Plus 圆角兜底」一块。
 .el-message-box {
   padding: 24px;
 }
 
 .el-notification {
-  // 通知是浮层容器，吃 surface 档
-  border-radius: var(--dd-radius-surface);
-  // 去掉浮层阴影后，靠 1px 边框与页面内容分隔
-  border: 1px solid var(--el-border-color-lighter);
+  // 通知是浮层容器，吃 surface 档（同时覆写私有令牌防懒注入 el-notification.css 顶回 8px）
+  --el-notification-radius: var(--dd-radius-surface) !important;
+  border-radius: var(--dd-radius-surface) !important;
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
 }
 
 // ============================================================================
@@ -1139,13 +1044,10 @@ a {
     background-color var(--dd-motion-fast) var(--dd-ease-standard),
     color var(--dd-motion-fast) var(--dd-ease-standard);
 
-  // hover 反色：底填语义色，文字取提示条自身的浅底色。
-  // ⚠️ 不能写 `background-color: currentcolor` —— currentcolor 解析的是该元素 color 的
-  //    【计算值】，而同一条规则里 color 也被改了，两者会一起变成同一个颜色，
-  //    结果是「深底 + 同色文字」，按钮 hover 时直接读不出字。必须两边都写具体令牌。
+  // hover 反色：底填墨色（--el-message-text-color 已在 _ep-map.scss 映射到 --dd-*-ink），文字取卡片实底色（≥ 4.85:1）
   &:hover {
     background-color: var(--el-message-text-color, var(--el-color-info));
-    color: var(--el-message-bg-color, var(--el-bg-color));
+    color: var(--dd-surface-solid, var(--el-bg-color));
   }
 
   &:focus-visible {
@@ -1158,7 +1060,7 @@ a {
   .el-drawer__header {
     margin-bottom: 0;
     padding: 20px 24px;
-    border-bottom: 1px solid var(--el-border-color-lighter);
+    border-bottom: 1px solid var(--dd-divider, var(--el-border-color-lighter));
   }
 
   .el-drawer__body {
@@ -1480,8 +1382,8 @@ html.dark {
   // 暗色页面底色
   --el-bg-color-page: #0b1120;
 
-  .el-card {
-    // 暗色下边框加深一档，保证去阴影后仍能与页面底色分开
+  // 仅在无 data-dd-theme 的兜底态生效，有主题时完全交由 themes/_ep-map.scss 与主题块（含素白无边框）控制
+  &:not([data-dd-theme]) .el-card {
     border-color: var(--el-border-color-darker);
   }
 
@@ -1493,18 +1395,6 @@ html.dark {
     }
   }
 
-  // ===== 全局深色模式补丁：覆盖各页面 hardcoded 浅色，避免文字与浅色背景冲突 =====
-  // v4.0 验收返工：这一段原来有一批带 !important 的页面级覆盖，第二波各组只能改自己的 SFC、改不了本文件，
-  // 带着它们页面就没法覆盖。现在的处理（逐条核过页面里的基础样式）：
-  //   - 页面基础样式已经读令牌的（profile-hero、stat-card、侧栏 logo 两块、仪表盘 .panel）→ 整条删掉，
-  //     暗色下由令牌自己变深（底色从 overlay 变回 bg-color、描边从 darker 变回 lighter，色差很小）；
-  //   - 页面自己已经写了 :global(html.dark) 同名块的（更新 / 还原进度、赞助墙）→ 删掉。页面那份是 (0,3,1)，
-  //     这里不带 !important 本来就压不过它，留着只是死代码；那两个页面暗色块里还有写死的色值，见交接说明，由第二波令牌化；
-  //   - 全仓没人用的（.quick-action-card）→ 删掉；
-  //   - 表头与悬停行 → 改成 EP 的表格令牌，页面写普通样式或改同名令牌就能覆盖；
-  //   - 侧栏版本号 → 去掉 !important，保留选择器（理由见各自注释）。
-  // 表头与悬停行：原来是 `th { background-color/color ... !important }` 与 `tr:hover > td {... !important}`，
-  // 现在改设 EP 自己的表格令牌，取值不变。各列表页 :header-cell-style 里内联的也是这对令牌，结果一致。
   .el-table {
     --el-table-header-bg-color: var(--el-fill-color-light);
     --el-table-header-text-color: var(--el-text-color-regular);
@@ -1517,22 +1407,9 @@ html.dark {
     color: var(--el-text-color-secondary);
   }
 
-  // 弹窗 footer 边框在亮色用 #ebeef5，在 dark 用更深
-  .el-dialog__header,
-  .el-dialog__footer {
+  &:not([data-dd-theme]) .el-dialog__header,
+  &:not([data-dd-theme]) .el-dialog__footer {
     border-color: var(--el-border-color-darker);
-  }
-
-  // 侧栏版本号：MainLayout 的基础样式写死了 color-mix(主色 10%, white) 的浅底，暗色下必须改。
-  // 文字用主色墨色（原来的 primary-light-3 在极光暗色只有 2.3:1）。
-  // 不带 !important：(0,2,1) 压过页面的 (0,2,0)；G1 改 MainLayout 时在自己的暗色块里写同名选择器即可覆盖。
-  .logo-version {
-    background: color-mix(
-      in srgb,
-      var(--el-color-primary) 15%,
-      var(--el-bg-color-overlay)
-    );
-    color: var(--dd-accent-ink, var(--el-color-primary-light-3));
   }
 }
 
@@ -1587,7 +1464,13 @@ html.dark {
   --dd-popper-glass-filter: blur(14px) saturate(1.1);
 }
 
-// 两个选择器都要写：html.dark (0,1,1) 比 :root (0,1,0) 高，只写 :root 的话暗色下关不掉。
+// 用户显式关玻璃 / 低端降级（data-dd-glass="disabled"）与系统「降低透明度」：下拉浮层一并退回实色不模糊
+html[data-dd-glass="disabled"],
+html.dark[data-dd-glass="disabled"] {
+  --dd-popper-glass-bg: var(--el-bg-color-overlay);
+  --dd-popper-glass-filter: none;
+}
+
 @media (prefers-reduced-transparency: reduce) {
   :root,
   html.dark {
@@ -1723,6 +1606,40 @@ $dd-glass-poppers: ":is(.el-select__popper, .el-dropdown__popper, .el-picker__po
     transparent
   );
 
+  // ANSI 16 色调色板默认值（暗底提亮版，与 utils/ansi.ts 配套）；浅底在下方按 data-dd-log-tone="light" 切换加深版
+  --dd-ansi-30: #94a3b8;
+  --dd-ansi-31: #f87171;
+  --dd-ansi-32: #34d399;
+  --dd-ansi-33: #facc15;
+  --dd-ansi-34: #60a5fa;
+  --dd-ansi-35: #e879f9;
+  --dd-ansi-36: #22d3ee;
+  --dd-ansi-37: #e2e8f0;
+  --dd-ansi-90: #94a3b8;
+  --dd-ansi-91: #fca5a5;
+  --dd-ansi-92: #4ade80;
+  --dd-ansi-93: #fde047;
+  --dd-ansi-94: #93c5fd;
+  --dd-ansi-95: #f0abfc;
+  --dd-ansi-96: #67e8f9;
+  --dd-ansi-97: #ffffff;
+  --dd-ansi-bg-40: rgba(15, 23, 42, 0.72);
+  --dd-ansi-bg-41: rgba(185, 28, 28, 0.42);
+  --dd-ansi-bg-42: rgba(4, 120, 87, 0.42);
+  --dd-ansi-bg-43: rgba(161, 98, 7, 0.42);
+  --dd-ansi-bg-44: rgba(29, 78, 216, 0.42);
+  --dd-ansi-bg-45: rgba(147, 51, 234, 0.42);
+  --dd-ansi-bg-46: rgba(14, 116, 144, 0.42);
+  --dd-ansi-bg-47: rgba(226, 232, 240, 0.22);
+  --dd-ansi-bg-100: rgba(71, 85, 105, 0.48);
+  --dd-ansi-bg-101: rgba(239, 68, 68, 0.35);
+  --dd-ansi-bg-102: rgba(16, 185, 129, 0.35);
+  --dd-ansi-bg-103: rgba(234, 179, 8, 0.35);
+  --dd-ansi-bg-104: rgba(59, 130, 246, 0.35);
+  --dd-ansi-bg-105: rgba(192, 132, 252, 0.35);
+  --dd-ansi-bg-106: rgba(6, 182, 212, 0.35);
+  --dd-ansi-bg-107: rgba(255, 255, 255, 0.25);
+
   background-color: var(--dd-log-bg-color);
   background-image:
     var(--dd-log-bg-image),
@@ -1744,19 +1661,6 @@ $dd-glass-poppers: ":is(.el-select__popper, .el-dropdown__popper, .el-picker__po
   background-repeat: no-repeat, no-repeat, no-repeat;
   background-size: cover, auto, auto;
   border: 1px solid var(--dd-log-border-color);
-  // 日志窗口是一整块容器类表面 → surface 档。
-  //
-  // 🔴 这条只对「自己就是最外层日志窗口」的用法成立。把 .dd-log-surface 用成
-  //    【铺满父容器的内层】时（弹窗 body 内边距为 0 直接顶到弹窗边、或塞进一个已经
-  //    带 surface 圆角 + overflow:hidden 的外框），【必须在使用点写回 border-radius: 0】：
-  //      - 顶到外层边框：圆角模式下深色日志底会被自己的 10px 圆角切出缺口、露出弹窗白底；
-  //      - 嵌在已圆角外框里：内外两条 10px 圆角只差 1px 同心叠着，四角线宽看起来变粗。
-  //    圆角交给外层容器 + overflow:hidden 去裁才是对的。
-  //    已按 flush 处理的使用点：logs/index.vue 的 .detail-log（只在详情弹窗那一支写 0，
-  //    另一支嵌在有内边距的 body 里、仍吃 surface）、ScriptExecutionDialogs.vue 的
-  //    .debug-log-content、LogViewer.vue 的 .viewer-log、LogFileBrowser.vue 的 .content-text。
-  //    其余使用点（deps / subscriptions / PanelLogCard / SystemConfigCard）四周都有留白，
-  //    自己就是最外层日志面板，继续吃 surface 档。新增使用点时先判断属于哪一种。
   border-radius: var(--dd-radius-surface);
   color: var(--dd-log-text-color);
   scrollbar-color: var(--dd-log-scrollbar-thumb-color)
@@ -1798,6 +1702,55 @@ $dd-glass-poppers: ":is(.el-select__popper, .el-dropdown__popper, .el-picker__po
   }
 }
 
+// 浅色日志底（默认亮色 #f8fafc 或自定义浅色底）：切换加深版 ANSI 调色板，保证黄/白/绿/青全部 ≥ 4.5:1
+html[data-dd-log-tone="light"] .dd-log-surface {
+  --dd-ansi-30: #1e293b;
+  --dd-ansi-31: #b91c1c;
+  --dd-ansi-32: #166534;
+  --dd-ansi-33: #92400e;
+  --dd-ansi-34: #1d4ed8;
+  --dd-ansi-35: #7e22ce;
+  --dd-ansi-36: #155e75;
+  --dd-ansi-37: #334155;
+  --dd-ansi-90: #475569;
+  --dd-ansi-91: #dc2626;
+  --dd-ansi-92: #047857;
+  --dd-ansi-93: #a16207;
+  --dd-ansi-94: #2563eb;
+  --dd-ansi-95: #9333ea;
+  --dd-ansi-96: #0e7490;
+  --dd-ansi-97: #0f172a;
+  --dd-ansi-bg-40: rgba(15, 23, 42, 0.14);
+  --dd-ansi-bg-41: rgba(220, 38, 38, 0.14);
+  --dd-ansi-bg-42: rgba(5, 150, 105, 0.14);
+  --dd-ansi-bg-43: rgba(217, 119, 6, 0.16);
+  --dd-ansi-bg-44: rgba(37, 99, 235, 0.14);
+  --dd-ansi-bg-45: rgba(147, 51, 234, 0.14);
+  --dd-ansi-bg-46: rgba(8, 145, 178, 0.14);
+  --dd-ansi-bg-47: rgba(100, 116, 139, 0.14);
+  --dd-ansi-bg-100: rgba(71, 85, 105, 0.16);
+  --dd-ansi-bg-101: rgba(239, 68, 68, 0.18);
+  --dd-ansi-bg-102: rgba(16, 185, 129, 0.18);
+  --dd-ansi-bg-103: rgba(245, 158, 11, 0.2);
+  --dd-ansi-bg-104: rgba(59, 130, 246, 0.18);
+  --dd-ansi-bg-105: rgba(168, 85, 247, 0.18);
+  --dd-ansi-bg-106: rgba(6, 182, 212, 0.18);
+  --dd-ansi-bg-107: rgba(148, 163, 184, 0.18);
+}
+
+// 自定义日志背景图时，在图片之上叠加 78% --dd-log-bg-color 半透明遮罩（scrim），防止高反差原图吞掉日志文字
+html[data-dd-log-has-image="1"] .dd-log-surface {
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--dd-log-bg-color) 78%, transparent),
+      color-mix(in srgb, var(--dd-log-bg-color) 78%, transparent)
+    ),
+    var(--dd-log-bg-image);
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: auto, cover;
+}
+
 .dd-log-surface pre,
 .dd-log-surface,
 pre.dd-log-surface {
@@ -1831,10 +1784,30 @@ html.dark {
   );
 }
 
+html[data-dd-glass="disabled"],
+html.dark[data-dd-glass="disabled"] {
+  --dd-loading-surface-color: color-mix(in srgb, var(--dd-surface-solid, var(--el-bg-color)) 92%, transparent);
+  --dd-loading-surface-backdrop: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  html.dark {
+    --dd-loading-surface-color: var(--dd-surface-solid, var(--el-bg-color));
+    --dd-loading-surface-backdrop: none;
+  }
+}
+
 .el-loading-mask {
   background-color: var(--dd-loading-surface-color) !important;
   backdrop-filter: var(--dd-loading-surface-backdrop);
   -webkit-backdrop-filter: var(--dd-loading-surface-backdrop);
+
+  // 非全屏局部加载遮罩压低至 15：低于 sticky 顶栏（20）、RunningDock（1500）、CommandPalette（1991），
+  // 防止移动端移除容器层叠上下文后，局部 v-loading（EP 默认 2000）反压在顶栏和全局浮层之上。
+  &:not(.is-fullscreen) {
+    z-index: 15 !important;
+  }
 }
 
 .el-loading-spinner {
@@ -1849,6 +1822,8 @@ html.dark {
     letter-spacing: 0.2px;
   }
 
+  // 用 mask-image 承载 Infinity 图形 + background 读主题色 --dd-loading-primary，
+  // 彻底替换旧版 data-URI 写死 %23409eff 导致在纸墨/终端/极光/素白主题串色的问题。
   &::before {
     content: "";
     position: absolute;
@@ -1858,10 +1833,15 @@ html.dark {
     height: 18px;
     margin-left: -21px;
     margin-top: -9px;
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: contain;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 48' fill='none'%3E%3Cpath d='M24 24C24 15.1634 31.1634 8 40 8C54 8 54 40 68 40C76.8366 40 84 32.8366 84 24C84 15.1634 91.1634 8 100 8C108.837 8 116 15.1634 116 24C116 32.8366 108.837 40 100 40C86 40 86 8 72 8C63.1634 8 56 15.1634 56 24C56 32.8366 48.8366 40 40 40C31.1634 40 24 32.8366 24 24Z' stroke='rgba(64,158,255,0.16)' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M24 24C24 15.1634 31.1634 8 40 8C54 8 54 40 68 40C76.8366 40 84 32.8366 84 24C84 15.1634 91.1634 8 100 8' stroke='%23409eff' stroke-width='6' stroke-linecap='round' stroke-linejoin='round' stroke-dasharray='38 62'%3E%3Canimate attributeName='stroke-dashoffset' values='0;-52;-104' dur='1.35s' repeatCount='indefinite'/%3E%3Canimate attributeName='opacity' values='0.9;1;0.9' dur='1.35s' repeatCount='indefinite'/%3E%3C/path%3E%3Cpath d='M116 24C116 32.8366 108.837 40 100 40C86 40 86 8 72 8C63.1634 8 56 15.1634 56 24C56 32.8366 48.8366 40 40 40C31.1634 40 24 32.8366 24 24' stroke='%23409eff' stroke-width='6' stroke-linecap='round' stroke-linejoin='round' stroke-dasharray='38 62'%3E%3Canimate attributeName='stroke-dashoffset' values='-28;-80;-132' dur='1.35s' repeatCount='indefinite'/%3E%3Canimate attributeName='opacity' values='0.45;0.9;0.45' dur='1.35s' repeatCount='indefinite'/%3E%3C/path%3E%3C/svg%3E");
+    background-color: var(--dd-loading-primary);
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 48' fill='none'%3E%3Cpath d='M24 24C24 15.1634 31.1634 8 40 8C54 8 54 40 68 40C76.8366 40 84 32.8366 84 24C84 15.1634 91.1634 8 100 8C108.837 8 116 15.1634 116 24C116 32.8366 108.837 40 100 40C86 40 86 8 72 8C63.1634 8 56 15.1634 56 24C56 32.8366 48.8366 40 40 40C31.1634 40 24 32.8366 24 24Z' stroke='rgba(0,0,0,0.22)' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M24 24C24 15.1634 31.1634 8 40 8C54 8 54 40 68 40C76.8366 40 84 32.8366 84 24C84 15.1634 91.1634 8 100 8' stroke='black' stroke-width='6' stroke-linecap='round' stroke-linejoin='round' stroke-dasharray='38 62'%3E%3Canimate attributeName='stroke-dashoffset' values='0;-52;-104' dur='1.35s' repeatCount='indefinite'/%3E%3Canimate attributeName='opacity' values='0.9;1;0.9' dur='1.35s' repeatCount='indefinite'/%3E%3C/path%3E%3Cpath d='M116 24C116 32.8366 108.837 40 100 40C86 40 86 8 72 8C63.1634 8 56 15.1634 56 24C56 32.8366 48.8366 40 40 40C31.1634 40 24 32.8366 24 24' stroke='black' stroke-width='6' stroke-linecap='round' stroke-linejoin='round' stroke-dasharray='38 62'%3E%3Canimate attributeName='stroke-dashoffset' values='-28;-80;-132' dur='1.35s' repeatCount='indefinite'/%3E%3Canimate attributeName='opacity' values='0.45;0.9;0.45' dur='1.35s' repeatCount='indefinite'/%3E%3C/path%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 48' fill='none'%3E%3Cpath d='M24 24C24 15.1634 31.1634 8 40 8C54 8 54 40 68 40C76.8366 40 84 32.8366 84 24C84 15.1634 91.1634 8 100 8C108.837 8 116 15.1634 116 24C116 32.8366 108.837 40 100 40C86 40 86 8 72 8C63.1634 8 56 15.1634 56 24C56 32.8366 48.8366 40 40 40C31.1634 40 24 32.8366 24 24Z' stroke='rgba(0,0,0,0.22)' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M24 24C24 15.1634 31.1634 8 40 8C54 8 54 40 68 40C76.8366 40 84 32.8366 84 24C84 15.1634 91.1634 8 100 8' stroke='black' stroke-width='6' stroke-linecap='round' stroke-linejoin='round' stroke-dasharray='38 62'%3E%3Canimate attributeName='stroke-dashoffset' values='0;-52;-104' dur='1.35s' repeatCount='indefinite'/%3E%3Canimate attributeName='opacity' values='0.9;1;0.9' dur='1.35s' repeatCount='indefinite'/%3E%3C/path%3E%3Cpath d='M116 24C116 32.8366 108.837 40 100 40C86 40 86 8 72 8C63.1634 8 56 15.1634 56 24C56 32.8366 48.8366 40 40 40C31.1634 40 24 32.8366 24 24' stroke='black' stroke-width='6' stroke-linecap='round' stroke-linejoin='round' stroke-dasharray='38 62'%3E%3Canimate attributeName='stroke-dashoffset' values='-28;-80;-132' dur='1.35s' repeatCount='indefinite'/%3E%3Canimate attributeName='opacity' values='0.45;0.9;0.45' dur='1.35s' repeatCount='indefinite'/%3E%3C/path%3E%3C/svg%3E");
     filter: drop-shadow(0 6px 16px color-mix(in srgb, var(--dd-loading-primary) 22%, transparent));
   }
 }
@@ -1873,11 +1853,12 @@ html.dark {
   margin-top: -12px;
 }
 
-// 统一按钮 loading：按钮内部改成更轻的 SVG 旋转圆弧。
+// 统一按钮 loading：用纯 CSS currentColor 圆环替代写死白/蓝 SVG，
+// 天然跟随按钮自身的 --el-button-text-color，在素白暗白底、终端暗亮绿底及全部 plain/text/link 按钮上均有高对比度。
 .el-button {
   .el-icon.is-loading {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     animation: none !important;
     position: relative;
 
@@ -1888,19 +1869,11 @@ html.dark {
     &::before {
       content: "";
       position: absolute;
-      inset: 0;
-      background-repeat: no-repeat;
-      background-position: center;
-      background-size: contain;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none'%3E%3Ccircle cx='20' cy='20' r='15' stroke='rgba(255,255,255,0.18)' stroke-width='4'/%3E%3Ccircle cx='20' cy='20' r='15' stroke='white' stroke-width='4' stroke-linecap='round' stroke-dasharray='24 76'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 20 20' to='360 20 20' dur='1s' repeatCount='indefinite'/%3E%3Canimate attributeName='stroke-dasharray' values='18 82;38 62;18 82' dur='1.2s' repeatCount='indefinite'/%3E%3Canimate attributeName='stroke-dashoffset' values='0;-14;-48' dur='1.2s' repeatCount='indefinite'/%3E%3C/circle%3E%3C/svg%3E");
-    }
-  }
-
-  &:not(.el-button--primary):not(.el-button--success):not(
-      .el-button--warning
-    ):not(.el-button--danger) {
-    .el-icon.is-loading::before {
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none'%3E%3Ccircle cx='20' cy='20' r='15' stroke='rgba(64,158,255,0.16)' stroke-width='4'/%3E%3Ccircle cx='20' cy='20' r='15' stroke='%23409eff' stroke-width='4' stroke-linecap='round' stroke-dasharray='24 76'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 20 20' to='360 20 20' dur='1s' repeatCount='indefinite'/%3E%3Canimate attributeName='stroke-dasharray' values='18 82;38 62;18 82' dur='1.2s' repeatCount='indefinite'/%3E%3Canimate attributeName='stroke-dashoffset' values='0;-14;-48' dur='1.2s' repeatCount='indefinite'/%3E%3C/circle%3E%3C/svg%3E");
+      inset: 1px;
+      border-radius: 50%;
+      border: 2px solid color-mix(in srgb, currentColor 24%, transparent);
+      border-top-color: currentColor;
+      animation: spin 0.85s linear infinite;
     }
   }
 }
@@ -1940,7 +1913,7 @@ html.dark {
 .dd-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+  gap: var(--dd-gap, 14px);
   margin-bottom: 18px;
 }
 
@@ -1953,20 +1926,17 @@ html.dark {
 
 .dd-stat-card {
   background: var(--el-bg-color);
-  // 去阴影后靠这条边框与页面底色分隔
-  border: 1px solid var(--el-border-color-lighter);
-  // 统计卡片是容器类表面 → 「卡片」角色令牌（桌面 = surface 档，移动端 rounded 为 20px）
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
   border-radius: var(--dd-radius-card);
-  padding: 16px 18px;
+  padding: calc(var(--dd-pad, 20px) * 0.8) var(--dd-pad, 20px);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   transition: border-color var(--dd-motion-fast) var(--dd-ease-standard);
 
-  // hover 只让描边偏向品牌色，不做上浮 / 缩放
   &:hover {
-    border-color: color-mix(in srgb, var(--el-color-primary) 26%, var(--el-border-color-lighter));
+    border-color: color-mix(in srgb, var(--el-color-primary) 26%, var(--dd-border, var(--el-border-color-lighter)));
   }
 }
 
@@ -1995,7 +1965,8 @@ html.dark {
   font-size: 26px;
   font-weight: 700;
   line-height: 1.15;
-  font-family: "Inter", var(--dd-font-ui), sans-serif;
+  // 主题正文字体优先，避免 "Inter" 抢先覆盖终端主题（terminal）的等宽字体
+  font-family: var(--dd-font-ui), "Inter", sans-serif;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.01em;
@@ -2099,6 +2070,8 @@ html.dark {
   background: transparent;
   padding: 6px 14px;
   font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
   // 分段项属控件类表面 → control 档（v4.0 读 --dd-seg-radius，与底槽同一个来源）
   border-radius: var(--dd-seg-radius);
   cursor: pointer;
@@ -2201,18 +2174,14 @@ html.dark {
 
 .dd-data-card {
   background: var(--el-bg-color);
-  // 去阴影后靠这条边框与页面底色分隔
-  border: 1px solid var(--el-border-color-lighter);
-  // 数据卡片是容器类表面 → 「卡片」角色令牌（桌面 = surface 档，移动端 rounded 为 20px）
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
   border-radius: var(--dd-radius-card);
-  // overflow:hidden 让内部贴边的 toolbar / 表格 / 分页条自动被圆角裁掉四角，
-  // 所以 .dd-data-card__toolbar 与 .dd-pagination 刻意不写圆角（贴边内嵌，写了反而露角）
   overflow: hidden;
 }
 
 .dd-data-card__toolbar {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  padding: calc(var(--dd-pad, 20px) * 0.7) calc(var(--dd-pad, 20px) * 0.8);
+  border-bottom: 1px solid var(--dd-divider, var(--el-border-color-lighter));
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2240,7 +2209,7 @@ html.dark {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
-  border-top: 1px solid var(--el-border-color-lighter);
+  border-top: 1px solid var(--dd-divider, var(--el-border-color-lighter));
   flex-wrap: wrap;
 }
 
@@ -2296,8 +2265,7 @@ html.dark {
   padding: var(--dd-mobile-card-padding);
   // 移动端卡片是容器类表面 → 「卡片」角色令牌（rounded 面板在 ≤768 下为 20px，square 仍是直角）
   border-radius: var(--dd-radius-card);
-  // 去掉底色渐变与投影，纯色底 + 1px 边框划分卡片
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
   background: var(--el-bg-color);
 }
 
@@ -2894,6 +2862,29 @@ html.dark {
     width: 100% !important;
   }
 
+  // DdDateRangePicker 双月弹出层固有宽 646px，手机端改为单列纵向堆叠，防止右半月历裁出屏幕
+  .dd-date-range__popper .el-date-range-picker {
+    width: calc(100vw - 24px) !important;
+    max-width: 340px !important;
+
+    .el-picker-panel__body {
+      min-width: 0 !important;
+      max-height: 70dvh;
+      overflow-y: auto;
+    }
+
+    .el-date-range-picker__content {
+      width: 100% !important;
+      float: none !important;
+      padding: 12px !important;
+    }
+
+    .el-date-range-picker__content.is-left {
+      border-right: none !important;
+      border-bottom: 1px solid var(--dd-divider, var(--el-border-color-lighter));
+    }
+  }
+
   // O1（v3.3.1，issue #143）：主布局的移动端侧栏抽屉（MainLayout.vue 的 class="layout-mobile-drawer"）
   // 是上面那条 100% 的唯一例外，占半屏、右侧露出遮罩可点关闭。
   // (0,2,0) + !important 压过上面 (0,1,0) + !important；其它抽屉（api-docs / dev-motion）仍是 100%。
@@ -2964,7 +2955,8 @@ html[data-dd-theme] #app {
   backdrop-filter: blur(var(--dd-glass-blur, 0px)) saturate(150%);
 }
 
-html[data-dd-glass="off"] .dd-glass {
+html[data-dd-glass="off"] .dd-glass,
+html[data-dd-glass="disabled"] .dd-glass {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }

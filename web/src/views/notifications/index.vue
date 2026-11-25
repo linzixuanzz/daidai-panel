@@ -136,22 +136,23 @@ function resetFilters() {
 
 // --- Channel type color / avatar helpers ---
 // hue 是主题令牌名（ok / info / warn / err / accent-2），头像用 --dd-<hue> 调浅底、--dd-<hue>-ink 做字色
-const typeColorMap: Record<string, { hue: string; badge: string }> = {
+type TagBadgeType = 'primary' | 'success' | 'warning' | 'danger' | 'info'
+const typeColorMap: Record<string, { hue: string; badge: TagBadgeType }> = {
   wecom: { hue: 'ok', badge: 'success' },
   wecom_app: { hue: 'ok', badge: 'success' },
-  pushplus: { hue: 'info', badge: '' },
-  feishu: { hue: 'info', badge: '' },
+  pushplus: { hue: 'info', badge: 'primary' },
+  feishu: { hue: 'info', badge: 'primary' },
   dingtalk: { hue: 'warn', badge: 'warning' },
   email: { hue: 'err', badge: 'danger' },
   webhook: { hue: 'info', badge: 'warning' },
   custom: { hue: 'accent-2', badge: 'warning' },
-  telegram: { hue: 'info', badge: '' },
+  telegram: { hue: 'info', badge: 'primary' },
   bark: { hue: 'warn', badge: 'warning' },
-  serverchan: { hue: 'accent-2', badge: '' },
+  serverchan: { hue: 'accent-2', badge: 'primary' },
   gotify: { hue: 'ok', badge: 'success' },
   pushdeer: { hue: 'warn', badge: 'warning' },
-  pushme: { hue: 'info', badge: '' },
-  discord: { hue: 'info', badge: '' },
+  pushme: { hue: 'info', badge: 'primary' },
+  discord: { hue: 'info', badge: 'primary' },
   slack: { hue: 'err', badge: 'danger' },
   ntfy: { hue: 'ok', badge: 'success' },
   wxpusher: { hue: 'ok', badge: 'success' },
@@ -165,8 +166,8 @@ function getChannelAvatar(type: string, name: string) {
   return { initial, bg: `color-mix(in srgb, var(--dd-${hue}) 12%, transparent)`, color: `var(--dd-${hue}-ink)` }
 }
 
-function getTypeBadgeType(type: string): string {
-  return typeColorMap[type]?.badge || ''
+function getTypeBadgeType(type: string): TagBadgeType {
+  return typeColorMap[type]?.badge || 'primary'
 }
 
 // 渠道 config 的扁平键值视图，与 channelForm.config 的 JSON 文本互相同步。
@@ -651,7 +652,7 @@ function getChannelConfigSummary(row: any): string[] {
         </div>
 
         <!-- Mobile Cards -->
-        <div v-if="isMobile" class="dd-mobile-list dd-rise" style="--dd-i: 2">
+        <div v-if="isMobile" v-loading="channelLoading" class="dd-mobile-list dd-rise" style="--dd-i: 2">
           <div
             v-for="row in pagedChannels"
             :key="row.id"
@@ -698,7 +699,7 @@ function getChannelConfigSummary(row: any): string[] {
             style="width: 100%"
             :header-cell-style="{ background: 'var(--el-fill-color-light)', color: 'var(--el-text-color-regular)', fontWeight: 600, fontSize: '13px' }"
           >
-            <el-table-column prop="name" label="名称" min-width="180">
+            <el-table-column prop="name" label="名称" min-width="160">
               <template #default="{ row }">
                 <div class="channel-name-cell">
                   <div
@@ -714,12 +715,12 @@ function getChannelConfigSummary(row: any): string[] {
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="type" label="类型" width="130">
+            <el-table-column prop="type" label="类型" width="115">
               <template #default="{ row }">
                 <el-tag size="small" :type="getTypeBadgeType(row.type)" effect="plain" round>{{ getTypeName(row.type) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="推送范围" width="120" align="center">
+            <el-table-column label="推送范围" width="104" align="center">
               <template #default="{ row }">
                 <el-tooltip
                   :content="isBoundChannel(row)
@@ -733,19 +734,19 @@ function getChannelConfigSummary(row: any): string[] {
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="配置概览" min-width="180">
+            <el-table-column label="配置概览" min-width="165">
               <template #default="{ row }">
                 <div class="config-summary">
                   <span v-for="item in getChannelConfigSummary(row)" :key="item" class="config-summary__line">{{ item }}</span>
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="启用" width="80" align="center">
+            <el-table-column label="启用" width="72" align="center">
               <template #default="{ row }">
                 <el-switch :model-value="row.enabled" size="small" @change="handleToggleChannel(row)" />
               </template>
             </el-table-column>
-            <el-table-column label="最近测试" width="160">
+            <el-table-column label="最近测试" width="155">
               <template #default="{ row }">
                 <!-- 点「测试」后 handleTestChannel 会重拉列表，这一格从「未测试」翻成
                      「测试通过 / 测试未通过」——是本页最值得被看见的一次变化，硬切会被眼睛错过。
@@ -771,14 +772,14 @@ function getChannelConfigSummary(row: any): string[] {
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="created_at" label="创建时间" width="170">
+            <el-table-column prop="created_at" label="创建时间" width="158">
               <template #default="{ row }">
                 <div class="time-cell">
                   <span class="time-text">{{ formatDateTime(row.created_at) }}</span>
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="180" fixed="right" align="center">
+            <el-table-column label="操作" width="168" fixed="right" align="center">
               <template #default="{ row }">
                 <div class="action-btns">
                   <el-button size="small" text type="success" @click="handleTestChannel(row.id)">测试</el-button>
@@ -806,8 +807,9 @@ function getChannelConfigSummary(row: any): string[] {
 
     <!-- Channel Dialog -->
     <el-dialog v-model="showChannelDialog" :title="isCreateChannel ? '新建通知渠道' : '编辑通知渠道'" width="600px" :fullscreen="dialogFullscreen">
-      <el-form :model="channelForm" :label-width="dialogFullscreen ? 'auto' : '130px'" :label-position="dialogFullscreen ? 'top' : 'right'">
-        <el-form-item label="名称">
+      <!-- 动态配置项字段标签长短不一，统一 label-position="top" 避免左栏挤换行 -->
+      <el-form :model="channelForm" label-position="top">
+        <el-form-item label="名称" required>
           <el-input v-model="channelForm.name" placeholder="渠道名称" />
         </el-form-item>
         <el-form-item label="类型">
@@ -835,7 +837,7 @@ function getChannelConfigSummary(row: any): string[] {
           通用渲染器：字段来自服务端 schema，widget 只有 input / password / textarea / select 四种。
           最后的 v-else 是兜底分支，遇到不认识的 widget 一律按普通输入框渲染，绝不隐藏字段。
         -->
-        <el-form-item v-for="field in configFields" :key="field.key" :label="field.label">
+        <el-form-item v-for="field in configFields" :key="field.key" :label="field.label" :required="!!field.required">
           <el-select
             v-if="field.widget === 'select'"
             v-model="configData[field.key]"
@@ -914,12 +916,12 @@ function getChannelConfigSummary(row: any): string[] {
   &__filter { width: 130px; }
 }
 
-// 表格卡：1px 边框划分层次，不再用阴影浮起（dd-fixed-page 下的 flex + 内部滚动由全局规则接管）
+// 表格卡：描边宽走主题令牌，不再用阴影浮起（dd-fixed-page 下的 flex + 内部滚动由全局规则接管）
 .table-card {
   background: var(--el-bg-color);
   // 表格容器属容器类表面 → surface 档；overflow:hidden 让内部贴边的表头/行自动被圆角裁角
   border-radius: var(--dd-radius-surface);
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-border, var(--el-border-color-lighter));
   overflow: hidden;
 }
 
@@ -943,7 +945,7 @@ function getChannelConfigSummary(row: any): string[] {
   font-weight: 700;
   flex-shrink: 0;
   letter-spacing: 0;
-  border: 1px solid var(--el-border-color-lighter);
+  border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--el-border-color-lighter));
 }
 
 .channel-name-info {
@@ -970,12 +972,15 @@ function getChannelConfigSummary(row: any): string[] {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .config-summary__line {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .test-status {
@@ -1075,14 +1080,6 @@ function getChannelConfigSummary(row: any): string[] {
   flex: 1 1 calc(50% - 4px);
 }
 
-:deep(.el-table) {
-  // 边框统一走令牌，明暗自动适配（原写死浅灰会在暗色串色）
-  --el-table-border-color: var(--el-border-color-lighter);
-  .el-table__header-wrapper th { border-bottom: 1px solid var(--el-border-color-light); }
-  .el-table__row td { border-bottom: 1px solid var(--el-border-color-lighter); }
-  .el-table__cell { padding: 12px 0; }
-}
-
 @media (max-width: 768px) {
   .page-header { flex-direction: column; gap: 10px; margin-bottom: 14px; h2 { font-size: 18px; } }
   .toolbar {
@@ -1092,31 +1089,5 @@ function getChannelConfigSummary(row: any): string[] {
     &__filter { width: 100% !important; }
     &__right { justify-content: flex-end; }
   }
-}
-
-// ===== 入场动画 =====
-// 与定时任务页/订阅管理页统一：只对卡片级容器（工具条 / 表格卡 / 移动列表）做克制的淡入上移 + 轻微错落；
-// 不给表格每一行或每张移动卡做 stagger。时长走令牌，prefers-reduced-motion 时令牌自动降为 1ms 即等效关闭。
-@keyframes dd-notify-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.toolbar,
-.table-card,
-.dd-mobile-list {
-  animation: dd-notify-rise-in var(--dd-motion-page) var(--dd-ease-decelerate) both;
-}
-
-// 轻微错落：工具条先入，表格卡/移动列表略晚
-.table-card,
-.dd-mobile-list {
-  animation-delay: 60ms;
 }
 </style>

@@ -162,9 +162,14 @@ function placeIndicator() {
   }
 }
 
-watch([activeKey, isCollapsed, visibleGroups, isMobile], () => {
+watch([activeKey, isCollapsed, visibleGroups, isMobile, () => themeStore.density], () => {
   void nextTick(placeIndicator)
 })
+
+// 监听侧栏内容高度变化：例如用户在主题工坊开启「隐藏分组标题」自定义 CSS 后，
+// .nav-item 的 offsetTop 会立刻变化，靠 ResizeObserver 自动把滑动指示条对齐到新位置。
+let navResizeObserver: ResizeObserver | null = null
+let navMutationObserver: MutationObserver | null = null
 
 // 切到 Monaco 引擎时立即预热（#133，utils/monacoWarmup.ts）。挂在布局上而不是某个编辑器页：
 // 引擎可能在任一编辑器页的齿轮菜单里切，布局是它们登录后一直在的共同祖先。
@@ -187,7 +192,20 @@ onMounted(() => {
   stopDesktopNotify = installDesktopNotify()
   // 全站唯一的全局快捷键入口（F9，handoff §8）。其他组件不要再挂全局 keydown
   window.addEventListener('keydown', handleGlobalKeydown)
-  void nextTick(placeIndicator)
+  void nextTick(() => {
+    placeIndicator()
+    const nav = navRef.value
+    if (nav && typeof ResizeObserver !== 'undefined') {
+      navResizeObserver = new ResizeObserver(() => placeIndicator())
+      navResizeObserver.observe(nav)
+      nav.querySelectorAll<HTMLElement>('.nav-group').forEach((group) => navResizeObserver?.observe(group))
+    }
+    if (typeof MutationObserver !== 'undefined') {
+      // 主题工坊实时预览/保存自定义 CSS 会修改 <style id="dd-custom-css">，触发后补对齐一次指示条
+      navMutationObserver = new MutationObserver(() => window.requestAnimationFrame(placeIndicator))
+      navMutationObserver.observe(document.head, { childList: true, subtree: true, characterData: true })
+    }
+  })
 })
 
 onBeforeUnmount(() => {
@@ -200,18 +218,31 @@ onBeforeUnmount(() => {
   stopDesktopNotify = null
   stopEngineSwitchWarmup?.()
   stopEngineSwitchWarmup = null
+  navResizeObserver?.disconnect()
+  navResizeObserver = null
+  navMutationObserver?.disconnect()
+  navMutationObserver = null
   window.removeEventListener('keydown', handleGlobalKeydown)
   if (gotoTimer) window.clearTimeout(gotoTimer)
   // 浮层开关在 store 里，布局卸载（退出登录）后不清的话，下次登录一进来命令面板 / 浮窗还开着
   ui.closeAll()
 })
 
-watch(isMobile, (mobile) => {
+// 记住桌面端用户的折叠偏好：窗口缩到移动端再拉回桌面时恢复展开态，不永久锁在收起状态
+let desktopCollapsedPreference = false
+
+watch(isMobile, (mobile, prevMobile) => {
   if (mobile) {
+    if (prevMobile === false) {
+      desktopCollapsedPreference = isCollapsed.value
+    }
     isCollapsed.value = true
     return
   }
   drawerVisible.value = false
+  if (prevMobile === true) {
+    isCollapsed.value = desktopCollapsedPreference
+  }
 }, { immediate: true })
 
 watch(() => authStore.user?.role, () => {
@@ -243,6 +274,7 @@ function toggleSidebar() {
     drawerVisible.value = !drawerVisible.value
   } else {
     isCollapsed.value = !isCollapsed.value
+    desktopCollapsedPreference = isCollapsed.value
   }
 }
 
@@ -445,8 +477,10 @@ async function loadVersion() {
         </div>
       </nav>
 
-      <!-- 呆呆主题：四个小人趴在墙头 -->
-      <SidebarCritters v-if="showCritters" />
+      <!-- 呆呆主题：四个小人趴在墙头（用过渡包裹容器避免侧栏展开/收起跳动，矮屏自动隐藏） -->
+      <div class="sidebar-critters-slot" :class="{ 'is-visible': showCritters }">
+        <SidebarCritters v-if="showCritters" />
+      </div>
 
       <!-- User card + collapse toggle -->
       <div class="sidebar-foot">
@@ -713,7 +747,7 @@ async function loadVersion() {
   display: grid;
   grid-template-columns: var(--dd-shell-aside-w) minmax(0, 1fr);
   margin: 0;
-  height: 100dvh;
+  height: calc(100dvh - var(--dd-safe-banner-h, 0px));
   overflow: hidden;
   transition: grid-template-columns 0.6s var(--dd-spring-soft);
 
@@ -755,8 +789,10 @@ async function loadVersion() {
   z-index: 10;
 }
 
-// 玻璃关闭（模糊为 0 / 低端设备）与系统「降低透明度」：不模糊。这是开关分支，不是主题分支
-html[data-dd-glass="off"] .layout-aside {
+// 仅用户显式关闭玻璃（blur=0）或低端降级（disabled）与系统「降低透明度」时关侧栏模糊并退回实色；
+// 素白主题默认卡片不透明（data-dd-glass="off"）仍保留其标志性的 24px 悬浮玻璃侧栏。
+html[data-dd-glass="disabled"] .layout-aside {
+  background: var(--dd-surface-solid);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -1046,6 +1082,27 @@ html[data-dd-motion="rich"] .sidebar-logo:hover .logo-icon {
   }
 }
 
+.sidebar-critters-slot {
+  flex-shrink: 0;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-height var(--dd-motion-normal) var(--dd-ease-standard),
+    opacity var(--dd-motion-fast) var(--dd-ease-standard);
+
+  &.is-visible {
+    max-height: 58px;
+    opacity: 1;
+  }
+}
+
+@media screen and (max-height: 700px) {
+  .sidebar-critters-slot {
+    display: none;
+  }
+}
+
 // 侧栏底部：用户卡 + 收起按钮
 .sidebar-foot {
   flex-shrink: 0;
@@ -1053,7 +1110,7 @@ html[data-dd-motion="rich"] .sidebar-logo:hover .logo-icon {
   align-items: center;
   gap: 6px;
   padding: 10px;
-  border-top: 1px solid var(--dd-border);
+  border-top: var(--dd-border-width, 1px) solid var(--dd-divider, var(--dd-border));
 }
 
 .user-card {
@@ -1420,6 +1477,9 @@ html[data-dd-motion="rich"] .sidebar-logo:hover .logo-icon {
 }
 
 .header-user-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 13px;
   font-weight: 500;
   color: var(--dd-text);
@@ -1431,6 +1491,13 @@ html[data-dd-motion="rich"] .sidebar-logo:hover .logo-icon {
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  // 条目较多时在浮层内滚动，避免在桌面 body overflow:hidden 下冲出视口底边无法查看
+  :deep(.attn-list) {
+    max-height: min(60dvh, 420px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 }
 
 .attention-pop__head {
@@ -1507,6 +1574,24 @@ html[data-dd-motion="rich"] .sidebar-logo:hover .logo-icon {
 
   .search-placeholder {
     display: none;
+  }
+}
+
+// 窄桌面（769~1024px，例如分屏或横屏平板）：隐藏次要标签，避免右侧头像与工具胶囊被 overflow:hidden 裁切
+@media screen and (max-width: 1024px) and (min-width: 769px) {
+  .breadcrumb-section,
+  .breadcrumb-sep,
+  .runcap-label,
+  .header-user-name {
+    display: none;
+  }
+
+  .header-runcap {
+    padding: 0 11px;
+  }
+
+  .header-user {
+    padding: 4px;
   }
 }
 
@@ -1702,6 +1787,31 @@ html[data-dd-motion="rich"] .sidebar-logo:hover .logo-icon {
   // 移动端不显示用户名，只剩 28px 头像：四周各 2px，收成与图标按钮一样的 32×32
   .header-user {
     padding: 2px;
+  }
+}
+
+// 极窄手机（≤420px，如 360px 屏）：再收紧顶栏胶囊间距与内边距，避免运行中胶囊出现时面包屑被压到仅剩 1~2 字
+@media screen and (max-width: 420px) {
+  .layout-header {
+    gap: 6px;
+    padding: 10px 8px 2px;
+  }
+
+  .header-breadcrumb {
+    padding: 0 8px;
+  }
+
+  .header-right {
+    gap: 4px;
+  }
+
+  .header-runcap {
+    padding: 0 8px;
+  }
+
+  .header-icon-btn {
+    width: 30px;
+    height: 30px;
   }
 }
 </style>

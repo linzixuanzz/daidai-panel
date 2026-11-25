@@ -23,7 +23,7 @@ const { dialogFullscreen } = useResponsive()
 </script>
 
 <template>
-  <el-row :gutter="16">
+  <el-row :gutter="16" class="security-row">
     <el-col :xs="24" :sm="24" :md="14">
       <el-card shadow="never">
         <template #header>
@@ -33,15 +33,14 @@ const { dialogFullscreen } = useResponsive()
         </template>
         <!-- 改密码会撤销所有登录并清掉通行密钥（后端行为），提前说清楚 -->
         <p class="password-hint">修改密码后需要重新登录，已添加的通行密钥也会一并清除。</p>
-        <el-form label-position="top" style="max-width: 420px">
-          <form @submit.prevent="onChangePassword">
-          <el-form-item label="* 当前密码">
+        <el-form label-position="top" style="max-width: 420px" @submit.prevent="onChangePassword">
+          <el-form-item label="当前密码" :required="true">
             <el-input v-model="oldPassword" type="password" show-password placeholder="当前密码" aria-label="当前密码" />
           </el-form-item>
-          <el-form-item label="* 新密码">
+          <el-form-item label="新密码" :required="true">
             <el-input v-model="newPassword" type="password" show-password :placeholder="`新密码（${NEW_PASSWORD_PLACEHOLDER}）`" aria-label="新密码" />
           </el-form-item>
-          <el-form-item label="* 确认密码">
+          <el-form-item label="确认密码" :required="true">
             <el-input v-model="confirmPassword" type="password" show-password placeholder="再次输入新密码" aria-label="确认新密码" />
           </el-form-item>
           <el-form-item>
@@ -49,7 +48,6 @@ const { dialogFullscreen } = useResponsive()
               <el-icon><CircleCheck /></el-icon>修改密码
             </el-button>
           </el-form-item>
-          </form>
         </el-form>
       </el-card>
     </el-col>
@@ -106,6 +104,10 @@ const { dialogFullscreen } = useResponsive()
 <style scoped lang="scss">
 @use './config-card-shared.scss' as *;
 
+.security-row {
+  row-gap: 16px;
+}
+
 .twofa-desc {
   color: var(--el-text-color-secondary);
   font-size: 14px;
@@ -160,7 +162,7 @@ form {
       height: 200px;
       // 二维码是带描边的图片容器 → surface 档
       border-radius: var(--dd-radius-surface);
-      border: 1px solid var(--el-border-color-light);
+      border: var(--dd-border-width, 1px) solid var(--dd-divider, var(--el-border-color-light));
     }
   }
 

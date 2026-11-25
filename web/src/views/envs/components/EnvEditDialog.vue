@@ -184,7 +184,6 @@ watch(
     :model-value="modelValue"
     :title="dialogTitle"
     width="760px"
-    top="8vh"
     class="env-edit-dialog"
     :fullscreen="dialogFullscreen"
     :close-on-click-modal="false"
@@ -286,7 +285,8 @@ watch(
 }
 
 :deep(.env-edit-dialog .el-dialog__body) {
-  max-height: calc(78vh - 128px);
+  /* 高度上限交由 global.scss 的 .el-dialog（flex + max-height: calc(100dvh - 2*margin-top)）统一控制，
+     不再写死 max-height: calc(78vh - 128px) 避免矮屏过早截断表单内容 */
   padding: 0 24px;
   overflow-y: auto;
 }
@@ -333,7 +333,7 @@ watch(
   overflow: auto;
   resize: vertical;
   line-height: 1.6;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-family: var(--dd-font-mono);
 }
 
 @media (max-width: 768px) {
@@ -346,7 +346,6 @@ watch(
   }
 
   :deep(.env-edit-dialog .el-dialog__body) {
-    max-height: none;
     padding: 0 18px;
   }
 
