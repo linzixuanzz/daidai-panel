@@ -40,8 +40,17 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  deploy:
-    name: 部署在线演示 Demo 到 GitHub Pages
+  # ⚠️ 必须拆成 build → deploy 两个独立 job，【不能】把 upload-pages-artifact 与 deploy-pages
+  #    合并在同一个 job 里紧挨着跑（上游已知缺陷 actions/deploy-pages#451 & #338）：
+  #    1. 同 job 内 upload-pages-artifact 刚完成 FinalizeArtifact，几十毫秒后 deploy-pages 立刻调
+  #       ArtifactService/ListArtifacts，会撞上 GitHub 产物服务的读写副本同步延迟，偶发返回 0 条记录并报错
+  #       `No artifacts named "github-pages" were found for this workflow run`；
+  #    2. 一旦同 job 失败后点「Re-run failed jobs」，重跑会再次上传第二份同名 `github-pages` 产物，
+  #       随即稳定报 `Multiple artifacts named "github-pages" ... Artifact count is 2` 彻底锁死重跑恢复。
+  #    拆成两个 job 后：不仅 runner 调度天然拉开数秒同步窗口（deploy 内再补 5 秒兜底等待），
+  #    而且日后若 deploy 因网络抖动失败，单独重跑失败 job 不会重复执行 build 上传第二份产物。
+  build:
+    name: 构建在线演示 Demo 静态站
     runs-on: ubuntu-latest
     # ⚠️ 这份 permissions 必须与 release.yml 里调用方 job 上那份【保持一致】。
     #    可复用工作流的规则是「只能收窄，不能放大」：被调用方声明的权限一旦超出调用方授予的范围，
@@ -53,28 +62,6 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    # ⚠️ 两条【只能在仓库设置里做】的前置条件，缺任何一条本 job 都会在线上失败，
-    #    而本地静态预览（起个 http-server 指到 web/dist）一条都验不出来：
-    #
-    #    1. Settings → Pages → Source 选 "GitHub Actions"。
-    #       否则 configure-pages 那一步直接失败。
-    #
-    #    2. Settings → Environments → github-pages → "Deployment branches and tags"
-    #       必须放行 tag（加一条 `v*` 的 tag 规则，或改成 No restriction）。
-    #       GitHub 在启用 Pages 时会【自动创建】github-pages 这个环境，并默认只允许
-    #       默认分支部署；本工作流的主路径是 release.yml 在 `push tag v*` 上调用它，
-    #       ref 是 refs/tags/vX.Y.Z——不放行的话 job 会在跑任何一步之前就被拒：
-    #         Branch "refs/tags/vX.Y.Z" is not allowed to deploy to github-pages
-    #         due to environment protection rules.
-    #       这条不能靠改 YAML 绕开：actions/deploy-pages 强制要求指向 github-pages 环境。
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    # 有了手动触发之后，「发版部署」与「手动部署」存在同时打到 Pages 的可能。
-    # 同组串行；cancel-in-progress: false 是刻意的——不要把一次已经开始的线上部署掐断。
-    concurrency:
-      group: daidai-github-pages
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
 
@@ -131,6 +118,42 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist
+
+  deploy:
+    name: 部署在线演示 Demo 到 GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    # ⚠️ 两条【只能在仓库设置里做】的前置条件，缺任何一条本 job 都会在线上失败，
+    #    而本地静态预览（起个 http-server 指到 web/dist）一条都验不出来：
+    #
+    #    1. Settings → Pages → Source 选 "GitHub Actions"。
+    #       否则 configure-pages 那一步直接失败。
+    #
+    #    2. Settings → Environments → github-pages → "Deployment branches and tags"
+    #       必须放行 tag（加一条 `v*` 的 tag 规则，或改成 No restriction）。
+    #       GitHub 在启用 Pages 时会【自动创建】github-pages 这个环境，并默认只允许
+    #       默认分支部署；本工作流的主路径是 release.yml 在 `push tag v*` 上调用它，
+    #       ref 是 refs/tags/vX.Y.Z——不放行的话 job 会在跑任何一步之前就被拒：
+    #         Branch "refs/tags/vX.Y.Z" is not allowed to deploy to github-pages
+    #         due to environment protection rules.
+    #       这条不能靠改 YAML 绕开：actions/deploy-pages 强制要求指向 github-pages 环境。
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # 有了手动触发之后，「发版部署」与「手动部署」存在同时打到 Pages 的可能。
+    # 同组串行；cancel-in-progress: false 是刻意的——不要把一次已经开始的线上部署掐断。
+    concurrency:
+      group: daidai-github-pages
+      cancel-in-progress: false
+    steps:
+      # 额外留 5 秒缓冲，确保跨地域热启动 runner 时 Twirp ArtifactService 副本也已完成同步（actions/deploy-pages#451）
+      - name: 等待 Pages 产物索引就绪
+        shell: bash
+        run: sleep 5
 
       - name: Deploy to GitHub Pages
         id: deployment
