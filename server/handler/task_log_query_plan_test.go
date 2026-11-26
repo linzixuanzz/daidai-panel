@@ -123,7 +123,8 @@ func TestTaskLogHotQueriesUseQueryIndexes(t *testing.T) {
 		return strings.Join(details, " | ")
 	}
 
-	// 仪表板（7 天视图）：29 条计数（今日 4 + 昨日 4 + 按天 7×3）、1 条最近 10 条，
+	// 仪表板（7 天视图）：9 条计数（今日 1 + 昨日 1 + 按天 7；v4.0.2 起同一时间段的总数与三种状态合成一条 count(CASE …)，
+	// 以前是今日 4 + 昨日 4 + 按天 7×3 = 29 条）、1 条最近 10 条，
 	// 加 1 条读执行趋势计数表（#158，已删日志的按天计数，按主键 day 取一段范围）。
 	// 条数也要对上，否则截获机制失灵、一条都没截到时这个用例会空跑通过。
 	counts, recent, archives := 0, 0, 0
@@ -150,8 +151,8 @@ func TestTaskLogHotQueriesUseQueryIndexes(t *testing.T) {
 			t.Fatalf("仪表板出现了没有执行计划断言的 task_logs / 计数表查询：%s\n实际计划：%s", query.sql, plan)
 		}
 	}
-	if counts != 29 || recent != 1 || archives != 1 {
-		t.Fatalf("仪表板 7 天视图应截到 29 条 task_logs 计数、1 条最近 10 条、1 条计数表查询，实际 %d 条、%d 条、%d 条", counts, recent, archives)
+	if counts != 9 || recent != 1 || archives != 1 {
+		t.Fatalf("仪表板 7 天视图应截到 9 条 task_logs 计数、1 条最近 10 条、1 条计数表查询，实际 %d 条、%d 条、%d 条", counts, recent, archives)
 	}
 
 	// 侧栏角标：每个标签页 30 秒轮询一次的「今日失败」。

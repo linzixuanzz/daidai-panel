@@ -138,25 +138,41 @@ func (h *SystemHandler) Dashboard(c *gin.Context) {
 	// #158：一次请求的全部读取放进同一个只读事务（同一个 WAL 快照）。删日志可能排进任意两条查询之间：
 	// 落在「读计数表」和「按天现算」之间，被删的行两边都数不到；落在「现算」和「读计数表」之间又会算两次。
 	// 只读事务不升级写锁，不会撞 517。事务里只能用 tx：连接池只有一条连接，再碰 database.DB 会自己等自己。
-	// 下面的查询与改动前逐条相同（顺序、条件一字不改），#153 的口径锁与执行计划护栏照旧成立。
+	// 下面的查询条件与 #153 时一致（v4.0.2 只把同一时间段的几条计数合成一条），#153 的口径锁与执行计划护栏照旧成立。
 	_ = database.DB.Transaction(func(tx *gorm.DB) error {
+		// v4.0.2：同一个时间段的「总数 / 成功 / 失败 / 已终止」合成一条计数（count(CASE …)），
+		// 只顺着 idx_task_logs_created_at_status 扫一遍这段索引，而不是同一段扫 3~4 遍。
+		// 口径与原来逐条 Count 完全相同：total 含 status 为 NULL 与运行中的行，三列只数对应状态。
+		// 30 万条日志时 7 天视图从约 210ms 降到约 70ms（数字见 v4.0.2 任务记录）。
+		type logCountRow struct {
+			Total   int64
+			Success int64
+			Failed  int64
+			Aborted int64
+		}
+		countLogs := func(where string, args ...interface{}) logCountRow {
+			var row logCountRow
+			tx.Model(&model.TaskLog{}).
+				Select("count(*) AS total, count(CASE WHEN status = ? THEN 1 END) AS success, count(CASE WHEN status = ? THEN 1 END) AS failed, count(CASE WHEN status = ? THEN 1 END) AS aborted",
+					model.LogStatusSuccess, model.LogStatusFailed, model.LogStatusAborted).
+				Where(where, args...).
+				Scan(&row)
+			return row
+		}
+
 		tx.Model(&model.Task{}).Count(&taskCount)
 		tx.Model(&model.Task{}).Where("status = ?", model.TaskStatusEnabled).Count(&enabledTasks)
 		tx.Model(&model.Task{}).Where("status = ?", model.TaskStatusRunning).Count(&runningTasks)
 
-		tx.Model(&model.TaskLog{}).Where("created_at >= ?", today).Count(&todayLogs)
-		tx.Model(&model.TaskLog{}).Where("created_at >= ? AND status = ?", today, model.LogStatusSuccess).Count(&successLogs)
-		tx.Model(&model.TaskLog{}).Where("created_at >= ? AND status = ?", today, model.LogStatusFailed).Count(&failedLogs)
-		tx.Model(&model.TaskLog{}).Where("created_at >= ? AND status = ?", today, model.LogStatusAborted).Count(&abortedLogs)
+		todayRow := countLogs("created_at >= ?", today)
+		todayLogs, successLogs, failedLogs, abortedLogs = todayRow.Total, todayRow.Success, todayRow.Failed, todayRow.Aborted
 
 		tx.Model(&model.EnvVar{}).Count(&envCount)
 		tx.Model(&model.Subscription{}).Count(&subCount)
 		tx.Model(&model.Task{}).Where("created_at < ?", today).Count(&prevTaskCount)
 
-		tx.Model(&model.TaskLog{}).Where("created_at >= ? AND created_at < ?", yesterday, today).Count(&yesterdayLogs)
-		tx.Model(&model.TaskLog{}).Where("created_at >= ? AND created_at < ? AND status = ?", yesterday, today, model.LogStatusSuccess).Count(&yesterdaySuccess)
-		tx.Model(&model.TaskLog{}).Where("created_at >= ? AND created_at < ? AND status = ?", yesterday, today, model.LogStatusFailed).Count(&yesterdayFailed)
-		tx.Model(&model.TaskLog{}).Where("created_at >= ? AND created_at < ? AND status = ?", yesterday, today, model.LogStatusAborted).Count(&yesterdayAborted)
+		yesterdayRow := countLogs("created_at >= ? AND created_at < ?", yesterday, today)
+		yesterdayLogs, yesterdaySuccess, yesterdayFailed, yesterdayAborted = yesterdayRow.Total, yesterdayRow.Success, yesterdayRow.Failed, yesterdayRow.Aborted
 
 		tx.Preload("Task").Order("created_at DESC").Limit(10).Find(&recentLogs)
 
@@ -189,13 +205,10 @@ func (h *SystemHandler) Dashboard(c *gin.Context) {
 			nextDay := day.Add(24 * time.Hour)
 			date := day.Format("01-02")
 
-			var s, f, a int64
-			tx.Model(&model.TaskLog{}).Where("created_at >= ? AND created_at < ? AND status = ?", day, nextDay, model.LogStatusSuccess).Count(&s)
-			tx.Model(&model.TaskLog{}).Where("created_at >= ? AND created_at < ? AND status = ?", day, nextDay, model.LogStatusFailed).Count(&f)
-			tx.Model(&model.TaskLog{}).Where("created_at >= ? AND created_at < ? AND status = ?", day, nextDay, model.LogStatusAborted).Count(&a)
+			dayRow := countLogs("created_at >= ? AND created_at < ?", day, nextDay)
 			// 按天的三条折线只加对应的三列；Other 不进折线（与现算时 NULL / 运行中不进任何一桶一致）。
 			gone := archived[day.Format("2006-01-02")]
-			dailyStats = append(dailyStats, DailyStat{Date: date, Success: s + gone.Success, Failed: f + gone.Failed, Aborted: a + gone.Aborted})
+			dailyStats = append(dailyStats, DailyStat{Date: date, Success: dayRow.Success + gone.Success, Failed: dayRow.Failed + gone.Failed, Aborted: dayRow.Aborted + gone.Aborted})
 		}
 		return nil
 	})

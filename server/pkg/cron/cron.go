@@ -128,6 +128,43 @@ func NextRunTimesForExpressionsFrom(raw string, count int, from time.Time) []tim
 	return times
 }
 
+// NextRunTimesForExpressionsBetween 求一组定时规则（换行分隔）在 (from, to) 内的触发时刻，合并、升序后最多 limit 个。
+//
+// 与「NextRunTimesForExpressionsFrom(raw, limit, from) 再丢掉 >= to 的点」结果完全一致，只是不再白算窗口外的点：
+// 旧写法对每条规则固定往后推 limit 个（每天一次的任务 limit=1440 时要推到约 4 年后），任务一多 /tasks/upcoming 就慢。
+// 这里每条规则只解析一次，从 from 起逐个求下次触发，碰到 to 就停；每条规则仍受 limit 约束，合并后再截到 limit，
+// 所以「多条规则重复触发同一时刻会出现两次」「单条规则超过 limit 被截断」这些旧行为都保持不变。
+func NextRunTimesForExpressionsBetween(raw string, from, to time.Time, limit int) []time.Time {
+	if limit <= 0 || !from.Before(to) {
+		return nil
+	}
+
+	times := make([]time.Time, 0)
+	for _, expression := range SplitExpressions(raw) {
+		schedule, err := ParseSchedule(expression)
+		if err != nil {
+			continue
+		}
+		next := from
+		for i := 0; i < limit; i++ {
+			next = schedule.Next(next)
+			// 永不触发（如 2 月 30 日）时 robfig 返回零值；到了窗口末尾也停
+			if next.IsZero() || !next.Before(to) {
+				break
+			}
+			times = append(times, next)
+		}
+	}
+
+	sort.Slice(times, func(i, j int) bool {
+		return times[i].Before(times[j])
+	})
+	if len(times) > limit {
+		times = times[:limit]
+	}
+	return times
+}
+
 // FirstRunSecondOfDay 算出这组定时规则「一天之内最早一次触发」的时刻，单位是距 0 点的秒数（0-86399）。
 // 任务列表按「定时规则」排序时用它当排序键（issue #151）：用户要的是一条 00:00→23:59 的时间线，
 // 用来看哪个时间段扎堆了哪些脚本，所以只取时:分:秒、不管落在哪一天——每周一 09:00 和每天 09:00 算同一时刻。

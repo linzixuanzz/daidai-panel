@@ -59,13 +59,11 @@ func BuildUpcomingRuns(tasks []model.Task, from time.Time, hours int) UpcomingRe
 		if task.Status == model.TaskStatusDisabled || !task.UsesCronSchedule() || task.CronExpression == "" {
 			continue
 		}
-		// 任务可以有多条 cron（换行分隔），NextRunTimesForExpressionsFrom 会合并、排序并截到 count 个
-		candidates := panelcron.NextRunTimesForExpressionsFrom(task.CronExpression, UpcomingMaxPointsPerTask, from)
-		times := make([]int64, 0)
+		// 任务可以有多条 cron（换行分隔），按窗口求触发点：到 to 就停，合并、排序并截到 UpcomingMaxPointsPerTask 个。
+		// 以前是先固定推 1440 个点再丢掉窗口外的，每天一次的任务要往后推约 4 年，任务一多接口就慢（v4.0.2）。
+		candidates := panelcron.NextRunTimesForExpressionsBetween(task.CronExpression, from, to, UpcomingMaxPointsPerTask)
+		times := make([]int64, 0, len(candidates))
 		for _, t := range candidates {
-			if !t.Before(to) {
-				break
-			}
 			times = append(times, t.Unix())
 			result.Hourly[int(t.Sub(from)/time.Hour)]++
 		}
