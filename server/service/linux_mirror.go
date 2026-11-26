@@ -3,8 +3,10 @@ package service
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -54,9 +56,21 @@ func EnsureDefaultLinuxMirror(manager LinuxPackageManager, distribution string) 
 		return false, nil
 	}
 
+	// v4.0.2（#184、#185）：先修回被旧版改坏的 nginx.org 源。坏掉的机器上 debian.sources 已经是加速源，
+	// 下面会直接 return 不再改写，所以修复必须放在这里先做，否则 apt-get update 会一直报
+	// 「Conflicting values set for option Signed-By」，所有 Linux 依赖都装不上。
+	repaired := false
+	if manager.Name == "apt" {
+		var err error
+		repaired, err = repairAPTSourceFiles(distribution)
+		if err != nil {
+			return false, err
+		}
+	}
+
 	current, err := ReadLinuxMirror(manager)
 	if err != nil {
-		return false, err
+		return repaired, err
 	}
 	// 第三个条件是 v3.3.2 的旧默认源一次性迁移（issue #146）：存量用户的 sources.list 里存的是上一版
 	// 默认的阿里云，而阿里云不是官方源，原来的判定会把它当成「用户自己选的」而永远不动。
@@ -64,10 +78,11 @@ func EnsureDefaultLinuxMirror(manager LinuxPackageManager, distribution string) 
 	if current != "" &&
 		!isOfficialLinuxMirror(manager, distribution, current) &&
 		!(isLegacyDefaultLinuxMirror(manager, distribution, current) && legacyDefaultMirrorMigrationPending()) {
-		return false, nil
+		return repaired, nil
 	}
 
-	return SetLinuxMirror(manager, distribution, "")
+	changed, err := SetLinuxMirror(manager, distribution, "")
+	return changed || repaired, err
 }
 
 // EffectiveLinuxMirror 返回实际生效的镜像源：空或官方源时回落到默认加速源。
@@ -185,14 +200,18 @@ func writeAPTMirror(distribution, mirror string) (bool, error) {
 			updated string
 			changed bool
 		)
-		if strings.HasSuffix(file, ".sources") {
+		isSources := strings.HasSuffix(file, ".sources")
+		// 先修回被旧版改坏的 nginx.org 源（#184、#185），再改写发行版条目
+		content, repaired := repairBrokenNginxAPTContent(string(data), distribution, isSources)
+		if isSources {
 			// 能提取出 URIs / deb 行就说明这个文件里有面板认得的条目，与它是否需要改写无关。
-			matchedAny = matchedAny || extractMirrorFromAPTSources(string(data)) != ""
-			updated, changed = rewriteAPTSourcesContent(string(data), distribution, mirror)
+			matchedAny = matchedAny || extractMirrorFromAPTSources(content) != ""
+			updated, changed = rewriteAPTSourcesContent(content, distribution, mirror)
 		} else {
-			matchedAny = matchedAny || extractMirrorFromAPTList(string(data)) != ""
-			updated, changed = rewriteAPTListContent(string(data), distribution, mirror)
+			matchedAny = matchedAny || extractMirrorFromAPTList(content) != ""
+			updated, changed = rewriteAPTListContent(content, distribution, mirror)
 		}
+		changed = changed || repaired
 
 		if !changed {
 			continue
@@ -211,16 +230,20 @@ func writeAPTMirror(distribution, mirror string) (bool, error) {
 	return changedAny, nil
 }
 
+// aptConfigDir 是 apt 源配置所在目录，单测里换成临时目录，才能真的跑一遍 Set / EnsureDefault 的读写。
+var aptConfigDir = "/etc/apt"
+
 func listAPTSourceFiles() ([]string, error) {
 	files := []string{}
 
-	if _, err := os.Stat("/etc/apt/sources.list"); err == nil {
-		files = append(files, "/etc/apt/sources.list")
+	mainList := filepath.Join(aptConfigDir, "sources.list")
+	if _, err := os.Stat(mainList); err == nil {
+		files = append(files, mainList)
 	}
 
 	patterns := []string{
-		"/etc/apt/sources.list.d/*.list",
-		"/etc/apt/sources.list.d/*.sources",
+		filepath.Join(aptConfigDir, "sources.list.d", "*.list"),
+		filepath.Join(aptConfigDir, "sources.list.d", "*.sources"),
 	}
 	for _, pattern := range patterns {
 		matches, err := filepath.Glob(pattern)
@@ -250,6 +273,10 @@ func extractMirrorFromAPTListLine(line string) string {
 	}
 	uriIndex := aptURIFieldIndex(fields)
 	if uriIndex < 0 || uriIndex >= len(fields) {
+		return ""
+	}
+	// 第三方源（nginx.org、docker 等）不算「当前镜像源」，读的时候同样跳过（#184、#185）
+	if !isDistroAPTEntry(fields[uriIndex], aptListSignedBy(fields, uriIndex)) {
 		return ""
 	}
 	return fields[uriIndex]
@@ -290,15 +317,170 @@ func aptURIFieldIndex(fields []string) int {
 	return idx
 }
 
+// extractMirrorFromAPTSources 取 deb822 文件里第一个发行版条目的 URIs。
+// v4.0.2 起按段（空行分隔）看 Signed-By 与主机，第三方段跳过（#184、#185）。
 func extractMirrorFromAPTSources(content string) string {
-	for _, line := range strings.Split(content, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(strings.ToLower(trimmed), "uris:") {
-			continue
+	lines := strings.Split(content, "\n")
+	for start := 0; start < len(lines); {
+		end := start
+		for end < len(lines) && strings.TrimSpace(lines[end]) != "" {
+			end++
 		}
-		return strings.TrimSpace(trimmed[len("URIs:"):])
+		uris := aptSourcesField(lines[start:end], "uris")
+		if uris != "" && isDistroAPTEntry(uris, aptSourcesField(lines[start:end], "signed-by")) {
+			return uris
+		}
+		start = end + 1
 	}
 	return ""
+}
+
+// aptSourcesField 取 deb822 一段里某个字段（不区分大小写）的值，没有时返回空串。
+// Signed-By 可能是多行的内联公钥，这里只取第一行，足够判断「是不是官方 keyring 路径」。
+func aptSourcesField(stanza []string, name string) string {
+	for i, line := range stanza {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(strings.ToLower(trimmed), name+":") {
+			continue
+		}
+		value := strings.TrimSpace(trimmed[len(name)+1:])
+		// 内联公钥的写法是「Signed-By:」后面留空、下一行缩进开始写 -----BEGIN PGP…，取续行的第一行
+		if value == "" && i+1 < len(stanza) && (strings.HasPrefix(stanza[i+1], " ") || strings.HasPrefix(stanza[i+1], "\t")) {
+			value = strings.TrimSpace(stanza[i+1])
+		}
+		return value
+	}
+	return ""
+}
+
+// aptListSignedBy 从单行格式的 `[arch=amd64 signed-by=/path]` 选项里取 signed-by 的值。
+func aptListSignedBy(fields []string, uriIndex int) string {
+	options := strings.Trim(strings.TrimSpace(strings.Join(fields[1:uriIndex], " ")), "[]")
+	for _, option := range strings.Fields(options) {
+		if strings.HasPrefix(strings.ToLower(option), "signed-by=") {
+			return strings.TrimSpace(option[len("signed-by="):])
+		}
+	}
+	return ""
+}
+
+// isDistroAPTEntry 判断一条 apt 源是不是发行版自己的仓库（Debian / Ubuntu 主仓库、security 仓库），
+// 只有这类条目才允许被换成镜像站（v4.0.2，#184、#185）。
+//
+// 以前所有 deb 行都会被改写：Debian 镜像里 nginx.org 那条（Dockerfile.debian）被换成 <镜像>/debian 后，
+// 与 debian.sources 同 URI、同 suite 但 Signed-By 不同，apt-get update 直接报
+// 「Conflicting values set for option Signed-By」，所有 Linux 依赖都装不上。现在只按两条判第三方：
+//  1. 带了 signed-by 时，必须指向 debian / ubuntu 官方 keyring（debian-archive-keyring.gpg 这类）；
+//     指向别的 keyring、内联公钥、指纹的，一律视为第三方；
+//  2. 主机是 nginx.org 的一律视为第三方（老写法可能没带 signed-by）。
+//
+// 刻意不看 URI 路径形态：多段路径的自定义镜像（https://nexus.corp/repository/debian、
+// apt-cacher 的 http://host:3142/deb.debian.org/debian）、Kali（http.kali.org/kali）、Deepin 这类系统
+// 都是正常的发行版源，按路径判会被当成第三方，读出空串后 writeAPTMirror 报「未找到可更新的 apt 软件源条目」。
+// 没有 signed-by 的条目回到 v4.0.1 的行为，当作发行版条目（官方空路径的 security 源也就自然照旧）。
+func isDistroAPTEntry(uri, signedBy string) bool {
+	if parsed, err := url.Parse(strings.TrimSpace(uri)); err == nil && strings.EqualFold(parsed.Hostname(), "nginx.org") {
+		return false
+	}
+	for _, item := range strings.FieldsFunc(strings.TrimSpace(signedBy), func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
+		base := strings.ToLower(path.Base(item))
+		if !strings.HasPrefix(base, "debian-archive-") &&
+			!strings.HasPrefix(base, "debian-ports-archive-") &&
+			!strings.HasPrefix(base, "ubuntu-archive-") {
+			return false
+		}
+	}
+	return true
+}
+
+// nginxOfficialAPTURI 是 Dockerfile.debian 里 nginx.org 源的原始地址。
+const nginxOfficialAPTURI = "https://nginx.org/packages/debian"
+
+// nginxImageKeyring 是 Dockerfile.debian 给 nginx 源用的 keyring 路径（.asc），用来认出「我们镜像里的那一条」。
+const nginxImageKeyring = "/usr/share/keyrings/nginx-archive-keyring.asc"
+
+// isBrokenNginxAPTEntry 判断是不是被 v3.4.5 ~ v4.0.1 改坏的 nginx 源。只认旧版改坏的确切形态：
+// 发行版是 debian、signed-by 正好是 Dockerfile.debian 的 nginx-archive-keyring.asc、URI 路径是单段 /debian
+// （旧版把 nginx.org/packages/debian 整个换成了 <镜像>/debian）。
+// 用户自配的 nginx 镜像（<镜像>/nginx/debian）、Ubuntu 主机上的 nginx 源（<镜像>/ubuntu noble）都不碰。
+func isBrokenNginxAPTEntry(distribution, uri, signedBy string) bool {
+	if !strings.EqualFold(strings.TrimSpace(distribution), "debian") || strings.TrimSpace(signedBy) != nginxImageKeyring {
+		return false
+	}
+	parsed, err := url.Parse(strings.TrimSpace(uri))
+	if err != nil {
+		return false
+	}
+	return strings.Trim(parsed.Path, "/") == "debian"
+}
+
+// repairBrokenNginxAPTContent 把被改坏的 nginx 源改回 https://nginx.org/packages/debian（#184、#185），
+// 其它内容一个字节都不动。isSources 为 true 时按 deb822 处理。
+func repairBrokenNginxAPTContent(content, distribution string, isSources bool) (string, bool) {
+	lines := strings.Split(content, "\n")
+	changed := false
+	if !isSources {
+		for i, line := range lines {
+			fields := parseAPTListLineFields(line)
+			uriIndex := aptURIFieldIndex(fields)
+			if uriIndex < 0 || uriIndex >= len(fields) {
+				continue
+			}
+			if !isBrokenNginxAPTEntry(distribution, fields[uriIndex], aptListSignedBy(fields, uriIndex)) {
+				continue
+			}
+			// 只替换 URI 这一个字段，选项、suite、注释原样保留
+			lines[i] = strings.Replace(line, fields[uriIndex], nginxOfficialAPTURI, 1)
+			changed = true
+		}
+		return strings.Join(lines, "\n"), changed
+	}
+
+	for start := 0; start < len(lines); {
+		end := start
+		for end < len(lines) && strings.TrimSpace(lines[end]) != "" {
+			end++
+		}
+		signedBy := aptSourcesField(lines[start:end], "signed-by")
+		for i := start; i < end; i++ {
+			trimmed := strings.TrimSpace(lines[i])
+			if !strings.HasPrefix(strings.ToLower(trimmed), "uris:") {
+				continue
+			}
+			if !isBrokenNginxAPTEntry(distribution, strings.TrimSpace(trimmed[len("URIs:"):]), signedBy) {
+				continue
+			}
+			leading := lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " \t"))]
+			lines[i] = leading + "URIs: " + nginxOfficialAPTURI
+			changed = true
+		}
+		start = end + 1
+	}
+	return strings.Join(lines, "\n"), changed
+}
+
+// repairAPTSourceFiles 只做「修回被改坏的 nginx 源」，发行版条目一律不碰。返回是否真的改写了文件。
+func repairAPTSourceFiles(distribution string) (bool, error) {
+	files, err := listAPTSourceFiles()
+	if err != nil {
+		return false, err
+	}
+	changedAny := false
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		updated, changed := repairBrokenNginxAPTContent(string(data), distribution, strings.HasSuffix(file, ".sources"))
+		if !changed {
+			continue
+		}
+		if err := os.WriteFile(file, []byte(updated), 0o644); err != nil {
+			return changedAny, err
+		}
+		changedAny = true
+	}
+	return changedAny, nil
 }
 
 func rewriteAPTListContent(content, distribution, mirror string) (string, bool) {
@@ -328,6 +510,10 @@ func rewriteAPTListLine(line, distribution, mirror string) (string, bool) {
 	}
 
 	currentURI := fields[uriIndex]
+	// 第三方源（nginx.org、docker、nodesource 等）一律不动（#184、#185）
+	if !isDistroAPTEntry(currentURI, aptListSignedBy(fields, uriIndex)) {
+		return line, false
+	}
 	suite := ""
 	if uriIndex+1 < len(fields) {
 		suite = fields[uriIndex+1]
@@ -371,6 +557,11 @@ func rewriteAPTSourcesContent(content, distribution, mirror string) (string, boo
 			if strings.HasPrefix(strings.ToLower(trimmed), "suites:") {
 				suites = strings.TrimSpace(trimmed[len("Suites:"):])
 			}
+		}
+		// 第三方段（Signed-By 不是官方 keyring，或主机是 nginx.org）整段跳过（#184、#185）
+		if !isDistroAPTEntry(aptSourcesField(lines[start:end], "uris"), aptSourcesField(lines[start:end], "signed-by")) {
+			start = end + 1
+			continue
 		}
 
 		for i := start; i < end; i++ {
