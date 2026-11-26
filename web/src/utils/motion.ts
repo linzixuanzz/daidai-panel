@@ -10,7 +10,7 @@ import { resolveMotionLevel, type MotionLevel } from './panelAppearance'
 
 export type { MotionLevel }
 
-/** 当前生效的动效档位。每次现算（读本机偏好 + 系统「减少动态效果」+ 低端设备判定），很便宜 */
+/** 当前生效的动效档位。每次现算（读本机偏好 + 系统「减少动态效果」+ 流畅模式），很便宜。rich 只在用户显式选择时出现 */
 export function motionLevel(): MotionLevel {
   return resolveMotionLevel()
 }

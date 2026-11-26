@@ -9,6 +9,12 @@
  *
  * 流动：只有 rich 档极光块才漂移；页面切到后台时暂停（不是移除，回来时接着原位置动，不会跳）。
  * subtle / off 档直接不挂动画（animation: none），「关闭」档 document.getAnimations() 里不会有它们。
+ * v4.0.2（#182）起 rich 只能由用户显式选择（「跟随系统」解析为 subtle），所以默认背景是静止的。
+ *
+ * 性能（v4.0.2，#182）：光斑原来是 56vmax 的纯色圆 + filter: blur(90px)，漂移时每帧整屏重新模糊，
+ * 没开硬件加速时仪表板空闲只有 12fps。现在改成 radial-gradient 直接画出「中心实、向外渐隐」的柔光，
+ * 不再有任何 filter；元素放大一圈、位置同步外移，补回原来模糊溢出到圆外的那圈光晕，中心位置不变。
+ * 流畅模式（themeStore.lite）下只留底色与背景图（含它的可读遮罩），光斑 / 网格 / 噪点 / 扫描线都不渲染。
  */
 import { computed } from 'vue'
 import { usePageActivity } from '@/composables/usePageActivity'
@@ -18,9 +24,10 @@ import { THEME_PRESETS } from '@/utils/panelAppearance'
 const themeStore = useThemeStore()
 const { isDocumentVisible } = usePageActivity()
 
-// 4 个 56vmax、blur(90px) 的大模糊层是整个背景里最贵的部分，用不到时直接不渲染：
+// 4 个铺满大半屏的光斑层即使不再模糊也有合成开销，用不到时直接不渲染：
 // 背景效果选了「极光」一定要；「跟随主题」看主题有没有极光块（经典、纸墨没有）；其余都不要
 const showBlobs = computed(() => {
+  if (themeStore.lite) return false
   if (themeStore.background === 'aurora') return true
   if (themeStore.background !== 'theme') return false
   return THEME_PRESETS.find((item) => item.id === themeStore.preset)?.blobs ?? false
@@ -48,9 +55,12 @@ const imageStyle = computed(() => {
       <i class="dd-backdrop__blob is-3" />
       <i class="dd-backdrop__blob is-4" />
     </template>
-    <div class="dd-backdrop__grid" />
-    <div class="dd-backdrop__noise" />
-    <div class="dd-backdrop__scan" />
+    <!-- 流畅模式：网格 / 噪点（mix-blend-mode）/ 扫描线三层一起不渲染，只剩纯底色 -->
+    <template v-if="!themeStore.lite">
+      <div class="dd-backdrop__grid" />
+      <div class="dd-backdrop__noise" />
+      <div class="dd-backdrop__scan" />
+    </template>
   </div>
 </template>
 
@@ -79,42 +89,43 @@ const imageStyle = computed(() => {
   }
 }
 
-// 极光块：圆形是装饰光斑，属于「形状承载语义」的白名单，不吃圆角令牌
+// 极光块：径向渐变画的柔光（不用 filter），属于「形状承载语义」的装饰光斑，不吃圆角令牌。
+// 尺寸比原来的 56vmax / 40vmax 各大一圈（68 / 50），四边偏移同步外扩 6 / 5vmax：中心点与原来一致，
+// 多出来的一圈留给渐隐的外沿，近似原来 blur(90px) 溢出到圆外的光晕。
+// 渐变按原来「圆 + 高斯模糊」的亮度轮廓取点：原圆半径约等于新半径的 82%，模糊让它在 ±2σ（约 ±28% 半径）内渐隐，
+// 所以 0~50% 半径是实色、80% 处（过渡中点提示）亮度减半、100% 处透明。
 .dd-backdrop__blob {
   position: absolute;
-  width: 56vmax;
-  height: 56vmax;
-  border-radius: 50%;
-  filter: blur(90px);
+  width: 68vmax;
+  height: 68vmax;
+  background: radial-gradient(circle closest-side, var(--dd-blob-color) 0%, var(--dd-blob-color) 50%, 80%, transparent 100%);
   opacity: var(--dd-bg-blob-opacity);
-  transition:
-    opacity 0.8s var(--dd-ease-standard),
-    background-color 0.8s var(--dd-ease-standard);
+  transition: opacity 0.8s var(--dd-ease-standard);
 
   &.is-1 {
-    top: -22vmax;
-    left: -12vmax;
-    background: var(--dd-bg-blob-1);
+    top: -28vmax;
+    left: -18vmax;
+    --dd-blob-color: var(--dd-bg-blob-1);
   }
 
   &.is-2 {
-    top: -8vmax;
-    right: -20vmax;
-    background: var(--dd-bg-blob-2);
+    top: -14vmax;
+    right: -26vmax;
+    --dd-blob-color: var(--dd-bg-blob-2);
   }
 
   &.is-3 {
-    bottom: -30vmax;
-    left: 18vmax;
-    background: var(--dd-bg-blob-3);
+    bottom: -36vmax;
+    left: 12vmax;
+    --dd-blob-color: var(--dd-bg-blob-3);
   }
 
   &.is-4 {
-    bottom: -26vmax;
-    right: -8vmax;
-    width: 40vmax;
-    height: 40vmax;
-    background: var(--dd-bg-blob-4);
+    bottom: -31vmax;
+    right: -13vmax;
+    width: 50vmax;
+    height: 50vmax;
+    --dd-blob-color: var(--dd-bg-blob-4);
   }
 }
 

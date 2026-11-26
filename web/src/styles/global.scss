@@ -75,6 +75,11 @@
   background: currentColor;
   flex-shrink: 0;
   position: relative;
+}
+
+// 呼吸动画是纯装饰（运行中状态靠颜色和旁边的文字表达），v4.0.2 起只在显式丰富档播；
+// will-change 也一起挪进来：列表里每个运行中的点常驻一个合成层，没开硬件加速时滚动更卡
+html[data-dd-motion="rich"] .pulse-dot {
   animation: pulseDot 1.5s ease-in-out infinite;
   will-change: transform, opacity;
 }
@@ -438,24 +443,13 @@ a {
   contain: none;
 }
 
+// v4.0.2（#182）：去掉原来的 backdrop-filter: blur(1.5px)，只留半透明遮罩色。
+// 整屏模糊在没开硬件加速时，弹窗 / 抽屉开着期间底下任何东西一动（日志流式输出、动画）都要整屏重新模糊一遍，
+// 而 1.5px 的模糊肉眼几乎看不出来。
 .el-overlay {
   background-color: rgba(15, 23, 42, 0.24) !important;
-  backdrop-filter: blur(1.5px);
-  // 只过渡底色。原来连 backdrop-filter 一起过渡：它的值在开关过程中根本不变，过渡它没有任何可见收益，
-  // 却会让低端机（Magisk 版用手机浏览器访问）在遮罩淡入的每一帧都重新模糊一次整屏。
+  // 只过渡底色
   transition: background-color var(--dd-motion-fast) var(--dd-ease-standard);
-}
-
-html[data-dd-glass="disabled"] .el-overlay {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .el-overlay {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
 }
 
 // ============================================================================
@@ -507,7 +501,7 @@ html[data-dd-glass="disabled"] .el-overlay {
   animation-timing-function: var(--dd-ease-emphasized) !important;
 }
 
-// 遮罩：只做透明度。它上面已经有 backdrop-filter，再叠位移会让整屏跟着晃。
+// 遮罩：只做透明度。整屏叠位移会让整屏跟着晃。
 // 进场吃 --dd-motion-popper（200ms），比弹窗本体（--dd-motion-overlay，280ms）快一拍先把底铺好；
 // 离场与本体同为 --dd-motion-overlay-leave，两者一起收尾。
 //
@@ -1454,26 +1448,28 @@ html.dark {
 // v4.0 改名：这两条原名 --dd-glass-bg / --dd-glass-blur。--dd-glass-blur 现在是主题令牌
 // （卡片玻璃的模糊半径，一个长度值，见 styles/themes/*.scss），值的形状不同，只能给下拉浮层换个名字。
 // ============================================================================
+// v4.0.2（#182）：默认实色、不模糊（下拉一展开就要对底下整块区域做模糊，没开硬件加速时展开 / 滚动选项都卡）。
+// 只有用户 / 管理员显式设了玻璃模糊 > 0（data-dd-glass="on"）才恢复毛玻璃。
 :root {
-  --dd-popper-glass-bg: color-mix(in srgb, var(--el-bg-color-overlay) 82%, transparent);
-  --dd-popper-glass-filter: blur(12px) saturate(1.2);
-}
-
-html.dark {
-  --dd-popper-glass-bg: color-mix(in srgb, var(--el-bg-color-overlay) 86%, transparent);
-  --dd-popper-glass-filter: blur(14px) saturate(1.1);
-}
-
-// 用户显式关玻璃 / 低端降级（data-dd-glass="disabled"）与系统「降低透明度」：下拉浮层一并退回实色不模糊
-html[data-dd-glass="disabled"],
-html.dark[data-dd-glass="disabled"] {
   --dd-popper-glass-bg: var(--el-bg-color-overlay);
   --dd-popper-glass-filter: none;
 }
 
+html[data-dd-glass="on"] {
+  --dd-popper-glass-bg: color-mix(in srgb, var(--el-bg-color-overlay) 82%, transparent);
+  --dd-popper-glass-filter: blur(12px) saturate(1.2);
+}
+
+html.dark[data-dd-glass="on"] {
+  --dd-popper-glass-bg: color-mix(in srgb, var(--el-bg-color-overlay) 86%, transparent);
+  --dd-popper-glass-filter: blur(14px) saturate(1.1);
+}
+
 @media (prefers-reduced-transparency: reduce) {
   :root,
-  html.dark {
+  html.dark,
+  html[data-dd-glass="on"],
+  html.dark[data-dd-glass="on"] {
     --dd-popper-glass-bg: var(--el-bg-color-overlay);
     --dd-popper-glass-filter: none;
   }
@@ -1761,7 +1757,8 @@ pre.dd-log-surface {
 :root {
   // v4.0：从卡片底色派生（原写死白 76% / 石板蓝 62%），跟随主题
   --dd-loading-surface-color: color-mix(in srgb, var(--el-bg-color) 76%, transparent);
-  --dd-loading-surface-backdrop: blur(8px);
+  // v4.0.2（#182）：默认不模糊（加载期间转圈一直在动，底下表格区每帧重新模糊很贵），显式开了玻璃（on）才模糊
+  --dd-loading-surface-backdrop: none;
   --dd-loading-primary: var(--el-color-primary);
   --dd-loading-secondary: color-mix(
     in srgb,
@@ -1782,6 +1779,10 @@ html.dark {
     var(--el-color-primary-light-5) 78%,
     transparent
   );
+}
+
+html[data-dd-glass="on"] {
+  --dd-loading-surface-backdrop: blur(8px);
 }
 
 html[data-dd-glass="disabled"],
@@ -2942,28 +2943,37 @@ html[data-dd-theme] #app {
   background: transparent;
 }
 
-// 玻璃表面 .dd-glass（opt-in）：半透明 surface + backdrop-filter。
+// 玻璃表面 .dd-glass（opt-in）：表面底色 + （显式开了玻璃时才有的）backdrop-filter。
 // EP 的 --el-bg-color 刻意保持实色（见 themes/_ep-map.scss），想要玻璃观感的卡片、外壳自己加这个类。
+// v4.0.2（#182）起默认实色不透底：<html> 上是 data-dd-glass="off"，_switches.scss 已把 --dd-surface 换成主题实色表面，
+//    这里不挂任何 backdrop-filter。只有用户 / 管理员显式把「玻璃模糊」设成 > 0（data-dd-glass="on"）才恢复毛玻璃。
 // ⚠️ backdrop-filter（任何非 none 值，包括 blur(0)）都会让元素成为 position:fixed 后代的包含块：
 //    里面有【原地渲染】的弹窗（没 append-to-body 的 el-dialog）、编辑器浮层的容器不要加，弹窗会被关在卡片里错位。
 //    表格行、列表项、标签这类小而多的元素也不要加（design §2.2：只给外壳与卡片级容器）。
-// 生效模糊为 0 时（用户设 0、或低端设备跟随系统）<html> 上是 data-dd-glass="off"：
-//    _switches.scss 已把 --dd-surface 换成实色，这里再把模糊关掉。
+//    默认档不再有这个副作用，但 on 档仍会有，所以这条约束不变。
 .dd-glass {
   background: var(--dd-surface);
+}
+
+html[data-dd-glass="on"] .dd-glass {
   -webkit-backdrop-filter: blur(var(--dd-glass-blur, 0px)) saturate(150%);
   backdrop-filter: blur(var(--dd-glass-blur, 0px)) saturate(150%);
 }
 
-html[data-dd-glass="off"] .dd-glass,
-html[data-dd-glass="disabled"] .dd-glass {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+// 流畅模式（v4.0.2，data-dd-lite，见 utils/panelAppearance.ts 的 applyLitePreference）：全站不许有任何 backdrop-filter。
+// 已知的几处（.dd-glass、侧栏、下拉浮层、加载遮罩、命令面板）都已经随 data-dd-glass="disabled" 关掉，
+// 这条通配是兜底：各页面 scoped 样式里零散写的毛玻璃也一并压掉。!important 是必须的（要压过页面里的具体规则）。
+html[data-dd-lite] *,
+html[data-dd-lite] *::before,
+html[data-dd-lite] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 // 系统「降低透明度」：退回实色，不模糊（与下拉浮层毛玻璃那段同一口径）
 @media (prefers-reduced-transparency: reduce) {
-  .dd-glass {
+  .dd-glass,
+  html[data-dd-glass="on"] .dd-glass {
     background: var(--dd-surface-solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;

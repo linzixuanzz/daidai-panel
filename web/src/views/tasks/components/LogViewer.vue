@@ -1283,7 +1283,6 @@ function handleClose() {
   border-radius: 50%;
   // 与头部「运行中」标签一致转为 success 绿（#133）
   background: var(--dd-ok);
-  animation: orb-core 1.4s ease-in-out infinite;
 }
 
 .status-orb-ripple {
@@ -1292,6 +1291,16 @@ function handleClose() {
   // 涟漪是从 .status-orb 里放大出来的一层，形状必须跟底块同档，否则放大过程中会露出错位的角
   border-radius: var(--dd-radius-control);
   background: color-mix(in srgb, var(--dd-ok) 40%, transparent);
+  // 涟漪与上面的呼吸点都是纯装饰的常驻动画：v4.0.2（#182）起只在显式丰富档播，其余档位不显示涟漪、圆点常亮
+  opacity: 0;
+}
+
+html[data-dd-motion="rich"] .status-orb-core {
+  animation: orb-core 1.4s ease-in-out infinite;
+}
+
+html[data-dd-motion="rich"] .status-orb-ripple {
+  opacity: 1;
   animation: orb-ripple 1.8s ease-out infinite;
 }
 
@@ -1582,9 +1591,9 @@ function handleClose() {
     color: var(--dd-ok-ink);
     font-weight: 600;
 
+    // 圆点闪烁只在显式丰富档（v4.0.2），其余档位常亮
     &::before {
       content: '● ';
-      animation: pulse 1.6s ease-in-out infinite;
     }
   }
 
@@ -1600,6 +1609,10 @@ function handleClose() {
   &--empty {
     color: var(--dd-text-3);
   }
+}
+
+html[data-dd-motion="rich"] .viewer-statusbar-item--live::before {
+  animation: pulse 1.6s ease-in-out infinite;
 }
 
 /* =============== Animations =============== */

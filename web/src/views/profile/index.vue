@@ -895,8 +895,27 @@ onUnmounted(() => {
               </div>
             </div>
             <p class="pref-desc pref-desc--muted">
-              「克制」只保留必要过渡，「关闭」无论系统怎么设都不播动画；当前系统：{{
+              「跟随系统」= 克制（系统开了减少动态效果时为关闭），「丰富」才有背景流动、光斑与整页切换动画，「关闭」无论系统怎么设都不播动画；当前系统：{{
                 systemReducedMotion ? "已开启减少动态效果" : "未开启减少动态效果"
+              }}
+            </p>
+
+            <!-- 流畅模式（v4.0.2，#182）：本机偏好，集中关掉毛玻璃、背景装饰、装饰动画 -->
+            <div class="pref-row">
+              <span class="pref-row-label">流畅</span>
+              <el-switch
+                :model-value="themeStore.lite"
+                active-text="流畅模式"
+                @update:model-value="(value: string | number | boolean) => themeStore.setLite(Boolean(value))"
+              />
+            </div>
+            <p class="pref-desc pref-desc--muted">
+              关掉毛玻璃、背景光斑与装饰动画，动效最多到「克制」；没开硬件加速的浏览器、远程桌面、老电脑上推荐打开。{{
+                themeStore.litePreference === "auto"
+                  ? "当前是检测到设备渲染较慢后自动开启的，手动关掉后不会再自动打开。"
+                  : themeStore.litePreference === null
+                    ? "从没设置过时会自动检测一次。"
+                    : ""
               }}
             </p>
 

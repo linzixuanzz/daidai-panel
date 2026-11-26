@@ -125,12 +125,11 @@ const radiusValue = computed(() => {
   return theme.presetMeta.radius
 })
 
-// 有效模糊为 0 但本机和全站都没设：要么主题本身不透明，要么是低端设备降级，给一句说明
+// 玻璃模糊的说明（v4.0.2 起卡片默认实色，只有显式设了 > 0 才毛玻璃）
 const blurHint = computed(() => {
+  if (theme.lite) return '流畅模式开着，所有毛玻璃都已关闭；关掉流畅模式后这里的设置才生效'
   if (theme.isLocal('blur') || theme.site.blur !== null) return ''
-  if (theme.presetMeta.blur === 0) return '这个风格默认是不透明卡片'
-  if (theme.blur === 0) return '检测到低端设备，动效跟随系统时自动关闭模糊'
-  return ''
+  return '默认卡片为实色不透底（更流畅）；拖动滑杆可以在本机打开毛玻璃卡片'
 })
 
 function handleBackgroundClick(value: BackgroundEffect, event: MouseEvent) {
@@ -522,7 +521,7 @@ function handleClose() {
             />
             <output>{{ theme.blur }}px</output>
           </div>
-          <p v-if="blurHint" class="studio-hint">{{ blurHint }}；拖动滑杆可以在本机强制打开。</p>
+          <p v-if="blurHint" class="studio-hint">{{ blurHint }}。</p>
         </section>
 
         <!-- 圆角 -->
@@ -597,7 +596,25 @@ function handleClose() {
               {{ option.label }}
             </button>
           </div>
-          <p class="studio-hint">「克制」保留必要过渡，关掉背景流动与光斑；「关闭」不播任何动画。</p>
+          <p class="studio-hint">
+            「跟随系统」= 克制（系统开了减少动态效果时为关闭）；「丰富」才有背景流动、光斑与整页切换动画，需要手动选；「关闭」不播任何动画。
+          </p>
+        </section>
+
+        <!-- 流畅模式（v4.0.2）：本机偏好，集中关掉毛玻璃、背景装饰、装饰动画 -->
+        <section class="studio-sec">
+          <div class="studio-sec__head">
+            <span class="studio-sec__title">流畅模式</span>
+            <span class="studio-scope" :class="{ 'is-local': theme.litePreference === 'on' || theme.litePreference === 'off' }">
+              {{ theme.litePreference === 'auto' ? '自动开启' : theme.litePreference ? '本机' : '自动检测' }}
+            </span>
+          </div>
+          <el-switch
+            :model-value="theme.lite"
+            active-text="关掉毛玻璃、背景光斑与装饰动画"
+            @update:model-value="(value: string | number | boolean) => theme.setLite(Boolean(value))"
+          />
+          <p class="studio-hint">没开硬件加速的浏览器、远程桌面、老电脑上推荐打开；从没设过时会自动检测，手动关过就不再自动打开。</p>
         </section>
 
         <!-- ===== 管理员区 ===== -->

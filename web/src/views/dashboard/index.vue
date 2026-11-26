@@ -1494,8 +1494,9 @@ onBeforeUnmount(() => {
 .dash-hero__glow {
   position: absolute;
   inset: -40% 30% -40% -20%;
+  // v4.0.2（#182）：去掉原来的 filter: blur(30px)。径向渐变本身就是柔边，再模糊一次没有可见差别，
+  // 却让总览卡每次重绘（数字滚动、悬停）都要重新做一遍模糊
   background: radial-gradient(closest-side, color-mix(in srgb, var(--dd-accent) 30%, transparent), transparent);
-  filter: blur(30px);
   opacity: 0.6;
   pointer-events: none;
   animation: dash-breathe 7s var(--dd-ease-io, ease-in-out) infinite alternate;
@@ -1718,9 +1719,7 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
 .dash-kpi__icon {
   color: var(--kc);
 
-  &.is-spinning {
-    animation: dash-spin 2.4s linear infinite;
-  }
+  // 有任务运行时图标转圈：纯装饰的常驻动画，v4.0.2 起只在显式丰富档转（见文件末尾「动效档位」）
 }
 
 @keyframes dash-spin {
@@ -2024,9 +2023,9 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
   border-radius: 50%;
   background: var(--dd-text-3);
 
+  // 「实时」圆点的闪烁同样只在丰富档（文件末尾「动效档位」），其余档位是常亮的绿点
   .is-on & {
     background: var(--dd-ok);
-    animation: dash-pulse 1.6s ease-in-out infinite;
   }
 }
 
@@ -2343,6 +2342,16 @@ html[data-dd-motion="rich"] .dash-kpi:hover {
 // 光晕呼吸只在 rich 档；克制 / 关闭档静止（关闭档的全局规则本来也会去掉，这里给克制档补上）
 html:not([data-dd-motion="rich"]) .dash-hero__glow {
   animation: none;
+}
+
+// v4.0.2（#182）：常驻的装饰动画只在显式丰富档（rich 只能手动选）：KPI 运行中图标转圈、「实时」圆点闪烁。
+// 骨架屏的 dash-placeholder-pulse 是加载反馈，不在此列
+html[data-dd-motion="rich"] .dash-kpi__icon.is-spinning {
+  animation: dash-spin 2.4s linear infinite;
+}
+
+html[data-dd-motion="rich"] .is-on .dash-live__dot {
+  animation: dash-pulse 1.6s ease-in-out infinite;
 }
 
 // ============ 响应式 ============

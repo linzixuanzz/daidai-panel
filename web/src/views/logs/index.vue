@@ -1645,6 +1645,12 @@ onBeforeUnmount(() => {
   // 圆点外面套一个方环会立刻穿帮，两者形状必须一致。
   border-radius: 50%;
   background: color-mix(in srgb, var(--el-color-warning) 50%, transparent);
+  // 涟漪是纯装饰的常驻动画：v4.0.2（#182）起只在显式丰富档播，其余档位不显示这一圈（只剩状态点本身）
+  opacity: 0;
+}
+
+html[data-dd-motion="rich"] .status-indicator-pulse {
+  opacity: 1;
   animation: orb-ripple 1.6s ease-out infinite;
 }
 
@@ -1925,10 +1931,14 @@ onBeforeUnmount(() => {
 .detail-status-item--live {
   color: var(--dd-warn-ink);
 
+  // 前面的圆点闪烁只在显式丰富档（v4.0.2），其余档位常亮
   &::before {
     content: '● ';
-    animation: pulse 1.6s ease-in-out infinite;
   }
+}
+
+html[data-dd-motion="rich"] .detail-status-item--live::before {
+  animation: pulse 1.6s ease-in-out infinite;
 }
 
 .detail-footer {

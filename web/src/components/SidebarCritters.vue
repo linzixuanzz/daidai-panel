@@ -17,6 +17,8 @@ const rootRef = ref<HTMLElement | null>(null)
 let frame = 0
 let lastX = 0
 let lastY = 0
+// 眼睛是否已经回正。非 rich 档（v4.0.2 起是默认）回正之后，鼠标再怎么动都不排 rAF、不碰 DOM
+let eyesCentered = true
 
 function updateEyes() {
   frame = 0
@@ -26,8 +28,10 @@ function updateEyes() {
   if (motionLevel() !== 'rich') {
     // 非 rich 档：眼睛回正后不再动
     pupils.forEach((pupil) => { pupil.style.transform = '' })
+    eyesCentered = true
     return
   }
+  eyesCentered = false
   pupils.forEach((pupil) => {
     const eye = pupil.parentElement
     if (!eye) return
@@ -44,6 +48,8 @@ function updateEyes() {
 function handlePointerMove(event: PointerEvent) {
   lastX = event.clientX
   lastY = event.clientY
+  // 非 rich 档且眼睛已回正：直接跳过（档位读 <html data-dd-motion>，与 pointerEffects 同口径，不读存储）
+  if (eyesCentered && document.documentElement.getAttribute('data-dd-motion') !== 'rich') return
   // rAF 节流：一帧最多算一次
   if (!frame) frame = window.requestAnimationFrame(updateEyes)
 }

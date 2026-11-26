@@ -520,14 +520,15 @@ html.dd-screen-mode .running-dock {
   &.is-running {
     background: var(--dd-accent);
 
-    // 运行中的涟漪；关闭档由全局规则停掉动画
+    // 运行中的涟漪：纯装饰的常驻动画，v4.0.2 起只在显式丰富档播（见下方 html[data-dd-motion="rich"] 那条）；
+    // 其余档位只剩主色圆点本身。默认透明，免得静止时盖成一个更实的点
     &::after {
       content: "";
       position: absolute;
       inset: 0;
       border-radius: 50%;
       background: var(--dd-accent);
-      animation: running-dock-ripple 1.6s var(--dd-ease-io, ease-out) infinite;
+      opacity: 0;
     }
   }
 
@@ -637,6 +638,10 @@ html.dd-screen-mode .running-dock {
 .running-dock.is-mobile .running-dock-panel-enter-from,
 .running-dock.is-mobile .running-dock-panel-leave-to {
   transform: translateY(12px) scale(0.97);
+}
+
+html[data-dd-motion="rich"] .running-dock__dot.is-running::after {
+  animation: running-dock-ripple 1.6s var(--dd-ease-io, ease-out) infinite;
 }
 
 @keyframes running-dock-ripple {

@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
+import { toast } from '@/utils/toast'
 import {
+  applyLitePreference,
   applyMotionPreference,
   applyPanelAppearance,
   applySiteThemeSettings,
@@ -10,10 +12,13 @@ import {
   exitSafeMode as exitSafeModeAndInject,
   getSiteAppearance,
   isSafeMode,
+  LITE_PREFERENCE_STORAGE_KEY,
+  readLitePreference,
   readLocalAppearance,
   readMotionPreference,
   readThemeMode,
   resolveAppearance,
+  scheduleLiteAutoDetect,
   setCustomCssPreview,
   systemPrefersDark,
   THEME_PRESETS,
@@ -21,6 +26,7 @@ import {
   writeLocalAppearance,
   type BackgroundEffect,
   type LocalAppearance,
+  type LitePreference,
   type LocalAppearanceKey,
   type MotionPreference,
   type PanelDensity,
@@ -105,11 +111,16 @@ export const useThemeStore = defineStore('theme', () => {
   // 系统「减少动态效果」开关变化时 +1，让依赖动效档位的 computed 重新求值（档位读的是 matchMedia，不是响应式的）
   const motionRevision = ref(0)
   const safeMode = ref(isSafeMode())
+  // 流畅模式本机偏好（v4.0.2）：on / off / auto；null = 从没设过（会做一次自动检测，见下方）
+  const litePreference = ref<LitePreference | null>(readLitePreference())
+  /** 流畅模式此刻是否生效（手动或自动打开） */
+  const lite = computed(() => litePreference.value === 'on' || litePreference.value === 'auto')
 
   const resolved = computed(() => {
-    // 下面两行只为建立响应式依赖：resolveAppearance 内部还会现读 matchMedia / 低端设备判定
+    // 下面三行只为建立响应式依赖：resolveAppearance 内部还会现读 matchMedia / 低端设备判定 / 流畅模式
     void motion.value
     void motionRevision.value
+    void litePreference.value
     return resolveAppearance(local.value, site.value)
   })
 
@@ -120,7 +131,7 @@ export const useThemeStore = defineStore('theme', () => {
   const background = computed(() => resolved.value.background)
   /** 全站背景图（data URL），只有背景效果为 image 时才画 */
   const backgroundImage = computed(() => resolved.value.backgroundImage)
-  /** 生效的玻璃模糊（px），已含低端设备降级 */
+  /** 卡片的玻璃模糊（px）：显式设过的值，没设过为 0（实色卡片）。流畅模式下不生效但仍显示设定值 */
   const blur = computed(() => resolved.value.blur)
   /** 本机圆角滑杆；null = 按全站 panel_shape_style */
   const radius = computed(() => resolved.value.radius)
@@ -179,6 +190,14 @@ export const useThemeStore = defineStore('theme', () => {
   /** 动效档位（本机偏好，沿用 dd:appearance:motion 键）。会同步写 data-dd-motion 与两个兼容类 */
   function setMotion(next: MotionPreference) {
     motion.value = applyMotionPreference(next)
+  }
+
+  /**
+   * 流畅模式开关（个人设置、主题工坊、命令面板共用）。手动关闭记为 off，之后永不自动打开。
+   * 会同步重算 data-dd-lite / data-dd-glass / data-dd-motion（见 utils/panelAppearance.ts 的 applyLitePreference）。
+   */
+  function setLite(enabled: boolean) {
+    litePreference.value = applyLitePreference(enabled ? 'on' : 'off')
   }
 
   /** 清掉本机覆盖：传 key 只清这一项，不传 = 全部（不含动效，动效没有全站值） */
@@ -332,6 +351,9 @@ export const useThemeStore = defineStore('theme', () => {
     window.addEventListener('storage', (event) => {
       if (event.key === 'theme') {
         mode.value = applyThemeMode()
+      } else if (event.key === LITE_PREFERENCE_STORAGE_KEY) {
+        // 必须排在下面 dd:appearance:* 的通用分支之前：流畅模式还要重算动效档位
+        litePreference.value = applyLitePreference()
       } else if (event.key === 'dd:appearance:motion') {
         motion.value = applyMotionPreference()
         // 低端设备切 system <-> rich 时模糊降级状态会随之变化，补同步一次外观
@@ -341,6 +363,17 @@ export const useThemeStore = defineStore('theme', () => {
         refreshLocal()
         applyThemeAppearance()
       }
+    })
+
+    // 慢设备自动开启流畅模式（只在从没手动设过时检测一次；检测本身等页面可见、聚焦、空闲后才做，不卡首屏）。
+    // store 是整页单例，这里只会排一次。
+    scheduleLiteAutoDetect(() => {
+      litePreference.value = readLitePreference()
+      // 一次性轻提示：之后存储里是 auto，不会再检测、也不会再提示。顺手给个「关闭」直接退出（记为 off，永不再自动开）
+      toast.withAction('已自动开启流畅模式，可在 个人设置 → 界面外观 关闭', {
+        text: '关闭',
+        handler: () => setLite(false),
+      })
     })
   }
 
@@ -356,6 +389,9 @@ export const useThemeStore = defineStore('theme', () => {
     motion,
     motionLevel,
     safeMode,
+    litePreference,
+    lite,
+    setLite,
     preset,
     presetMeta,
     accent,

@@ -34,6 +34,9 @@ html[data-dd-theme="mist"] {
   --dd-ok-solid: #078561;
   --dd-warn-solid: #ac6210;
   --dd-glass-blur: 26px;
+  // v4.0.2：卡片默认实色（data-dd-glass="off" 会把 --dd-surface 换成实色），侧栏外壳单独保留半透明玻璃；
+  // 取主题实色表面的 70%，比原来的卡片表面略实一点，抵消侧栏模糊封顶 12px 后底图透得更清楚
+  --dd-sidebar-bg: color-mix(in srgb, var(--dd-surface-solid) 70%, transparent);
   --dd-shadow-card: 0 10px 36px -14px rgba(60, 70, 120, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.85);
   --dd-shadow-card-hover: 0 16px 44px -14px rgba(60, 70, 120, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.9);
   --dd-shadow-shell: 0 14px 40px -18px rgba(60, 70, 120, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.85);
@@ -86,6 +89,9 @@ html.dark[data-dd-theme="mist"] {
   --dd-err-solid: var(--dd-err);
   --dd-btn-primary-bg: var(--dd-accent);
   --dd-glass-blur: 26px;
+  // v4.0.2：卡片默认实色（data-dd-glass="off" 会把 --dd-surface 换成实色），侧栏外壳单独保留半透明玻璃；
+  // 取主题实色表面的 70%，比原来的卡片表面略实一点，抵消侧栏模糊封顶 12px 后底图透得更清楚
+  --dd-sidebar-bg: color-mix(in srgb, var(--dd-surface-solid) 70%, transparent);
   --dd-shadow-card: 0 14px 40px -18px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   --dd-shadow-card-hover: 0 20px 50px -18px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.07);
   --dd-shadow-shell: 0 16px 44px -20px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);

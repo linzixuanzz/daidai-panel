@@ -278,8 +278,10 @@ export async function fetchAndApplyPanelAppearance() {
 /**
  * 界面动效偏好（个人设置页「界面动效」、主题工坊「动效强度」，v4.0 起四档，design §2.1）。
  *
- * - system（默认）：系统开了「减少动态效果」→ off；否则低端设备 → subtle；否则 rich；
- * - rich：全部动效（光斑、烟花、磁吸、背景流动、View Transitions 弹簧切页）；
+ * - system（默认）：系统开了「减少动态效果」→ off；否则 subtle。
+ *   v4.0.2（#182）起「跟随系统」不再解析成 rich：rich 的背景漂移、整页 View Transitions、光斑在没开硬件加速的
+ *   浏览器 / 远程桌面 / 老笔记本上会掉到 10fps 左右，只能由用户显式选；
+ * - rich：全部动效（光斑、烟花、磁吸、背景流动、View Transitions 弹簧切页），只在用户显式选择时生效；
  * - subtle：只保留必要过渡（入场只淡入、切页只淡入淡出、背景静止，没有光斑 / 烟花 / 磁吸）；
  * - off：不看系统，一律把动效压到几乎不可见。
  *
@@ -292,8 +294,10 @@ export async function fetchAndApplyPanelAppearance() {
  *                    （design 原文只写了 rich；subtle 也挂是因为「显式选克制」时系统开着减少动效，
  *                     不挂的话会被媒体查询压成 1ms，等于偷偷变成了关闭，与「显式档位原样生效」矛盾）
  *   dd-motion-off：解析结果是 off（显式关闭，或跟随系统且系统开着减少动效）；
- *   dd-vt：浏览器支持 View Transitions 且档位不是 off。切页动画交给 View Transitions，
- *          motion.scss 按它关掉 MainLayout 自带的 page-shell 进出场。
+ *   dd-vt：浏览器支持 View Transitions 且解析结果是 rich（v4.0.2 起只有显式丰富才走整页截图切页）。
+ *          切页动画交给 View Transitions，motion.scss 按它关掉 MainLayout 自带的 page-shell 进出场；
+ *          其余档位走 page-shell 的轻量淡入。
+ *   流畅模式（data-dd-lite，见下方 applyLitePreference）开着时，解析结果最多是 subtle。
  *
  * 刻意做成本机偏好（localStorage），不进服务端的 system_configs：
  * 它回答的是「这台设备前的人想不想看动画」，和 panel_shape_style 那种「整个面板长什么样」不是一类；
@@ -334,7 +338,8 @@ export function readMotionPreference(): MotionPreference {
  * 低端设备判定（design §2.1）：CPU 核数 ≤ 4 且内存 ≤ 4GB。
  * deviceMemory 只有 Chromium 系有，拿不到按 8GB 算（即不算低端）；hardwareConcurrency 拿不到同样不算低端 ——
  * 宁可漏判（多播一点动画），也不要把桌面 Firefox / Safari 全判成低端。
- * 命中且动效「跟随系统」时：动效降为 subtle；用户没设过玻璃模糊时模糊按 0（见 applyThemeAppearance）。
+ * 命中且动效「跟随系统」时：用户没设过玻璃模糊时侧栏 / 弹层也关掉模糊（data-dd-glass="disabled"，见 applyThemeAppearance）。
+ * v4.0.2 起它不再是唯一的降级依据：「跟随系统」本身就解析成 subtle，另有流畅模式的自动检测（软件渲染 / 帧率）。
  */
 export function isLowEndDevice(): boolean {
   if (typeof navigator === 'undefined') return false
@@ -348,11 +353,18 @@ export function isLowEndDevice(): boolean {
  * localStorage 与 matchMedia 浏览器内部都有缓存，很便宜。
  */
 export function resolveMotionLevel(preference: MotionPreference = readMotionPreference()): MotionLevel {
-  if (preference !== 'system') return preference
-  if (typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)) {
-    return 'off'
+  let level: MotionLevel
+  if (preference !== 'system') {
+    level = preference
+  } else if (typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)) {
+    level = 'off'
+  } else {
+    // 跟随系统且系统没要求减少动效：克制档（rich 只能显式选，理由见上方说明）
+    level = 'subtle'
   }
-  return isLowEndDevice() ? 'subtle' : 'rich'
+  // 流畅模式：动效最多 subtle（显式选了丰富也一样；关掉流畅模式后自动恢复）
+  if (level === 'rich' && isLiteMode()) return 'subtle'
+  return level
 }
 
 /**
@@ -390,13 +402,196 @@ export function applyMotionPreference(raw?: string | null): MotionPreference {
   root.setAttribute('data-dd-motion', level)
   root.classList.toggle(MOTION_FORCE_CLASS, next === 'rich' || next === 'subtle')
   root.classList.toggle(MOTION_OFF_CLASS, level === 'off')
-  root.classList.toggle(MOTION_VT_CLASS, level !== 'off' && typeof document.startViewTransition === 'function')
+  // 整页截图切页只在显式丰富（解析为 rich）时启用；克制档走 MainLayout 的轻量淡入
+  root.classList.toggle(MOTION_VT_CLASS, level === 'rich' && typeof document.startViewTransition === 'function')
   // 显式切换档位时，低端设备的「跟随系统 → 模糊归 0」可能随之变化，主题外观要重算一次。
   // 不传参的重放（main.ts 首屏）不重算：那时 applyThemeAppearance 紧跟着就会调。
   if (explicit) {
     applyThemeAppearance()
   }
   return next
+}
+
+/**
+ * 流畅模式（v4.0.2，issue #182）：一个开关集中关掉所有昂贵效果，给没开硬件加速的浏览器、远程桌面、老笔记本用。
+ *
+ * 开着时（<html data-dd-lite="on">）：
+ *   - 全站没有任何 backdrop-filter（data-dd-glass 记为 disabled，global.scss 另有一条兜底通配）；
+ *   - 背景只留纯底色（AppBackdrop 不画光斑 / 网格 / 噪点 / 扫描线，背景图与它的可读遮罩照常）；
+ *   - 动效档位最多 subtle（见 resolveMotionLevel）⇒ 没有装饰动画、整页 View Transitions、光斑与磁吸。
+ *
+ * 本机偏好，存 localStorage 的 dd:appearance:lite，三态 + 未设置：
+ *   on   用户手动打开；
+ *   off  用户手动关闭 —— 之后永不自动打开；
+ *   auto 自动检测打开（用户从没手动设过时，见 scheduleLiteAutoDetect）；效果与 on 相同；
+ *   缺键 = 从没设过，页面加载后会做一次自动检测。
+ * 不进 LOCAL_APPEARANCE_KEYS：主题工坊「全部恢复为全站默认」不该顺手把流畅模式也关掉。
+ */
+export type LitePreference = 'on' | 'off' | 'auto'
+
+export const LITE_PREFERENCE_STORAGE_KEY = 'dd:appearance:lite'
+
+function normalizeLitePreference(raw?: string | null): LitePreference | null {
+  const value = String(raw ?? '').trim().toLowerCase()
+  return value === 'on' || value === 'off' || value === 'auto' ? value : null
+}
+
+function readLiteFromStorage(): LitePreference | null {
+  try {
+    if (typeof window === 'undefined') return null
+    return normalizeLitePreference(window.localStorage.getItem(LITE_PREFERENCE_STORAGE_KEY))
+  } catch {
+    return null
+  }
+}
+
+// 模块级缓存：resolveMotionLevel 会被 pointermove 之类的高频路径调用，不能每次都读 localStorage。
+// 只有 applyLitePreference 会改它（含不传参时按存储重放，给其它标签页的 storage 事件用）。
+let litePreference: LitePreference | null = readLiteFromStorage()
+
+/** 本机的流畅模式偏好；null = 从没设过 */
+export function readLitePreference(): LitePreference | null {
+  return litePreference
+}
+
+/** 流畅模式此刻是否生效（手动打开或自动打开） */
+export function isLiteMode(): boolean {
+  return litePreference === 'on' || litePreference === 'auto'
+}
+
+/**
+ * 设置流畅模式并立即生效（重算动效档位与主题外观），返回最新偏好。
+ * 传 on / off / auto：写进本机存储；不传：按存储重放一遍（其它标签页改了它时走这条）。
+ */
+export function applyLitePreference(raw?: LitePreference): LitePreference | null {
+  if (raw) {
+    litePreference = raw
+    try {
+      window.localStorage.setItem(LITE_PREFERENCE_STORAGE_KEY, raw)
+    } catch {
+      // 隐私模式：写不进去只是刷新后不记得，本次照常生效
+    }
+  } else {
+    litePreference = readLiteFromStorage()
+  }
+  // 动效档位（rich 封顶成 subtle、dd-vt 类）与外观（data-dd-lite、data-dd-glass）都要重算
+  applyMotionPreference()
+  applyThemeAppearance()
+  return litePreference
+}
+
+// 软件渲染的渲染器名（SwiftShader：Chrome 关 GPU / 远程桌面；llvmpipe / softpipe：Linux 无显卡；
+// Microsoft Basic Render：Windows 没装显卡驱动）
+const SOFTWARE_RENDERER_PATTERN = /swiftshader|llvmpipe|softpipe|microsoft basic render|software/i
+// rAF 中位帧间隔超过它（约 25fps 以下）就算慢设备。
+// 不能定得太紧：浏览器省电模式 / 30Hz 显示器会把 rAF 锁在 30fps（约 33ms），那不是慢设备
+const LITE_SLOW_FRAME_MS = 40
+const LITE_DETECT_IDLE_MS = 2000
+const LITE_DETECT_SAMPLE_MS = 2000
+
+/** WebGL 拿不到上下文，或渲染器是软件实现 → true */
+function isSoftwareRendering(): boolean {
+  try {
+    const canvas = document.createElement('canvas')
+    const gl = (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null
+    if (!gl) return true
+    const info = gl.getExtension('WEBGL_debug_renderer_info')
+    const renderer = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))
+    // 用完立刻释放上下文，别占着一个 GPU 进程资源
+    gl.getExtension('WEBGL_lose_context')?.loseContext()
+    return SOFTWARE_RENDERER_PATTERN.test(renderer)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 慢设备自动开启流畅模式（只在用户从没设过时做一次）。
+ *
+ * 时机：页面可见且窗口聚焦 → 再等约 2 秒 → 浏览器空闲时检测，不跟首屏抢主线程。
+ * 判据：WebGL 拿不到上下文 / 渲染器是软件实现，或者采样约 2 秒 rAF 的中位帧间隔 > 40ms。
+ * 采样中途切到后台或失焦（rAF 会被节流，量出来的不准）就作废，等下次回到前台重来。
+ * 命中后记为 auto 并立即生效，再调 onAutoEnabled 给用户一次轻提示；没命中什么都不写，下次打开页面再测。
+ */
+export function scheduleLiteAutoDetect(onAutoEnabled: () => void) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  if (litePreference !== null) return
+
+  let waiting = false
+  let timer = 0
+
+  const ready = () => document.visibilityState === 'visible' && document.hasFocus()
+
+  const disarm = () => {
+    document.removeEventListener('visibilitychange', arm)
+    window.removeEventListener('focus', arm)
+    window.clearTimeout(timer)
+  }
+
+  const finish = (slow: boolean) => {
+    // 检测期间用户可能已经在设置里手动切过：那以手动为准
+    if (!slow || litePreference !== null) return
+    applyLitePreference('auto')
+    onAutoEnabled()
+  }
+
+  const sampleFrames = () => {
+    const stamps: number[] = []
+    const startedAt = performance.now()
+    const step = (now: number) => {
+      if (!ready()) {
+        // 中途切走：作废，回到等待状态
+        waiting = false
+        listen()
+        return
+      }
+      stamps.push(now)
+      if (now - startedAt < LITE_DETECT_SAMPLE_MS) {
+        window.requestAnimationFrame(step)
+        return
+      }
+      const gaps = stamps.slice(1).map((value, index) => value - (stamps[index] ?? value)).sort((a, b) => a - b)
+      const median = gaps.length ? (gaps[Math.floor(gaps.length / 2)] ?? 0) : 0
+      finish(median > LITE_SLOW_FRAME_MS)
+    }
+    window.requestAnimationFrame(step)
+  }
+
+  const detect = () => {
+    if (litePreference !== null) return
+    if (!ready()) {
+      waiting = false
+      listen()
+      return
+    }
+    if (isSoftwareRendering()) {
+      finish(true)
+      return
+    }
+    sampleFrames()
+  }
+
+  function arm() {
+    if (waiting || !ready()) return
+    waiting = true
+    disarm()
+    timer = window.setTimeout(() => {
+      // 等浏览器空闲再测；没有 requestIdleCallback（Safari）就直接测
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(detect, { timeout: 3000 })
+      } else {
+        detect()
+      }
+    }, LITE_DETECT_IDLE_MS)
+  }
+
+  function listen() {
+    document.addEventListener('visibilitychange', arm)
+    window.addEventListener('focus', arm)
+    arm()
+  }
+
+  listen()
 }
 
 /**
@@ -516,11 +711,11 @@ export interface ThemePresetMeta {
   id: ThemePreset
   name: string
   desc: string
-  /** 主题默认的玻璃模糊（px），与 scss 里的 --dd-glass-blur 一致；0 = 不透明卡片 */
+  /** 主题默认的玻璃模糊（px），与 scss 里的 --dd-glass-blur 一致。v4.0.2 起只给侧栏外壳用（且封顶 12px），卡片默认一律实色 */
   blur: number
   /** 主题默认的卡片圆角（px），即 --dd-theme-radius-surface；主题工坊圆角滑杆没设过时显示它 */
   radius: number
-  /** 「跟随主题」背景下有没有极光块（经典、纸墨没有）；AppBackdrop 据此决定要不要渲染那 4 个大模糊层 */
+  /** 「跟随主题」背景下有没有极光块（经典、纸墨没有）；AppBackdrop 据此决定要不要渲染那 4 个大光斑层 */
   blobs: boolean
   swatch: Record<'light' | 'dark', { bg: string; surface: string; accent: string; accent2: string }>
 }
@@ -623,7 +818,7 @@ export interface ResolvedAppearance {
   accent: string
   background: BackgroundEffect
   backgroundImage: string
-  /** 生效的玻璃模糊（px），已含「低端设备 + 动效跟随系统 → 0」的降级 */
+  /** 卡片的玻璃模糊（px）：本机 / 全站显式设过的值，没设过为 0（实色卡片）。流畅模式下仍是设定值，只是不生效 */
   blur: number
   /** 本机圆角滑杆；null = 按全站 shape 走 */
   radius: number | null
@@ -787,16 +982,17 @@ export function applySiteThemeSettings(payload: Partial<PanelSettingsPayload>) {
 /** 合并本机值与全站值（不碰 DOM）。主题工坊显示「当前生效值」时直接用它 */
 export function resolveAppearance(local: LocalAppearance = readLocalAppearance(), site: SiteAppearance = siteAppearance): ResolvedAppearance {
   const preset = local.preset ?? site.preset
-  const meta = THEME_PRESETS.find((item) => item.id === preset)
   const motionPreference = readMotionPreference()
-  // 玻璃模糊优先级：本机 > 全站 > （低端设备且动效跟随系统 → 0）> 主题默认
-  const lowEndFallback = motionPreference === 'system' && isLowEndDevice() ? 0 : null
+  // 卡片玻璃模糊：本机 > 全站 > 0。
+  // v4.0.2（#182）起没显式设过就是 0（实色卡片不透底）：卡片上的 backdrop-filter 在底下内容一动（滚动、动画、指针光斑）
+  // 就要整块重新模糊，没开硬件加速时帧率掉到个位数。主题默认的模糊（THEME_PRESETS.blur）只还留给侧栏外壳用。
+  // 流畅模式不改这里（主题工坊滑杆仍显示用户设的值），由 data-dd-glass="disabled" 统一关掉。
   return {
     preset,
     accent: local.accent ?? site.accent,
     background: local.background ?? site.background,
     backgroundImage: site.backgroundImage,
-    blur: local.blur ?? site.blur ?? lowEndFallback ?? meta?.blur ?? 0,
+    blur: local.blur ?? site.blur ?? 0,
     radius: local.radius,
     shape: lastAppliedShape,
     density: local.density ?? site.density,
@@ -806,7 +1002,7 @@ export function resolveAppearance(local: LocalAppearance = readLocalAppearance()
 
 /**
  * 把生效的主题外观写到 <html> 上，返回生效值。幂等，任何一项变了都可以整体重跑。
- *   data-dd-theme / data-dd-bg / data-dd-density / data-dd-glass 四个属性；
+ *   data-dd-theme / data-dd-bg / data-dd-density / data-dd-glass / data-dd-lite 五个属性；
  *   内联令牌：自定义主色 --dd-accent（+ 按亮度算出的 --dd-on-accent）、玻璃模糊 --dd-glass-blur；
  *   圆角走 applyPanelShapeStyle()（它会顺带读本机滑杆）；自定义 CSS 走 applyCustomCss()。
  * 明暗（.dark）不在这里：那是 applyThemeMode 的事。
@@ -818,16 +1014,26 @@ export function applyThemeAppearance(): ResolvedAppearance {
   root.setAttribute('data-dd-theme', resolved.preset)
   root.setAttribute('data-dd-bg', resolved.background)
   root.setAttribute('data-dd-density', resolved.density)
-  // 区分「用户显式设为 0 / 低端降级（disabled）」与「主题默认卡片模糊为 0（off，如素白仍保留侧栏玻璃）」
+  // 流畅模式：styles 按 data-dd-lite 集中关掉昂贵效果（AppBackdrop 读 store 里的同一份状态）
+  const lite = isLiteMode()
+  if (lite) {
+    root.setAttribute('data-dd-lite', 'on')
+  } else {
+    root.removeAttribute('data-dd-lite')
+  }
+  // 玻璃三态（v4.0.2 起）：
+  //   on       本机 / 全站显式设了模糊 > 0：卡片恢复毛玻璃（自选功能）；
+  //   off      默认：卡片、弹层实色不透底，只有侧栏外壳保留主题玻璃（模糊封顶 12px，见 MainLayout）；
+  //   disabled 显式设为 0、低端设备降级、或流畅模式：侧栏、弹层、遮罩一并不模糊。
   const local = readLocalAppearance()
   const explicitBlur = local.blur ?? siteAppearance.blur
   const motionPreference = readMotionPreference()
   const lowEndDisabled = explicitBlur === null && motionPreference === 'system' && isLowEndDevice()
-  const glassState = explicitBlur === 0 || lowEndDisabled
+  const glassState = lite || explicitBlur === 0 || lowEndDisabled
     ? 'disabled'
-    : resolved.blur === 0
-      ? 'off'
-      : 'on'
+    : explicitBlur !== null && explicitBlur > 0
+      ? 'on'
+      : 'off'
   root.setAttribute('data-dd-glass', glassState)
 
   if (resolved.accent) {
@@ -856,9 +1062,9 @@ export function applyThemeAppearance(): ResolvedAppearance {
     root.style.removeProperty('--dd-btn-primary-bg')
   }
 
-  // 只有「本机 / 全站 / 低端降级」给了值才写内联；否则移除，露出主题块里的默认值
-  if (explicitBlur !== null || lowEndDisabled) {
-    root.style.setProperty('--dd-glass-blur', `${resolved.blur}px`)
+  // 只有「本机 / 全站 / 低端降级 / 流畅模式」给了值才写内联；否则移除，露出主题块里的默认值（侧栏外壳用）
+  if (explicitBlur !== null || lowEndDisabled || lite) {
+    root.style.setProperty('--dd-glass-blur', `${lite ? 0 : resolved.blur}px`)
   } else {
     root.style.removeProperty('--dd-glass-blur')
   }

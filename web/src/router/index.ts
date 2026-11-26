@@ -389,7 +389,8 @@ router.afterEach((to) => {
 //
 // 只在下面这些条件都满足时才做，否则照常切页（不支持的浏览器、关闭动效、首次进入、登录页进出都走老路）：
 //   - 浏览器支持 document.startViewTransition，页面在前台；
-//   - 动效档位不是 off（subtle 档只淡入淡出，见 motion.scss）；
+//   - 动效档位是 rich（v4.0.2 起只有用户显式选「丰富」且没开流畅模式才是 rich）：整页截图动画在没开硬件加速的
+//     浏览器上一次切页要 300~400ms，其余档位走 MainLayout 的 page-shell 轻量淡入（≤150ms）；
 //   - 新旧路由都在主布局里（matched 长度 > 1，即 MainLayout 的子路由），且路径真的变了（只改 query 不算）。
 // 任何一步出意外都直接放行导航：宁可没有动画，也不能卡住切页。
 // ============================================================================
@@ -402,7 +403,7 @@ router.beforeResolve((to, from) => {
     typeof document === 'undefined'
     || typeof document.startViewTransition !== 'function'
     || document.visibilityState === 'hidden'
-    || motionLevel() === 'off'
+    || motionLevel() !== 'rich'
     // 移动端 .route-shell 高度随内容自由伸展（可达 3000px+），高度差大的页面用 dd-main 过渡会拉伸变形并压住 sticky 顶栏
     || window.matchMedia?.('(max-width: 768px)').matches
     || from.matched.length < 2

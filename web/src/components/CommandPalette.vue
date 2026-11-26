@@ -136,6 +136,17 @@ const localItems = computed<PaletteItem[]>(() => {
   })
   list.push({ key: 'action:studio', kind: 'action', group: '操作', title: '打开主题工坊', keywords: ['theme', 'studio', '外观', '样式', '风格'], target: 'studio', icon: Brush })
   list.push({ key: 'action:dock', kind: 'action', group: '操作', title: '打开运行中浮窗', keywords: ['running', 'dock', '运行中'], target: 'dock', icon: Monitor })
+  // 流畅模式（v4.0.2）：一条开关，标题随当前状态变（key 固定，最近使用里也能跟着变）
+  list.push({
+    key: 'action:toggle-lite',
+    kind: 'action',
+    group: '操作',
+    title: theme.lite ? '关闭流畅模式' : '开启流畅模式',
+    hint: theme.litePreference === 'auto' ? '当前为自动开启' : '关掉毛玻璃、背景光斑与装饰动画',
+    keywords: ['lite', 'performance', '流畅', '卡顿', '性能', '省电', '掉帧'],
+    target: 'toggle-lite',
+    icon: Odometer,
+  })
   for (const preset of THEME_PRESETS) {
     list.push({
       key: `action:preset:${preset.id}`,
@@ -407,6 +418,9 @@ async function execute(item: PaletteItem | undefined) {
         ui.openStudio()
       } else if (target === 'dock') {
         ui.openDock()
+      } else if (target === 'toggle-lite') {
+        theme.setLite(!theme.lite)
+        ElMessage.success(theme.lite ? '已开启流畅模式' : '已关闭流畅模式')
       } else if (target.startsWith('preset:')) {
         theme.setPreset(target.slice('preset:'.length) as ThemePreset)
       } else if (target.startsWith('motion:')) {
@@ -561,13 +575,12 @@ function restoreFocus() {
 
 <style scoped>
 /* 层级：高于外壳与页面，低于 EP 弹窗体系（运行后的 ElMessage 要压在上面） */
+/* v4.0.2（#182）：遮罩不再整屏模糊（没开硬件加速时开面板那一下很卡），底色加深一点补回「隔开背景」的效果 */
 .dd-cmdk-scrim {
   position: fixed;
   inset: 0;
   z-index: 1990;
-  background: color-mix(in oklab, var(--dd-bg) 40%, transparent);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
+  background: color-mix(in oklab, var(--dd-bg) 58%, transparent);
 }
 
 .dd-cmdk {
@@ -585,9 +598,13 @@ function restoreFocus() {
   border: var(--dd-border-width, 1px) solid var(--dd-border);
   border-radius: var(--dd-radius-surface);
   box-shadow: var(--dd-shadow-popper);
+  font-family: var(--dd-font-ui, inherit);
+}
+
+/* 面板本体只在显式开了玻璃（data-dd-glass="on"）时毛玻璃；默认 --dd-overlay 本身已近乎不透明（97%） */
+html[data-dd-glass='on'] .dd-cmdk {
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   backdrop-filter: blur(20px) saturate(1.4);
-  font-family: var(--dd-font-ui, inherit);
 }
 
 .dd-cmdk__input {

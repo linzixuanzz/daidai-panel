@@ -17,7 +17,7 @@
     <!--
       v4.0 首屏防闪（design §1.5）：在 Vue 挂载、样式表加载之前，同步把外观写到 <html> 上 ——
       明暗（.dark）、风格（data-dd-theme）、背景（data-dd-bg）、密度（data-dd-density）、动效（data-dd-motion + 兼容类）、
-      玻璃开关（data-dd-glass）与内联令牌（主色、模糊、圆角）。
+      玻璃开关（data-dd-glass）、流畅模式（data-dd-lite）与内联令牌（主色、模糊、圆角）。
       数据来源：本机偏好 localStorage 的 theme / dd:appearance:*，以及上次缓存的全站设置快照 dd:appearance:site。
       🔴 这是 src/utils/panelAppearance.ts 的「手抄版」：那边改了键名、默认值、优先级，这里必须同步改。
          main.ts 在 createApp 之前会用正式实现再写一遍，panel-settings 回来后以服务端值为准，所以这里写错只会闪一下，不会持久错。
@@ -67,16 +67,23 @@
           root.setAttribute('data-dd-bg', pick(read('dd:appearance:background'), bgs, '') || pick(site.panel_background_effect, bgs, 'theme'));
           root.setAttribute('data-dd-density', pick(read('dd:appearance:density'), densities, '') || pick(site.panel_density, densities, 'cozy'));
 
-          // 动效：旧值 always → rich、reduce → off（只读不回写）；跟随系统时：减少动效 → off，低端设备 → subtle
+          // 流畅模式（v4.0.2）：dd:appearance:lite 为 on / auto 时生效
+          var litePref = pick(read('dd:appearance:lite'), ['on', 'off', 'auto'], '');
+          var lite = litePref === 'on' || litePref === 'auto';
+          if (lite) root.setAttribute('data-dd-lite', 'on');
+
+          // 动效：旧值 always → rich、reduce → off（只读不回写）；跟随系统时：减少动效 → off，否则 subtle（v4.0.2 起 rich 只能显式选）；
+          // 流畅模式下最多 subtle；整页 View Transitions（dd-vt）只在 rich
           var motion = pick(read('dd:appearance:motion'), ['system', 'rich', 'subtle', 'off', 'always', 'reduce'], 'system');
           motion = motion === 'always' ? 'rich' : motion === 'reduce' ? 'off' : motion;
           var cores = navigator.hardwareConcurrency;
           var lowEnd = typeof cores === 'number' && cores > 0 && cores <= 4 && (navigator.deviceMemory || 8) <= 4;
-          var level = motion !== 'system' ? motion : media('(prefers-reduced-motion: reduce)') ? 'off' : lowEnd ? 'subtle' : 'rich';
+          var level = motion !== 'system' ? motion : media('(prefers-reduced-motion: reduce)') ? 'off' : 'subtle';
+          if (level === 'rich' && lite) level = 'subtle';
           root.setAttribute('data-dd-motion', level);
           root.classList.toggle('dd-motion-force', motion === 'rich' || motion === 'subtle');
           root.classList.toggle('dd-motion-off', level === 'off');
-          root.classList.toggle('dd-vt', level !== 'off' && typeof document.startViewTransition === 'function');
+          root.classList.toggle('dd-vt', level === 'rich' && typeof document.startViewTransition === 'function');
 
           // 主色：本机 > 全站。主色上的文字取白 / 近黑里对比度高的那个（WCAG 相对亮度）
           var accent = hex(read('dd:appearance:accent')) || hex(site.panel_accent_color);
@@ -93,14 +100,14 @@
             }
           }
 
-          // 玻璃模糊：本机 > 全站 > （低端设备且动效跟随系统 → 0）> 主题默认（与 THEME_PRESETS 的 blur 一致）
-          var blurDefaults = { classic: 0, aurora: 22, mist: 26, terminal: 4, paper: 0, daidai: 0, clean: 0 };
+          // 玻璃（v4.0.2）：显式设了模糊 > 0 → on（卡片毛玻璃）；显式 0 / 低端设备且动效跟随系统 / 流畅模式 → disabled；
+          // 其余（默认）→ off（卡片实色，侧栏用主题自带的模糊，不写内联 --dd-glass-blur）
           var blur = int(read('dd:appearance:blur'), 40);
           if (blur === null) blur = int(site.panel_glass_blur, 40);
           var lowEndBlurOff = blur === null && motion === 'system' && lowEnd;
-          if (lowEndBlurOff) blur = 0;
+          if (lowEndBlurOff || lite) blur = 0;
           if (blur !== null) root.style.setProperty('--dd-glass-blur', blur + 'px');
-          var glassAttr = blur === 0 || lowEndBlurOff ? 'disabled' : (blur === null ? blurDefaults[preset] : blur) === 0 ? 'off' : 'on';
+          var glassAttr = blur === 0 ? 'disabled' : blur === null ? 'off' : 'on';
           root.setAttribute('data-dd-glass', glassAttr);
 
           // 圆角：本机滑杆 > 全站圆角风格（缓存键 dd:appearance:shape，再退到快照，默认 theme）

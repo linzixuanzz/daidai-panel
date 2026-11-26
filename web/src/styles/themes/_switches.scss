@@ -42,9 +42,11 @@ html.dark[data-dd-theme][data-dd-bg="image"] {
 }
 
 // —— 玻璃开关 ——
-// 区分两种无卡片模糊状态（v4.0.1）：
-//   off      主题默认卡片不透明（如素白 clean），但允许主题自己保留局部毛玻璃（如素白侧栏）；
-//   disabled 用户显式把模糊设为 0 或低端机降级：连同侧栏、下拉浮层一并关掉模糊并退回实色，
+// 三态（v4.0.2 起，由 applyThemeAppearance 决定）：
+//   on       用户 / 管理员显式把玻璃模糊设成 > 0：卡片（.dd-glass）、下拉浮层恢复毛玻璃；
+//   off      默认：卡片实色不透底（下面把 --dd-surface 换成实色），只有侧栏外壳保留主题玻璃
+//            （素白 / 极光 / 晨雾 / 终端在主题块里给了半透明的 --dd-sidebar-bg，模糊封顶 12px）；
+//   disabled 用户显式把模糊设为 0、低端机降级、或流畅模式：连同侧栏、下拉浮层一并关掉模糊并退回实色，
 //            避免出现「半透明无模糊」透出底层图案。
 html[data-dd-theme][data-dd-glass="off"],
 html.dark[data-dd-theme][data-dd-glass="off"],

@@ -784,13 +784,21 @@ async function loadVersion() {
   border: var(--dd-border-width) solid var(--dd-border);
   border-radius: var(--dd-sidebar-radius);
   box-shadow: var(--dd-sidebar-shadow);
-  -webkit-backdrop-filter: blur(var(--dd-sidebar-blur)) saturate(150%);
-  backdrop-filter: blur(var(--dd-sidebar-blur)) saturate(150%);
+  // v4.0.2（#182）：默认模糊半径封顶 12px（模糊开销随半径涨，素白 24px、极光 22px、晨雾 26px 都压到 12px）；
+  // 只有用户 / 管理员显式设了玻璃模糊（data-dd-glass="on"）才按设定值走，见下一条
+  -webkit-backdrop-filter: blur(min(var(--dd-sidebar-blur), 12px)) saturate(150%);
+  backdrop-filter: blur(min(var(--dd-sidebar-blur), 12px)) saturate(150%);
   z-index: 10;
 }
 
+html[data-dd-glass="on"] .layout-aside {
+  -webkit-backdrop-filter: blur(var(--dd-sidebar-blur)) saturate(150%);
+  backdrop-filter: blur(var(--dd-sidebar-blur)) saturate(150%);
+}
+
 // 仅用户显式关闭玻璃（blur=0）或低端降级（disabled）与系统「降低透明度」时关侧栏模糊并退回实色；
-// 素白主题默认卡片不透明（data-dd-glass="off"）仍保留其标志性的 24px 悬浮玻璃侧栏。
+// 默认（data-dd-glass="off"）卡片不透明，但素白 / 极光 / 晨雾 / 终端仍保留半透明悬浮玻璃侧栏（模糊封顶 12px）；
+// 流畅模式也落在 disabled 这一档。
 html[data-dd-glass="disabled"] .layout-aside {
   background: var(--dd-surface-solid);
   -webkit-backdrop-filter: none;
@@ -1361,15 +1369,19 @@ html[data-dd-motion="rich"] .sidebar-logo:hover .logo-icon {
   border-radius: 50%;
   background: var(--dd-info);
 
-  // 呼吸扩散的光圈（关闭档由全局去掉动画）
+  // 呼吸扩散的光圈：纯装饰的常驻动画，v4.0.2 起只在显式丰富档播（运行中状态靠圆点颜色与数字表达）
   &::after {
     content: "";
     position: absolute;
     inset: 0;
     border-radius: 50%;
     background: var(--dd-info);
-    animation: dd-runcap-ping 1.6s var(--dd-ease-standard) infinite;
+    opacity: 0;
   }
+}
+
+html[data-dd-motion="rich"] .runcap-dot::after {
+  animation: dd-runcap-ping 1.6s var(--dd-ease-standard) infinite;
 }
 
 @keyframes dd-runcap-ping {
@@ -1609,7 +1621,8 @@ html[data-dd-motion="rich"] .sidebar-logo:hover .logo-icon {
 }
 
 // ==================== Page transition ====================
-// 不支持 View Transitions（或动效关闭）时的切页动画；支持时由 <html> 上的 dd-vt 类关掉（styles/motion.scss）。
+// 非丰富档（v4.0.2 起含默认的「跟随系统」）与不支持 View Transitions 时的切页动画；显式丰富档由 <html> 上的
+// dd-vt 类关掉、改走 View Transitions（styles/motion.scss）。克制档的时长由 motion.scss 收到 150ms / 100ms。
 // 切页：新页面淡入并从下方 8px 升起，旧页面纯淡出（#132，v3.2.8）。
 // 原来是 180ms + scale 0.992 + decelerate：那条曲线前段极陡，肉眼可见的变化只有头 50~70ms，
 // 0.992 的缩放在 1200px 宽的内容区上两边各只动约 5px，再叠上 80ms 的离场，观感接近瞬切。

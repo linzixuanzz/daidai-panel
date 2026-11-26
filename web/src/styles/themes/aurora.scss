@@ -31,6 +31,9 @@ html[data-dd-theme="aurora"] {
   // 实心填充色覆盖（v4.0 验收返工）：上面的文字色（--dd-on-status / --dd-on-accent）在原色上不到 4.5:1
   --dd-ok-solid: #088562;
   --dd-glass-blur: 22px;
+  // v4.0.2：卡片默认实色（data-dd-glass="off" 会把 --dd-surface 换成实色），侧栏外壳单独保留半透明玻璃；
+  // 取主题实色表面的 70%，比原来的卡片表面略实一点，抵消侧栏模糊封顶 12px 后底图透得更清楚
+  --dd-sidebar-bg: color-mix(in srgb, var(--dd-surface-solid) 70%, transparent);
   --dd-shadow-card: 0 12px 40px -18px rgba(91, 33, 182, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9);
   --dd-shadow-card-hover: 0 18px 48px -18px rgba(91, 33, 182, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.95);
   --dd-shadow-shell: 0 18px 50px -24px rgba(91, 33, 182, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -83,6 +86,9 @@ html.dark[data-dd-theme="aurora"] {
   // 实心填充色覆盖（v4.0 验收返工）：上面的文字色（--dd-on-status / --dd-on-accent）在原色上不到 4.5:1
   --dd-btn-primary-bg: #8457ea;
   --dd-glass-blur: 22px;
+  // v4.0.2：卡片默认实色（data-dd-glass="off" 会把 --dd-surface 换成实色），侧栏外壳单独保留半透明玻璃；
+  // 取主题实色表面的 70%，比原来的卡片表面略实一点，抵消侧栏模糊封顶 12px 后底图透得更清楚
+  --dd-sidebar-bg: color-mix(in srgb, var(--dd-surface-solid) 70%, transparent);
   --dd-shadow-card: 0 18px 50px -20px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --dd-shadow-card-hover: 0 24px 60px -20px rgba(0, 0, 0, 0.78), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --dd-shadow-shell: 0 18px 50px -20px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);

@@ -25,6 +25,8 @@ export function installSpotlight() {
     (event) => {
       // 触屏没有「悬停」，光斑只会在手指划过时乱闪；CSS 那边也用 (hover: none) 关掉了
       if (event.pointerType === 'touch') return
+      // 非丰富档（v4.0.2 起是默认）连 rAF 都不排：鼠标移动时不额外占一帧回调
+      if (!isRichMotion()) return
       lastEvent = event
       if (frame) return
       frame = window.requestAnimationFrame(() => {

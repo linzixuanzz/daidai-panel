@@ -190,7 +190,7 @@ function refreshMotionStatus() {
   const systemReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
   motionStatus.value = systemReduced
     ? '跟随系统：系统开着「减少动态效果」，本页所有动效都被压到 1ms'
-    : '跟随系统：系统没开减少动态效果，完整播放'
+    : '跟随系统：系统没开减少动态效果，按「克制」播放（v4.0.2 起丰富档只能手动选）'
 }
 
 onMounted(refreshMotionStatus)

@@ -10,6 +10,8 @@
 //          保证「关闭」时 document.getAnimations() 里没有它们。
 //
 // 约定：动画只动 transform / opacity / filter / clip-path；backdrop-filter 只给外壳与卡片级容器（见 global.scss 的 .dd-glass）。
+// v4.0.2（#182）：「跟随系统」解析为 subtle，rich 只能显式选；纯装饰的常驻（infinite）动画一律只在 rich 档挂。
+// 流畅模式（html[data-dd-lite]）下档位最多 subtle，所以这里所有 rich 专属效果在流畅模式下自然关闭。
 // ============================================================================
 
 // 运行中流光转动的角度。@property 不认识时（Firefox 128 之前）conic-gradient 的起始角不能插值，流光就停在原地，
@@ -48,6 +50,10 @@
 html[data-dd-motion="subtle"] {
   --dd-spring: var(--dd-ease-decelerate);
   --dd-spring-soft: var(--dd-ease-decelerate);
+  // v4.0.2（#182）：克制档（含「跟随系统」默认）切页不走 View Transitions，而是 MainLayout 的 page-shell 淡入，
+  // 时长收到 150ms 内，只动 opacity 与 8px 位移。系统减少动效时 global.scss 的 (0,2,0) 压缩仍压过这里的 (0,1,1)。
+  --dd-motion-page-enter: 150ms;
+  --dd-motion-page-leave: 100ms;
 }
 
 @keyframes dd-fade-in {
@@ -303,14 +309,7 @@ html.dd-vt-page::view-transition-new(dd-main) {
   animation: dd-vt-in 0.6s var(--dd-ease-emphasized) both;
 }
 
-// 克制档：只淡入淡出
-html.dd-vt-page[data-dd-motion="subtle"]::view-transition-old(dd-main) {
-  animation: dd-fade-out 0.18s var(--dd-ease-standard) both;
-}
-
-html.dd-vt-page[data-dd-motion="subtle"]::view-transition-new(dd-main) {
-  animation: dd-fade-in 0.3s var(--dd-ease-standard) both;
-}
+// 克制档不再走 View Transitions 切页（v4.0.2，见 router/index.ts），原来那两条 subtle 专用的淡入淡出已删除
 
 // 切主题：新旧两张整页快照都不做默认的交叉淡化，由 withThemeTransition 在新快照上做圆形 clip-path 扩散
 html.dd-vt-theme::view-transition-old(root),
@@ -319,7 +318,7 @@ html.dd-vt-theme::view-transition-new(root) {
   mix-blend-mode: normal;
 }
 
-// View Transitions 可用且档位不是 off 时，<html> 上常驻 dd-vt 类（applyMotionPreference 维护）：
+// View Transitions 可用且档位是 rich（v4.0.2 起只有显式丰富）时，<html> 上常驻 dd-vt 类（applyMotionPreference 维护）：
 // 这时切页动画交给 View Transitions，MainLayout 自带的 page-shell 进出场必须关掉，否则两套切页动画叠在一起。
 // MainLayout 那两条是 scoped 的 `.page-shell-*-active[data-v-x]`（0,2,0），这里 (0,2,1) 压过它，不需要 !important。
 // 去掉 animation 后 Vue 的 <transition> 量不到时长，离场节点会在下一帧直接摘掉，不会和新页面叠着。
