@@ -1507,9 +1507,34 @@ Transfer-Encoding: chunked
         method: 'GET',
         path: '/api/scripts',
         title: '获取脚本列表',
-        description: '获取所有脚本文件列表。所有 /api/scripts/* 接口（读取、保存、删除、改名、移动、复制、批量删除、回滚、调试运行等）的路径都相对脚本目录，并且一律拒绝下面这些目录，路径里任意一段命中都算、不区分大小写，返回 400 {"error":"该路径不可访问"}：.git、.svn、.hg、.bzr（版本库元数据，订阅用 Token 鉴权时 .git/config 里存着带访问令牌的地址，能读就等于泄露令牌，所以写死不可配置）；node_modules、__pycache__（依赖与字节码缓存，不属于脚本本身，脚本列表、统计与备份里也都忽略）。这是有意的安全限制，重试不会成功；确实要清理这些目录，可以用 POST /api/scripts/run-code 执行 shell 命令。',
+        description: '获取所有脚本文件列表。所有 /api/scripts/* 接口（读取、保存、删除、改名、移动、复制、批量删除、回滚、调试运行等）的路径都相对脚本目录，并且一律拒绝下面这些目录，路径里任意一段命中都算、不区分大小写，返回 400 {"error":"该路径不可访问"}：.git、.svn、.hg、.bzr（版本库元数据，订阅用 Token 鉴权时 .git/config 里存着带访问令牌的地址，能读就等于泄露令牌，所以写死不可配置）；node_modules、__pycache__（依赖与字节码缓存，不属于脚本本身，脚本列表、统计与备份里也都忽略）。这是有意的安全限制，重试不会成功；确实要清理这些目录，可以用 POST /api/scripts/run-code 执行 shell 命令。另外 v4.0.2 起，脚本列表与脚本树会跳过 .npm-cache、.npm、.cache、.pnpm-store、.yarn-cache 这几个缓存目录（里面动辄几十万个小文件），只是不展示，按路径读写、备份都不受影响。',
         auth: 'jwt',
         responseExample: JSON.stringify({ data: [{ path: 'sign.py', size: 1024, modified: '2026-03-10T00:00:00' }] }, null, 2),
+      },
+      {
+        id: 'scripts-tree',
+        method: 'GET',
+        path: '/api/scripts/tree',
+        title: '获取脚本目录树',
+        description: '返回脚本目录树：目录在前、文件在后，同层按名称排序；.git、node_modules 等受保护目录与 .npm-cache 等缓存目录不出现。不带 lazy 参数时返回完整递归的整棵树（与 v4.0.1 一致）。v4.0.2 起可以带 lazy=1 显式开启大目录懒加载：某个目录的直接子项超过 500 个，或这一次返回的节点已经超过 5000 个时，后面遇到的子目录不再递归，节点带 lazy: true、children 为空数组；要展开它时带 lazy=1&path=<该目录的 key> 再请求一次，只返回这个目录下的子项（同样的懒加载规则，一层层往下取）。不带 lazy 时 path 也可以用，返回这个目录下完整递归的子树。path 的校验与其它脚本接口一致：不能穿越到脚本目录外、不能指向受保护目录、必须是已存在的目录，否则返回 400。',
+        auth: 'jwt',
+        queryParams: [
+          { name: 'lazy', type: 'string', description: '可选，传 1 开启大目录懒加载（返回里会出现 lazy 节点）；不传时整棵完整递归', example: '1' },
+          { name: 'path', type: 'string', description: '可选，要展开的目录（相对脚本目录，即节点的 key）。不带时返回整棵树', example: 'jd' },
+        ],
+        responseExample: JSON.stringify({
+          data: [
+            { key: 'jd', title: 'jd', isLeaf: false, type: 'directory', mtime: 1764000000, children: [
+              { key: 'jd/sign.js', title: 'sign.js', isLeaf: true, type: 'file', extension: '.js', size: 1024, mtime: 1764000000 },
+            ] },
+            { key: 'big', title: 'big', isLeaf: false, type: 'directory', mtime: 1764000000, lazy: true, children: [] },
+          ],
+        }, null, 2),
+        responseFields: [
+          { name: 'data[].key', type: 'string', description: '相对脚本目录的路径，用 / 分隔；带 path 请求时 key 仍是完整的相对路径' },
+          { name: 'data[].lazy', type: 'boolean', description: '只在请求带了 lazy=1 时、懒加载目录上出现，值为 true：children 为空不代表目录是空的，要带 lazy=1&path=<key> 再取一次' },
+          { name: 'data[].btime', type: 'number', description: '创建时间（Unix 秒），系统拿不到时不带' },
+        ],
       },
       {
         id: 'scripts-content',

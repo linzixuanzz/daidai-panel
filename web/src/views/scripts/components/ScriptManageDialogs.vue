@@ -101,14 +101,16 @@ watch(showVersionDiffDialog, (visible) => {
   <el-dialog v-model="showCreateFileDialog" title="新建文件" :width="isMobile ? '90%' : '480px'" :fullscreen="isMobile">
     <el-form :label-width="isMobile ? 'auto' : '80px'" :label-position="isMobile ? 'top' : 'right'">
       <el-form-item label="上级目录">
-        <!-- 目录很多时允许直接输入关键词筛选，避免用户只能滚动查找。 -->
+        <!-- 目录很多时允许直接输入关键词筛选，避免用户只能滚动查找。
+             allow-create：懒加载目录（#183）下面的子目录不在下拉里，可以直接输入相对路径；路径由后端统一校验。 -->
         <el-select
           v-model="newFileParent"
-          placeholder="输入关键词搜索目录，留空为根目录"
+          placeholder="选择目录，或直接输入路径（如 jd/utils），留空为根目录"
           clearable
           filterable
+          allow-create
           default-first-option
-          no-match-text="没有匹配的目录"
+          no-match-text="没有匹配的目录，回车直接使用输入的路径"
           no-data-text="暂无可选目录"
           style="width: 100%"
         >
@@ -129,14 +131,16 @@ watch(showVersionDiffDialog, (visible) => {
   <el-dialog v-model="showCreateDirDialog" title="新建目录" :width="isMobile ? '90%' : '480px'" :fullscreen="isMobile">
     <el-form :label-width="isMobile ? 'auto' : '80px'" :label-position="isMobile ? 'top' : 'right'">
       <el-form-item label="上级目录">
-        <!-- 目录很多时允许直接输入关键词筛选，避免用户只能滚动查找。 -->
+        <!-- 目录很多时允许直接输入关键词筛选，避免用户只能滚动查找。
+             allow-create：懒加载目录（#183）下面的子目录不在下拉里，可以直接输入相对路径；路径由后端统一校验。 -->
         <el-select
           v-model="newDirParent"
-          placeholder="输入关键词搜索目录，留空为根目录"
+          placeholder="选择目录，或直接输入路径（如 jd/utils），留空为根目录"
           clearable
           filterable
+          allow-create
           default-first-option
-          no-match-text="没有匹配的目录"
+          no-match-text="没有匹配的目录，回车直接使用输入的路径"
           no-data-text="暂无可选目录"
           style="width: 100%"
         >
@@ -291,14 +295,15 @@ watch(showVersionDiffDialog, (visible) => {
   <el-dialog v-model="showUploadDialog" title="上传文件" :width="isMobile ? '90%' : '480px'" :fullscreen="isMobile" destroy-on-close>
     <el-form :label-width="isMobile ? 'auto' : '80px'" :label-position="isMobile ? 'top' : 'right'">
       <el-form-item label="目标目录">
-        <!-- 上传目标目录也支持输入关键词筛选，和新建文件/目录保持一致。 -->
+        <!-- 上传目标目录也支持输入关键词筛选与直接输入路径（allow-create），和新建文件/目录保持一致。 -->
         <el-select
           v-model="uploadDir"
-          placeholder="输入关键词搜索目录，留空为根目录"
+          placeholder="选择目录，或直接输入路径（如 jd/utils），留空为根目录"
           clearable
           filterable
+          allow-create
           default-first-option
-          no-match-text="没有匹配的目录"
+          no-match-text="没有匹配的目录，回车直接使用输入的路径"
           no-data-text="暂无可选目录"
           style="width: 100%"
         >

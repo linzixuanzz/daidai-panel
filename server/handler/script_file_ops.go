@@ -23,7 +23,8 @@ func (h *ScriptHandler) List(c *gin.Context) {
 			return nil
 		}
 		if info.IsDir() {
-			if shouldSkipScriptTreeDir(info.Name()) {
+			// 缓存目录（.npm-cache 等）只在展示里跳过，根目录自己不跳（#183）
+			if shouldSkipScriptTreeDir(info.Name()) || (path != dir && service.IsScriptTreeCacheDirName(info.Name())) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -56,8 +57,41 @@ func (h *ScriptHandler) List(c *gin.Context) {
 	response.Success(c, gin.H{"data": files, "total": len(files)})
 }
 
+// 脚本树懒加载的两道阈值（#183）。只在调用方带 lazy=1 时生效：超过时，超出部分的目录节点不再递归，
+// 只给出 lazy:true、children 为空，前端展开它时再用 GET /scripts/tree?path=<该目录>&lazy=1 去取（同样的阈值，一层层往下取）。
+const (
+	// scriptTreeLazyDirEntries：某个目录的直接子项超过这个数，它下面的子目录一律不递归展开
+	scriptTreeLazyDirEntries = 500
+	// scriptTreeLazyTotalNodes：这一次请求已经放进树里这么多节点后，后面遇到的目录都不再递归展开
+	scriptTreeLazyTotalNodes = 5000
+)
+
+// Tree GET /scripts/tree[?path=<相对目录>][&lazy=1]：不带 path 时返回整棵树，带 path 时只返回这个目录下的子项。
+// path 与其它脚本接口一样走 safePath 校验。
+//
+// 懒加载必须由调用方显式开启（lazy=1，网页端会带）：不认 lazy 字段的老调用方（Dumb-Panel-APP、MCP get_script_tree）
+// 会把懒加载目录当成空目录，所以不带时保持 v4.0.1 的完整递归。#183 的超时主要靠跳过缓存目录解决，两种模式都跳。
 func (h *ScriptHandler) Tree(c *gin.Context) {
-	tree := buildTree(scriptsDir(), "")
+	prefix := ""
+	if raw := strings.TrimSpace(c.Query("path")); raw != "" {
+		full, err := safePath(raw, true)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		if info, statErr := os.Stat(full); statErr != nil || !info.IsDir() {
+			response.BadRequest(c, "当前路径不是目录")
+			return
+		}
+		// safePath 校验通过时这里不会再出错；节点 key 要用规范化后的相对路径，和整棵树里的 key 对得上
+		prefix, _ = normalizeScriptRelativePath(raw)
+	}
+	// nodeCount 为 nil 表示不懒加载（见 buildTree）
+	var nodeCount *int
+	if c.Query("lazy") == "1" {
+		nodeCount = new(int)
+	}
+	tree := buildTree(scriptsDir(), prefix, nodeCount)
 	response.Success(c, gin.H{"data": tree})
 }
 
@@ -68,7 +102,9 @@ func shouldSkipScriptTreeDir(name string) bool {
 	return service.ShouldHideScriptTreeEntryName(name)
 }
 
-func buildTree(baseDir, prefix string) []map[string]interface{} {
+// buildTree 列出 prefix 目录下的子项并递归展开子目录。nodeCount 是这一次请求已经放进树里的节点数，
+// 与 scriptTreeLazyDirEntries 一起决定哪些目录不再递归、改成 lazy 节点（#183）；传 nil 就不懒加载、整棵递归。
+func buildTree(baseDir, prefix string, nodeCount *int) []map[string]interface{} {
 	dir := filepath.Join(baseDir, prefix)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -97,6 +133,10 @@ func buildTree(baseDir, prefix string) []map[string]interface{} {
 		if shouldSkipScriptTreeDir(name) {
 			continue
 		}
+		// .npm-cache 这类缓存目录只在展示里跳过（#183），见 service.IsScriptTreeCacheDirName
+		if entry.IsDir() && service.IsScriptTreeCacheDirName(name) {
+			continue
+		}
 
 		info, _ := entry.Info()
 		mtime := float64(0)
@@ -104,16 +144,24 @@ func buildTree(baseDir, prefix string) []map[string]interface{} {
 			mtime = float64(info.ModTime().Unix())
 		}
 
+		if nodeCount != nil {
+			*nodeCount++
+		}
 		var node map[string]interface{}
 		if entry.IsDir() {
-			children := buildTree(baseDir, rel)
 			node = map[string]interface{}{
-				"key":      rel,
-				"title":    name,
-				"isLeaf":   false,
-				"type":     "directory",
-				"children": children,
-				"mtime":    mtime,
+				"key":    rel,
+				"title":  name,
+				"isLeaf": false,
+				"type":   "directory",
+				"mtime":  mtime,
+			}
+			// 本目录子项太多，或整棵树已经够大：不再往下递归，标成懒加载，前端展开时再取
+			if nodeCount != nil && (len(sorted) > scriptTreeLazyDirEntries || *nodeCount >= scriptTreeLazyTotalNodes) {
+				node["children"] = []map[string]interface{}{}
+				node["lazy"] = true
+			} else {
+				node["children"] = buildTree(baseDir, rel, nodeCount)
 			}
 			dirs = append(dirs, node)
 		} else {

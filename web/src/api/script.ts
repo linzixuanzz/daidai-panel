@@ -21,8 +21,10 @@ export const scriptApi = {
     return request.get('/scripts', { params }) as Promise<{ data: any[] }>
   },
 
-  tree() {
-    return request.get('/scripts/tree') as Promise<{ data: any[] }>
+  // 不带 path 取整棵树（大目录会以 lazy 节点返回）；带 path 只取这个目录下的子项，展开懒加载目录时用（v4.0.2，#183）。
+  // 懒加载要调用方显式开启（lazy=1），后端不带时仍是完整递归，给不认 lazy 字段的 APP / MCP 保持老行为
+  tree(path?: string) {
+    return request.get('/scripts/tree', { params: path ? { lazy: 1, path } : { lazy: 1 } }) as Promise<{ data: any[] }>
   },
 
   getContent(path: string) {

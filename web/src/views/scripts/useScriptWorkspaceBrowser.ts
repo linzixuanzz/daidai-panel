@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { scriptApi } from '@/api/script'
 import { useResponsive } from '@/composables/useResponsive'
@@ -168,7 +168,12 @@ export function useScriptWorkspaceBrowser() {
       })
   }
 
+  // 懒加载目录展开后，子项是绕开响应式写回 fileTree 的（见 loadLazyDirectory），
+  // 依赖整棵树的派生数据（目录选择）靠这个版本号跟着重算
+  const lazyTreeVersion = ref(0)
+
   const allFolders = computed(() => {
+    void lazyTreeVersion.value
     const folders: string[] = ['']
     const collectFolders = (nodes: TreeNode[], prefix = '') => {
       for (const node of nodes) {
@@ -222,6 +227,41 @@ export function useScriptWorkspaceBrowser() {
       ElMessage.error(err?.response?.data?.error || err?.message || '加载文件树失败')
     } finally {
       treeLoading.value = false
+    }
+  }
+
+  /**
+   * 展开懒加载目录（#183）：GET /scripts/tree?lazy=1&path= 取这个目录的子项，返回给侧栏挂到 el-tree 上。
+   *
+   * 子项写回 fileTree 时刻意走 toRaw、不触发响应式：fileTree 一变，侧栏的排序副本就整棵重建，
+   * el-tree 跟着 setData，用户已经展开的目录会全部收起（见 ScriptsSidebar 里 sortedFileTree 那条侦听的注释）。
+   * 写回只是为了之后切换排序 / keep-alive 重建时数据还在；当下的显示由侧栏用 updateKeyChildren 直接更新。
+   * 取失败返回 null，lazy 标记保留，下次展开再试。
+   */
+  async function loadLazyDirectory(key: string): Promise<TreeNode[] | null> {
+    try {
+      const res = await scriptApi.tree(key)
+      const children = normalizeTreeNodes(res.data || [])
+      const findNode = (nodes: TreeNode[]): TreeNode | null => {
+        for (const node of nodes) {
+          if (node.key === key) return node
+          if (!node.isLeaf && node.children && key.startsWith(`${node.key}/`)) {
+            const found = findNode(node.children)
+            if (found) return found
+          }
+        }
+        return null
+      }
+      const source = findNode(toRaw(fileTree.value))
+      if (source) {
+        source.children = children
+        source.lazy = false
+      }
+      lazyTreeVersion.value += 1
+      return children
+    } catch (err: any) {
+      ElMessage.error(extractScriptErrorMessage(err, '加载目录失败'))
+      return null
     }
   }
 
@@ -307,12 +347,13 @@ export function useScriptWorkspaceBrowser() {
   }
 
   async function handleNodeClick(data: TreeNode) {
-    if (!data.isLeaf) return
+    // 懒加载目录的占位节点不是文件
+    if (!data.isLeaf || data.placeholder) return
     await openFile(data.key)
   }
 
   function allowDrag(draggingNode: any) {
-    return draggingNode.data.isLeaf
+    return draggingNode.data.isLeaf && !draggingNode.data.placeholder
   }
 
   function allowDrop(draggingNode: any, dropNode: any, type: string) {
@@ -367,6 +408,7 @@ export function useScriptWorkspaceBrowser() {
     allFolders,
     extractScriptErrorMessage,
     loadTree,
+    loadLazyDirectory,
     loadFileContent,
     openFile,
     triggerEditorAutoFocus,

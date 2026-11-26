@@ -64,6 +64,25 @@ func ShouldHideScriptTreeEntryName(name string) bool {
 	return hiddenScriptTreeNames[strings.ToLower(name)]
 }
 
+// scriptTreeCacheDirNames 是包管理器 / 工具链的缓存目录，里面动辄几十万个小文件（#183：.npm-cache 让
+// GET /scripts/tree 递归超过前端 30 秒超时，脚本页打不开）。
+// ⚠️ 这是第四套名单，语义最窄：只在「脚本树 / 脚本列表的展示」里跳过，别的地方一概不管——
+//   - 不进 ShouldIgnoreScriptEntryName：那份还决定备份跳过哪些路径，缓存目录要不要进备份不归这里改；
+//   - 不进 hiddenScriptTreeNames：那份会让 safePath 拒绝读写，缓存目录没有凭据，不需要锁；
+//   - 更不能进 quarantinedScriptDirNames：那份命中即物理搬走，搬走缓存目录会让脚本运行时重新下载一遍。
+var scriptTreeCacheDirNames = map[string]bool{
+	".npm-cache":  true,
+	".npm":        true,
+	".cache":      true,
+	".pnpm-store": true,
+	".yarn-cache": true,
+}
+
+// IsScriptTreeCacheDirName 判断某个目录名是不是只在脚本树 / 列表展示里跳过的缓存目录（见 scriptTreeCacheDirNames）。
+func IsScriptTreeCacheDirName(name string) bool {
+	return scriptTreeCacheDirNames[strings.ToLower(strings.TrimSpace(name))]
+}
+
 // ShouldHideScriptTreeRelativePath 逐段遍历相对路径，任意一段命中隐藏规则即返回 true。
 // 与只判第一段的 ShouldIgnoreScriptRelativePath 不同，这里能拦住 SmallWorld/.git/config
 // 这类嵌套路径（顺带修掉“子目录里的 node_modules 仍被计入脚本数”这个既有缺陷）。

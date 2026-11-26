@@ -17,7 +17,7 @@ func TestBuildTreeIncludesMtimeAndBtime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tree := buildTree(base, "")
+	tree := buildTree(base, "", new(int))
 	if len(tree) != 2 {
 		t.Fatalf("期望 2 个节点，实际 %d", len(tree))
 	}

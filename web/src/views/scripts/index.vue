@@ -60,6 +60,7 @@ const {
   hasChanges,
   allFolders,
   loadTree,
+  loadLazyDirectory,
   handleNodeClick,
   handleSave,
   handleCreateFile,
@@ -201,6 +202,7 @@ async function handleCancelEdit() {
         :on-open-upload="openUploadDialog"
         :on-open-code-runner="openCodeRunner"
         :on-refresh="loadTree"
+        :on-load-lazy-dir="loadLazyDirectory"
         :on-node-click="handleNodeClick"
         :on-node-drop="handleNodeDrop"
         :on-open-rename="openRename"

@@ -8,6 +8,8 @@ const props = defineProps<{
   onOpenRename: (path: string) => void
   onDelete: (path: string, isDir: boolean) => void | Promise<void>
   onMoveToRoot?: (path: string, isDir: boolean) => void | Promise<void>
+  /** 懒加载目录还没展开取过子项（#183）：标一个「未加载」小字，提示搜索没覆盖到它里面 */
+  lazyPending?: boolean
 }>()
 
 const isInSubDir = computed(() => props.data.key.includes('/'))
@@ -52,9 +54,18 @@ const extLabel = computed(() => {
 </script>
 
 <template>
-  <div class="tree-node" :class="{ 'is-folder': !data.isLeaf, 'is-leaf': data.isLeaf }">
+  <!-- 懒加载目录的占位子节点：只有一行「加载中…」，没有色标和操作菜单 -->
+  <div v-if="data.placeholder" class="tree-node is-placeholder">
+    <span class="tree-node-label">{{ data.title }}</span>
+  </div>
+  <div v-else class="tree-node" :class="{ 'is-folder': !data.isLeaf, 'is-leaf': data.isLeaf }">
     <span class="tree-node-dot" :style="{ background: dotColor }" aria-hidden="true"></span>
     <span class="tree-node-label">{{ data.title }}</span>
+    <span
+      v-if="lazyPending"
+      class="tree-node-lazy"
+      title="这个目录内容较多，展开时才加载；搜索只覆盖已加载的部分"
+    >未加载</span>
     <span v-if="extLabel" class="tree-node-ext">{{ extLabel }}</span>
     <div class="tree-node-actions" @click.stop>
       <el-dropdown trigger="click" size="small">
@@ -134,6 +145,20 @@ const extLabel = computed(() => {
 
 .tree-node.is-folder .tree-node-label {
   font-weight: 500;
+}
+
+// 懒加载目录（#183）的「未加载」小字与占位行：只用弱化的文字色，不抢文件名的注意力
+.tree-node-lazy {
+  flex-shrink: 0;
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  white-space: nowrap;
+}
+
+.tree-node.is-placeholder .tree-node-label {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
 }
 
 // 桌面常态将扩展名标签与操作按钮一并收起占位（0 宽 + 0 间距），把 ~75-95px 宽度还给文件名；

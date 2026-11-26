@@ -48,6 +48,8 @@ const props = defineProps<{
   onMoveToRoot?: (path: string, isDir: boolean) => void | Promise<void>
   /** 收起目录树。只在桌面宽屏可用，≤1024 由 mobileShowEditor 的互斥模式负责藏列表 */
   onToggleCollapse: () => void
+  /** 展开懒加载目录时取它的子项（#183），失败返回 null */
+  onLoadLazyDir?: (key: string) => Promise<TreeNode[] | null>
 }>()
 
 const sidebarRef = ref<HTMLElement>()
@@ -113,8 +115,56 @@ function onSortCommand(command: string) {
   }
 }
 
+// ===== 懒加载目录（#183）=====
+// 后端对子项太多的目录只给 lazy:true、children 为空。el-tree 没有子节点就不画展开箭头，
+// 所以显示层给它塞一个占位子节点；展开时再去取真实子项，用 updateKeyChildren 原地换掉占位，
+// 不走 fileTree → setData 那条路（那样会把用户已经展开的目录全部收起）。
+// 占位 key 用 `<` `>` 包起来：这两个字符不会出现在真实脚本路径里，不会和真文件撞 key。
+function lazyPlaceholder(dirKey: string): TreeNode {
+  return { key: `${dirKey}/<lazy>`, title: '加载中…', isLeaf: true, placeholder: true }
+}
+
+// 已经展开取过子项的懒加载目录。只给「未加载」提示与搜索过滤用，用 ref 包一层保证模板能跟着更新
+const loadedLazyKeys = ref(new Set<string>())
+// 正在取的目录，防止快速连点展开时重复请求
+const loadingLazyKeys = new Set<string>()
+
+function isLazyPending(data: TreeNode) {
+  return Boolean(data.lazy) && !loadedLazyKeys.value.has(data.key)
+}
+
+async function handleNodeExpand(data: TreeNode, node: { collapse: () => void }) {
+  if (!isLazyPending(data) || !props.onLoadLazyDir || loadingLazyKeys.has(data.key)) return
+  loadingLazyKeys.add(data.key)
+  try {
+    const children = await props.onLoadLazyDir(data.key)
+    if (!children) {
+      // 取失败（已提示过错误）：收起来，下次展开再试
+      node.collapse()
+      return
+    }
+    treeRef.value?.updateKeyChildren(data.key, sortTreeNodes(children, sortMode.value))
+    loadedLazyKeys.value = new Set(loadedLazyKeys.value).add(data.key)
+    // 新挂上的子节点默认都是可见的，搜索框里有词时补套一次过滤
+    if (searchKeyword.value) filterTree(searchKeyword.value)
+  } finally {
+    loadingLazyKeys.delete(data.key)
+  }
+}
+
+// 搜索时提示「有目录没加载、没搜到它里面」。只看初始树里的懒加载目录，展开后才冒出来的更深一层不算，够用了
+const hasUnloadedLazyDirs = computed(() => {
+  const walk = (nodes: TreeNode[]): boolean =>
+    nodes.some(node => !node.isLeaf && (isLazyPending(node) || walk(node.children || [])))
+  return walk(sortedFileTree.value)
+})
+
 function sortTreeNodes(nodes: TreeNode[], mode: ScriptSortMode): TreeNode[] {
-  const copied = nodes.map(node => (node.isLeaf ? node : { ...node, children: sortTreeNodes(node.children || [], mode) }))
+  const copied = nodes.map((node) => {
+    if (node.isLeaf) return node
+    if (node.lazy) return { ...node, children: [lazyPlaceholder(node.key)] }
+    return { ...node, children: sortTreeNodes(node.children || [], mode) }
+  })
   return copied.sort((a, b) => {
     if (a.isLeaf !== b.isLeaf) return a.isLeaf ? 1 : -1
     let diff = 0
@@ -141,11 +191,29 @@ const sortedFileTree = computed(() => sortTreeNodes(props.fileTree, sortMode.val
 
 function filterNode(value: string, data: TreeNode) {
   if (!value) return true
+  // 占位行搜索时不显示；还没加载的懒加载目录始终留着（带「未加载」小字），告诉用户它里面没被搜到
+  if (data.placeholder) return false
+  if (isLazyPending(data)) return true
   return (data.title || '').toLowerCase().includes(value.toLowerCase())
 }
 
+// 跑一次搜索过滤。EP 的 TreeStore.filter 会对可见的非叶子节点直接 node.expand()（不发 node-expand 事件），
+// 还没加载的懒加载目录（#183）被这样程序化展开后，里面只有那行占位，清空搜索后就一直停在「加载中…」。
+// 所以过滤完把它们收回去，用户自己点开时才走 handleNodeExpand 去取子项。
+// filter 的遍历是异步的（每 80 个兄弟节点 await 一次 nextTick），但全在微任务里跑完，等到下一个宏任务再收才收得干净。
+function filterTree(value: string) {
+  treeRef.value?.filter(value)
+  setTimeout(() => {
+    const nodesMap: Record<string, { expanded: boolean; data: TreeNode; collapse: () => void }> =
+      treeRef.value?.store?.nodesMap || {}
+    for (const node of Object.values(nodesMap)) {
+      if (node.expanded && isLazyPending(node.data)) node.collapse()
+    }
+  })
+}
+
 watch(searchKeyword, (val) => {
-  treeRef.value?.filter(val)
+  filterTree(val)
 })
 
 // ===== 目录树定位（issue #136）=====
@@ -326,7 +394,8 @@ async function revealInTree(path: string) {
  *   高亮不能停在刚点的那个上。打开成功时 currentFile 已经是它，这一步等于原地不动。
  */
 async function handleTreeNodeClick(data: TreeNode) {
-  if (!data.isLeaf) {
+  // 占位行不是文件，点它只把高亮拉回当前文件
+  if (!data.isLeaf || data.placeholder) {
     setHighlight(props.currentFile, false)
     return
   }
@@ -356,8 +425,11 @@ watch(
     // 结果 Node.expanded=true、组件 expanded=false：目录看着是收起的，而且点它也展不开（EP 按组件的值判断，只会重复 expand）。
     // 重命名 / 拖拽当前文件后它所在的目录最容易中招。await 本轮的 nextTick 之后再展开，先后顺序就对了。
     await nextTick()
+    // 树整棵换新了：懒加载目录要么已经带着子项（切换排序时，子项已写回 fileTree、lazy 已清），
+    // 要么是重新取回的、又成了未加载（刷新时），两种情况都不该再沿用旧的「已加载」记录
+    loadedLazyKeys.value = new Set()
     // setData 把节点全部重置成 visible，搜索框里的词却还在：补套一次过滤，免得「框里有词、树没过滤」
-    if (searchKeyword.value) treeRef.value?.filter(searchKeyword.value)
+    if (searchKeyword.value) filterTree(searchKeyword.value)
     void revealInTree(props.currentFile)
   },
   { flush: 'post' }
@@ -468,11 +540,22 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
         empty-text="暂无脚本文件"
         @node-drop="onNodeDrop"
         @node-click="handleTreeNodeClick"
+        @node-expand="handleNodeExpand"
       >
         <template #default="{ data }">
-          <ScriptTreeNode :data="data" :on-open-rename="onOpenRename" :on-delete="onDelete" :on-move-to-root="onMoveToRoot" />
+          <ScriptTreeNode
+            :data="data"
+            :lazy-pending="isLazyPending(data)"
+            :on-open-rename="onOpenRename"
+            :on-delete="onDelete"
+            :on-move-to-root="onMoveToRoot"
+          />
         </template>
       </el-tree>
+      <!-- 搜索只覆盖已加载的部分（#183）：有懒加载目录没展开过时，在树底下说一声 -->
+      <p v-if="searchKeyword && hasUnloadedLazyDirs" class="sidebar-lazy-hint">
+        标「未加载」的目录内容较多，展开后才会加载，搜索暂不包含它们里面的文件
+      </p>
     </div>
 
     <footer class="sidebar-footer">
@@ -727,6 +810,14 @@ watch(sidebarHidden, async (hidden, wasHidden) => {
     color: var(--el-text-color-placeholder);
     font-size: 12px;
   }
+}
+
+// 懒加载目录的搜索提示（#183），跟在树下面，弱化文字色
+.sidebar-lazy-hint {
+  margin: 8px 6px 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-placeholder);
 }
 
 .sidebar-footer {
