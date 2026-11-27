@@ -62,8 +62,9 @@ func (h *ScriptHandler) List(c *gin.Context) {
 const (
 	// scriptTreeLazyDirEntries：某个目录的直接子项超过这个数，它下面的子目录一律不递归展开
 	scriptTreeLazyDirEntries = 500
-	// scriptTreeLazyTotalNodes：这一次请求已经放进树里这么多节点后，后面遇到的目录都不再递归展开
-	scriptTreeLazyTotalNodes = 5000
+	// scriptTreeLazyTotalNodes：这一次请求已经放进树里这么多节点后，后面遇到的目录都不再递归展开。
+	// v4.0.3 从 5000 调到 2000：慢文件系统上每个节点都是一次系统调用，首屏少取一些（#183 补充反馈「还是很慢」）
+	scriptTreeLazyTotalNodes = 2000
 )
 
 // Tree GET /scripts/tree[?path=<相对目录>][&lazy=1]：不带 path 时返回整棵树，带 path 时只返回这个目录下的子项。
@@ -138,11 +139,8 @@ func buildTree(baseDir, prefix string, nodeCount *int) []map[string]interface{} 
 			continue
 		}
 
-		info, _ := entry.Info()
-		mtime := float64(0)
-		if info != nil {
-			mtime = float64(info.ModTime().Unix())
-		}
+		// 每个条目只做一次元数据系统调用（#183），按平台实现见 script_btime_*.go
+		mtime, size, btime, hasBtime := scriptEntryStat(filepath.Join(dir, name), entry)
 
 		if nodeCount != nil {
 			*nodeCount++
@@ -165,10 +163,6 @@ func buildTree(baseDir, prefix string, nodeCount *int) []map[string]interface{} 
 			}
 			dirs = append(dirs, node)
 		} else {
-			size := int64(0)
-			if info != nil {
-				size = info.Size()
-			}
 			node = map[string]interface{}{
 				"key":       rel,
 				"title":     name,
@@ -181,7 +175,7 @@ func buildTree(baseDir, prefix string, nodeCount *int) []map[string]interface{} 
 			files = append(files, node)
 		}
 		// 创建时间拿不到就不带 btime 键，前端按 mtime 兜底排序
-		if btime, ok := fileBirthTime(filepath.Join(dir, name), info); ok {
+		if hasBtime {
 			node["btime"] = btime
 		}
 	}

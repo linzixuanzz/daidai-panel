@@ -37,3 +37,29 @@ func TestBuildTreeIncludesMtimeAndBtime(t *testing.T) {
 		}
 	}
 }
+
+// #183 把每个条目的元数据改成一次系统调用（Linux 走 statx）后，mtime / size 必须与 lstat 的口径完全一致。
+func TestBuildTreeEntryStatMatchesLstat(t *testing.T) {
+	base := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(base, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "a.py"), []byte("print(12345)"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, node := range buildTree(base, "", nil) {
+		info, err := os.Lstat(filepath.Join(base, node["key"].(string)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := node["mtime"], float64(info.ModTime().Unix()); got != want {
+			t.Fatalf("节点 %v 的 mtime 应为 %v，实际 %v", node["key"], want, got)
+		}
+		if node["type"] == "file" {
+			if got, want := node["size"], info.Size(); got != want {
+				t.Fatalf("节点 %v 的 size 应为 %v，实际 %v", node["key"], want, got)
+			}
+		}
+	}
+}

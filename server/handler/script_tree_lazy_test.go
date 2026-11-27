@@ -178,8 +178,8 @@ func TestScriptTreeLazyByTotalNodes(t *testing.T) {
 	testutil.SetupTestEnv(t)
 
 	base := t.TempDir()
-	// 14 个目录 × 450 个文件：前 12 个目录展开后节点数已超过总数阈值，后面的目录应懒加载；每个目录的直接子项都没超过单目录阈值
-	for d := 0; d < 14; d++ {
+	// 7 个目录 × 450 个文件：前 5 个目录展开后节点数（2255）已超过总数阈值（2000），后面 2 个目录应懒加载；每个目录的直接子项都没超过单目录阈值
+	for d := 0; d < 7; d++ {
 		for f := 0; f < 450; f++ {
 			full := filepath.Join(base, fmt.Sprintf("d%02d", d), fmt.Sprintf("f%03d.js", f))
 			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -198,8 +198,8 @@ func TestScriptTreeLazyByTotalNodes(t *testing.T) {
 			lazy++
 		}
 	}
-	if len(tree) != 14 || lazy != 2 {
-		t.Fatalf("14 个目录都应列出，且超过总数阈值后的最后 2 个目录应是懒加载，实际 %d 个、lazy %d 个", len(tree), lazy)
+	if len(tree) != 7 || lazy != 2 {
+		t.Fatalf("7 个目录都应列出，且超过总数阈值后的最后 2 个目录应是懒加载，实际 %d 个、lazy %d 个", len(tree), lazy)
 	}
 	if count > scriptTreeLazyTotalNodes+scriptTreeLazyDirEntries {
 		t.Fatalf("节点总数应被阈值兜住，实际 %d", count)
