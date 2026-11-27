@@ -901,6 +901,8 @@ func (h *SystemHandler) RegisterRoutes(r *gin.RouterGroup) {
 		// 「需要关注」清单（v4.0，见 system_attention.go）。与 badges 同样按角色裁剪；
 		// 不挂 OpenAPIAccess：这是给网页仪表板与铃铛轮询的，应用令牌没有落点，RequireRole 会直接 403。
 		sys.GET("/attention", middleware.RequireRole("viewer"), h.Attention)
+		// 「需要关注」标记已读（#186，v4.0.3）。与 GET 同样不挂 OpenAPIAccess：已读按登录用户记录，应用令牌没有对应的人。
+		sys.POST("/attention/read", middleware.RequireRole("viewer"), h.AttentionRead)
 		sys.GET("/version", middleware.OpenAPIAccess("system"), middleware.RequireRole("viewer"), h.Version)
 		sys.GET("/check-update", middleware.OpenAPIAccess("system"), middleware.RequireRole("viewer"), h.CheckUpdate)
 		sys.GET("/health-check", middleware.RequireRole("viewer"), h.HealthCheck)

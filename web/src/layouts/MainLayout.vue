@@ -675,6 +675,14 @@ async function loadVersion() {
                 <div class="attention-pop__head">
                   <span class="attention-pop__title">需要关注</span>
                   <span v-if="attentionCount" class="attention-pop__count">{{ attentionCount }} 项</span>
+                  <!-- 全部已读（#186）：有条目时才显示，推到头部最右 -->
+                  <el-button
+                    v-if="attentionCount"
+                    link
+                    size="small"
+                    class="attention-pop__read-all"
+                    @click="attentionStore.markAllRead()"
+                  >全部已读</el-button>
                 </div>
                 <AttentionList compact />
               </div>
@@ -1528,6 +1536,11 @@ html[data-dd-motion="rich"] .runcap-dot::after {
 .attention-pop__count {
   font-size: 12px;
   color: var(--dd-text-3);
+}
+
+// 「全部已读」靠右
+.attention-pop__read-all {
+  margin-left: auto;
 }
 
 // ==================== Main ====================

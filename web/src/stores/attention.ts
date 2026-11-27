@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { systemApi, type AttentionItem } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 import { useBadgesStore } from '@/stores/badges'
@@ -33,6 +34,12 @@ type NewItemsListener = (items: AttentionItem[]) => void
  *
  * 【为什么请求失败不清空】
  * 同 badges：网络抖一下就把「3 个失败任务」清空，和「真的没事了」看起来一模一样，是更糟的错误信息。
+ *
+ * 【已读（#186，v4.0.3）】
+ * 服务端按「用户 + key + 版本」记已读，GET 每条带 read。items / count 只含未读（铃铛角标、铃铛列表、仪表板卡片都跟着走）；
+ * activeItems 是不滤已读的口径（仪表板健康分用：已读只是不再提醒，问题还在，分照扣）；
+ * 要看「所有连续失败任务」这类连「已处理」也不该影响的地方用 allItems。老面板不下发 read，按未读处理。
+ * 标记已读时回传客户端看到的 key / at / level，服务端只认版本对得上的，两次轮询之间新发生的失败不会被静默标成已读。
  */
 export const useAttentionStore = defineStore('attention', () => {
   const authStore = useAuthStore()
@@ -49,7 +56,11 @@ export const useAttentionStore = defineStore('attention', () => {
    */
   const handled = ref<Record<string, { at: string; time: number }>>({})
 
-  const items = computed<AttentionItem[]>(() => {
+  /** 服务端原样条目（含已读，不经「已处理」与已读过滤），给不该被已读影响的地方用（如未来 24 小时的失败红点） */
+  const allItems = computed<AttentionItem[]>(() => serverItems.value)
+
+  /** 经「已处理」压制、合并 update_available，但不滤已读（#186）：仪表板健康分与「N 个连续失败」用这个口径 */
+  const activeItems = computed<AttentionItem[]>(() => {
     const now = Date.now()
     const list = serverItems.value.filter((item) => {
       const mark = handled.value[item.key]
@@ -73,6 +84,9 @@ export const useAttentionStore = defineStore('attention', () => {
     }
     return list
   })
+
+  /** 铃铛与仪表板卡片显示的条目：activeItems 再滤掉已读；问题再次发生时服务端会重新下发 read=false */
+  const items = computed<AttentionItem[]>(() => activeItems.value.filter((item) => item.read !== true))
 
   const count = computed(() => items.value.length)
 
@@ -201,8 +215,46 @@ export const useAttentionStore = defineStore('attention', () => {
     handled.value = { ...handled.value, [item.key]: { at: item.at, time: Date.now() } }
   }
 
+  /**
+   * 标记已读（#186）。先乐观地把本地条目置为已读（界面立刻消失），再调接口；
+   * 失败就恢复原样并提示，成功后再拉一次以服务端为准（版本对不上、服务端没记的那条会重新出现）。
+   * 回传的是客户端看到的 key / at / level，update_available 是前端合并的，不在服务端清单里，这里滤掉。
+   */
+  async function markRead(targets: AttentionItem[]) {
+    const seen = targets.filter((item) => item.type !== 'update_available')
+    if (!seen.length) return
+    const previous = serverItems.value
+    const keySet = new Set(seen.map((item) => item.key))
+    serverItems.value = previous.map((item) => (keySet.has(item.key) ? { ...item, read: true } : item))
+    try {
+      await systemApi.attentionRead({
+        items: seen.map((item) => ({ key: item.key, at: item.at, level: item.level })),
+      })
+    } catch {
+      serverItems.value = previous
+      ElMessage.error('标记已读失败，请稍后重试')
+      return
+    }
+    // 已有一发轮询在路上时它的结果可能早于这次标记，等它落地后再拉一次
+    if (pending) await pending
+    await refresh()
+  }
+
+  /**
+   * 全部已读：发 serverItems 里所有未读的服务端条目（含被「已处理」暂时压住的）；
+   * 前端合并的 update_available 只记进 handled（在内存，刷新后会再出现）。
+   */
+  function markAllRead() {
+    if (badges.updateAvailable && !handled.value.update_available) {
+      handled.value = { ...handled.value, update_available: { at: '', time: Date.now() } }
+    }
+    return markRead(serverItems.value.filter((item) => item.read !== true))
+  }
+
   return {
     items,
+    activeItems,
+    allItems,
     count,
     loading,
     loaded,
@@ -211,5 +263,7 @@ export const useAttentionStore = defineStore('attention', () => {
     stop,
     onNewItems,
     markHandled,
+    markRead,
+    markAllRead,
   }
 })

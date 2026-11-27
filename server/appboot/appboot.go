@@ -150,5 +150,8 @@ func allModels() []interface{} {
 		// 企业微信回调接入配置（issue #145，v3.3.2）。新表，存量库 AutoMigrate 时建出来即可，
 		// 一行都没有时所有企业微信入口都查不到配置直接 404，行为与升级前一致。
 		&model.WecomTrigger{},
+		// 「需要关注」已读记录（issue #186，v4.0.3）。新表，存量库 AutoMigrate 时建出来即可，不补列、不回填；
+		// 一行都没有时所有条目都是未读，与升级前一致。
+		&model.AttentionRead{},
 	}
 }

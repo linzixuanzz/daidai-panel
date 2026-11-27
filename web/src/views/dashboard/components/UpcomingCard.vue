@@ -56,10 +56,10 @@ async function refresh() {
 
 defineExpose({ refresh })
 
-/** 连续失败的任务 id（调度点画红色） */
+/** 连续失败的任务 id（调度点画红色）。用 allItems：已读只是「不再提醒」，任务仍在连续失败，红点不受影响（#186） */
 const failingIds = computed(() => {
   const set = new Set<number>()
-  for (const item of attention.items) {
+  for (const item of attention.allItems) {
     if (item.type === 'task_failing' && item.target?.id) set.add(item.target.id)
   }
   return set

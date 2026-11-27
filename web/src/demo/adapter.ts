@@ -35,6 +35,7 @@ import {
   isTaskActiveStatus,
   isValidEnvName,
   joinEnvGroups,
+  markAttentionRead,
   nextEnvPosition,
   nextId,
   nextRunTimes,
@@ -648,6 +649,16 @@ route('GET', '/system/stats', () => ({ data: buildSystemStats() }))
 route('GET', '/system/badges', () => ({ data: buildSystemBadges() }))
 // v4.0「需要关注」：同样现算（连续失败的任务、拉取失败的订阅、安装失败的依赖），响应没有 data 包装
 route('GET', '/system/attention', () => buildAttention())
+// #186 标记已读：已读集合存在 db.ts 的内存里，刷新页面即清空
+route('POST', '/system/attention/read', (ctx) => {
+  // 请求体回传客户端看到的条目 { items: [{ key, at, level }] }，服务端只记版本对得上的
+  const body = bodyObject(ctx)
+  const items = Array.isArray(body.items)
+    ? body.items.map((item: any) => ({ key: String(item?.key ?? ''), at: String(item?.at ?? ''), level: String(item?.level ?? '') }))
+    : []
+  if (items.length === 0) badRequest('请指定要标记已读的条目')
+  return { marked: markAttentionRead(items) }
+})
 
 // 类型是 SystemHealthSnapshot，页面直接读 .items，走兜底体会拿到 undefined
 function healthSnapshot() {

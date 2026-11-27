@@ -1516,7 +1516,7 @@ Transfer-Encoding: chunked
         method: 'GET',
         path: '/api/scripts/tree',
         title: '获取脚本目录树',
-        description: '返回脚本目录树：目录在前、文件在后，同层按名称排序；.git、node_modules 等受保护目录与 .npm-cache 等缓存目录不出现。不带 lazy 参数时返回完整递归的整棵树（与 v4.0.1 一致）。v4.0.2 起可以带 lazy=1 显式开启大目录懒加载：某个目录的直接子项超过 500 个，或这一次返回的节点已经超过 5000 个时，后面遇到的子目录不再递归，节点带 lazy: true、children 为空数组；要展开它时带 lazy=1&path=<该目录的 key> 再请求一次，只返回这个目录下的子项（同样的懒加载规则，一层层往下取）。不带 lazy 时 path 也可以用，返回这个目录下完整递归的子树。path 的校验与其它脚本接口一致：不能穿越到脚本目录外、不能指向受保护目录、必须是已存在的目录，否则返回 400。',
+        description: '返回脚本目录树：目录在前、文件在后，同层按名称排序；.git、node_modules 等受保护目录与 .npm-cache 等缓存目录不出现。不带 lazy 参数时返回完整递归的整棵树（与 v4.0.1 一致）。v4.0.2 起可以带 lazy=1 显式开启大目录懒加载：某个目录的直接子项超过 500 个，或这一次返回的节点已经超过 2000 个时（v4.0.3 起；v4.0.2 是 5000），后面遇到的子目录不再递归，节点带 lazy: true、children 为空数组；要展开它时带 lazy=1&path=<该目录的 key> 再请求一次，只返回这个目录下的子项（同样的懒加载规则，一层层往下取）。不带 lazy 时 path 也可以用，返回这个目录下完整递归的子树。path 的校验与其它脚本接口一致：不能穿越到脚本目录外、不能指向受保护目录、必须是已存在的目录，否则返回 400。',
         auth: 'jwt',
         queryParams: [
           { name: 'lazy', type: 'string', description: '可选，传 1 开启大目录懒加载（返回里会出现 lazy 节点）；不传时整棵完整递归', example: '1' },
@@ -2614,7 +2614,7 @@ Content-Length: 0`,
         method: 'GET',
         path: '/api/system/attention',
         title: '获取「需要关注」清单',
-        description: '汇总需要人处理的问题（v4.0 起），网页仪表板的「需要关注」卡片与顶栏铃铛每 60 秒轮询一次。按角色裁剪，口径与侧栏角标一致：viewer 只看连续失败的任务；operator 再加拉取失败的订阅；admin 再加安装失败的依赖与数据盘使用率（≥85% 出 warn，≥95% 出 err）。「连续失败」= 启用中的任务最近 3 条已结束日志全部失败（超时也记为失败，已终止会打断连续）。排序 err → warn → info，同级按时间倒序，最多 20 条。新版本提醒不在这里（服务端不缓存检查更新的结果），定时备份失败目前没有持久化状态、也不出。只接受登录用户令牌，应用令牌返回 403。',
+        description: '汇总需要人处理的问题（v4.0 起），网页仪表板的「需要关注」卡片与顶栏铃铛每 60 秒轮询一次。按角色裁剪，口径与侧栏角标一致：viewer 只看连续失败的任务；operator 再加拉取失败的订阅；admin 再加安装失败的依赖与数据盘使用率（≥85% 出 warn，≥95% 出 err）。「连续失败」= 启用中的任务最近 3 条已结束日志全部失败（超时也记为失败，已终止会打断连续）。排序 err → warn → info，同级按时间倒序，最多 20 条。v4.0.3 起每条带 read（当前用户是否已读）；已读按用户记录，排序不变，按这个顺序未读、已读各最多 20 条（合计最多 40 条），保持原顺序合并下发，已读条目照样下发。新版本提醒不在这里（服务端不缓存检查更新的结果），定时备份失败目前没有持久化状态、也不出。只接受登录用户令牌，应用令牌返回 403。',
         auth: 'jwt',
         responseExample: JSON.stringify({
           items: [{
@@ -2625,6 +2625,7 @@ Content-Length: 0`,
             detail: '最近一次：连接超时（30s）',
             target: { kind: 'task', id: 12 },
             at: '2026-11-24T20:00:31+08:00',
+            read: false,
           }],
         }, null, 2),
         responseFields: [
@@ -2634,6 +2635,22 @@ Content-Length: 0`,
           { name: 'items[].detail', type: 'string', description: '最近一次日志末尾的错误行，最多 120 字；取不到时为空串' },
           { name: 'items[].target', type: 'object', description: '跳转目标：kind 为 task / subscription / dependency / system（系统设置，id 为 0）' },
           { name: 'items[].at', type: 'string', description: '问题发生时间（RFC3339，带时区偏移）' },
+          { name: 'items[].read', type: 'boolean', description: 'v4.0.3 起：当前用户是否已读。已读记的是标记时的 at，at 变了（问题再次发生）会自动回到未读；disk_high 按级别记，从 warn 升到 err、或磁盘降下去再涨回来，都会重新未读。老版本没有这个字段，按未读处理' },
+        ],
+      },
+      {
+        id: 'system-attention-read',
+        method: 'POST',
+        path: '/api/system/attention/read',
+        title: '「需要关注」标记已读',
+        description: '把「需要关注」的条目标记为当前用户已读（v4.0.3 起）。请求体回传客户端看到的条目（key、at、level 原样取自 GET /api/system/attention），items 为空时返回 400。服务端按当前角色重算一遍清单，只有当前清单里有同 key 的条目、且回传的版本与当前一致（一般比较 at，按同一时刻比较、时区写法不同也算一致；disk_high 比较 level）时才记已读；其余跳过、保持未读，避免把两次轮询之间新发生的问题静默标成已读。已读只影响 GET /api/system/attention 的 read 字段，不影响条目本身。只接受登录用户令牌，应用令牌返回 403。',
+        auth: 'jwt',
+        bodyParams: [
+          { name: 'items', type: 'array', required: true, description: '要标记的条目，每项 { key, at, level }，原样取自 GET /api/system/attention 的 items[]', example: '[{"key":"task_failing:12","at":"2026-11-27T22:00:00+08:00","level":"err"}]' },
+        ],
+        responseExample: JSON.stringify({ marked: 2 }, null, 2),
+        responseFields: [
+          { name: 'marked', type: 'number', description: '实际写入的条数（不在当前清单里、或版本对不上的条目不计入）' },
         ],
       },
       {

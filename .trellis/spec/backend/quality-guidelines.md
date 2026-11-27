@@ -1913,7 +1913,10 @@ if closeAt := findClosingQuote(value[1:], quote); closeAt < 0 {
 - 失败分级要精确：基线没落盘 = bootstrap 压根没跑（绝大多数用户没有全局 `task_before.sh`），必须**完全静默**；基线在但最终快照缺失 = 钩子跑了而 `trap` 没能落盘（用户自己装了 EXIT trap，或进程被 SIGKILL），必须**出声**，否则用户以为 `export` 生效了。
 - **新增任何「面板自己打进任务日志」的元信息行（`[前置脚本环境变量] …`、`[前置脚本执行失败: …]`、`[后置脚本执行失败: …]`、v3.3.6 修复 A 的 `[已结束残留的后台进程：…]` 等），必须同步登记到 `task_executor.go` 的 `panelMetaLinePrefixes`**，否则它会混进任务成功通知的日志摘录（`summarizeTaskSuccessOutput`，上限 30 行 / 1500 字符），把用户真正想看的脚本输出挤掉。这个失败模式同样是静默的：任务照常成功，只是通知里看不到有用内容。
   失败摘要（`summarizeTaskFailureOutput`）**不整体套** `isPanelMetaLine`：「[脚本进程被信号终止：…]」这类行对诊断有用。新增的行如果会落在失败输出末尾、干扰失败摘要（Python 摘要认不出最后一行的异常、通用摘要的「上下文」取成这行提示），
-  要另在 `normalizeTaskFailureLines` 里按前缀单独丢掉（TrimSpace 之后比前缀），目前只有 `[已结束残留的后台进程：` 这一种（v3.3.6）。
+  要另在 `normalizeTaskFailureLines` 里按前缀单独丢掉（TrimSpace 之后比前缀），目前有 `[已结束残留的后台进程：`（v3.3.6）、`[按账号并发]`、`[指定账号]`（v4.0.3）三种。
+  **打在脚本输出之前的说明行同样要丢**（v4.0.3 #187 的 conc / desi 账号说明）：脚本没输出就失败时，整条失败摘要会只剩这行说明；
+  脚本只打一行错误时，通用摘要的「上下文」会取成这行说明。这类行还要在 `service.PickAttentionDetail` 里按前缀跳过（同样不整体套 `isPanelMetaLine`），
+  否则「需要关注」的详情会显示它。测试见 `script_runner_account_notice_test.go` 的 `TestTaskAccountModeNoticeExcludedFromFailureSummary` / `TestPickAttentionDetailSkipsAccountModeNotice`。
 
 ### 4. Validation & Error Matrix
 
@@ -6401,4 +6404,55 @@ subject, err := trigticket.Verify(...)
 subject, err := trigticket.Verify(...) // 先验签，垃圾票零成本
 // ……应用 / 开关 / 任务状态校验……
 if !h.acceptTaskTrigger(uint(taskID)) { /* 429，只有受理才记时间 */ }
+```
+
+
+## 场景：「需要关注」已读（v4.0.3，#186）
+
+### 1. Scope / Trigger
+- 新表 `attention_reads` + 新接口 `POST /system/attention/read` + `GET /system/attention` 响应加字段，网页 store 与演示站跟着改；APP（Dumb-Panel-APP）也调 GET，属于跨仓库兼容。
+
+### 2. Signatures
+- `model.AttentionRead{ID, UserID, Key, Version, CreatedAt, UpdatedAt}`，表 `attention_reads`，`(user_id, key)` 联合唯一（`idx_attention_reads_user_key`）。新表靠 AutoMigrate 建（`appboot.allModels` 与 `testutil` 各登记一次），不补列。删用户时在同一事务里删他的记录（`handler/user.go`）。
+- `GET /api/v1/system/attention`（viewer+，只认登录用户令牌）→ `{"items":[{key,type,level,title,detail,target,at,read}]}`，无 data 包装。
+- `POST /api/v1/system/attention/read`（viewer+，不挂 OpenAPIAccess）请求 `{"items":[{"key":"task_failing:12","at":"<客户端看到的 at>","level":"err"}]}` → `{"marked": n}`。
+- 收集条目只有一份实现：`handler.collectAttentionItems(level)`，GET 与 POST 共用。
+
+### 3. Contracts
+- **版本**：普通条目 `version = atTime.UTC().Format(RFC3339)`；`disk_high` 的 at 每次都是 now，版本用 `level`。客户端回传的 at 先 `time.Parse(RFC3339)` 再转 UTC 比较（改时区不会让已读失效）。key 与版本都对得上才算已读；问题再次发生（at 变了 / warn 升 err）自动回到未读。
+- **POST 只记客户端看到的版本**：当前清单里同 key 条目的版本 == 回传条目推出的版本才 upsert，否则跳过（保持未读）。按「点击那一刻服务端的版本」记，会把两次轮询之间新发生、用户没见过的失败静默标为已读。
+- **截断**：按原排序（level → 时间倒序 → key）挑**前 20 条未读 + 前 20 条已读**，保持原顺序合并下发（最多 40 条）。不能「未读排前再截 20」：已读的 err 会被 20 条未读 warn 挤掉，APP 取第一条 task_failing 做的「最常失败」卡会整张消失。
+- **服务端不过滤已读**：APP 不认 `read`，过滤会让网页点了已读、APP 的统计卡跟着消失。只有网页按 `read` 过滤。
+- **过期清理在 GET 里**：内存比出「key 已不在当前清单」的记录，有才发一条 `DELETE ... WHERE id IN ?`，没有就不写库。只在 POST 里清，`disk_high`（版本是 level）降下去再涨回来会一直已读。
+- **网页口径**（`stores/attention.ts`）：`allItems` = 服务端原样（未来 24 小时红点用）；`activeItems` = 经「已处理」压制 + 合并 update_available、不滤已读（仪表板健康分、「N 个连续失败」用，已读只是不再提醒，不改变健康状况）；`items` / `count` = `activeItems` 再滤掉已读（铃铛角标、铃铛列表、仪表板卡片）。「查看」「日志」「去更新」这类只是跳转的操作跳转前标已读；`update_available` 是前端合并的，只进内存 handled。
+
+### 4. Validation & Error Matrix
+- `items` 为空 / 缺省 → 400「请指定要标记已读的条目」
+- 请求体不是 JSON → 400
+- 应用令牌 → 403（RequireRole 挡掉）
+- 回传的 key 不在当前清单 / at 对不上 / at 解析失败 → 跳过，`marked` 不计
+- 查不到当前用户 → POST 404；GET 全部按未读下发
+
+### 5. Good/Base/Bad Cases
+- Good：3 条依赖失败，回传 3 条 → marked 3，GET 全部 read=true；依赖再失败一次（updated_at 变）→ 那条回到 false。
+- Base：老面板不下发 `read` → 网页按未读处理；老 APP 忽略 `read`、多出来的已读条目不影响它取第一条 task_failing。
+- Bad：点「全部已读」前一刻刚发生的新失败（客户端还没轮询到）→ 回传的是旧 at，服务端跳过，它保持未读。
+
+### 6. Tests Required
+- `server/handler/system_attention_read_test.go`：回传标记后 read=true、at 变回 false；旧 at / 乱码 at 不写入；换时区写法的同一时刻能对上；两用户互不影响；disk_high warn 已读→升 err 未读、降下去再涨回来未读；21 条未读 warn + 1 条已读 err 时 err 仍在原位；GET 清理过期记录；空请求 400、应用令牌 403。
+- 测试里手写 `task_logs` 时用显式大 ID（见 `createAttentionLog`）：`service.TaskLogAttentionDetail` 按日志 ID 做进程级缓存，每个用例的库都从 ID 1 自增，混跑会读到别的用例缓存的 detail。
+
+### 7. Wrong vs Correct
+#### Wrong
+```go
+sort.SliceStable(items, func(i, j int) bool { if items[i].Read != items[j].Read { return !items[i].Read } /* ... */ })
+items = items[:attentionMaxItems] // 已读的 err 被未读 warn 挤出去
+```
+#### Correct
+```go
+sort.SliceStable(items, originalLess) // level → 时间倒序 → key
+for _, it := range items { // 按原顺序各留前 20 条
+    if it.Read && readKept < attentionMaxItems { kept = append(kept, it); readKept++ }
+    if !it.Read && unreadKept < attentionMaxItems { kept = append(kept, it); unreadKept++ }
+}
 ```

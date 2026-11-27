@@ -99,6 +99,7 @@ func SetupTestEnv(t *testing.T) string {
 		&model.Dependency{},
 		&model.TaskView{},
 		&model.WecomTrigger{},
+		&model.AttentionRead{},
 	)
 	// #158 测试期护栏：删 task_logs 必须经 service.DeleteTaskLogs（它先把要删的行并入执行趋势计数，
 	// 并给自己那条 Delete 打上 model.TaskLogDeleteGuardKey 标记）。漏走它的 GORM 删除——Where(...).Delete(&model.TaskLog{})、

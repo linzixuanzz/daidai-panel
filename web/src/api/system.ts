@@ -106,7 +106,8 @@ export interface SystemBadges {
 
 // ---- v4.0「需要关注」（GET /system/attention，design §4.1，F2）----
 // 响应体【没有】外层 data 包装：服务端直接返回 { items }（与 design §4 的 JSON 一致，badges 那种 {data} 是另一套写法）。
-// 角色裁剪与 /system/badges 一致；最多 20 条，已按 err → warn → info、同级按 at 倒序排好。
+// 角色裁剪与 /system/badges 一致；已按 err → warn → info、同级按 at 倒序排好（v4.0.3 前最多 20 条）。
+// v4.0.3（#186）起每条带 read（当前用户是否已读），排序不变；未读、已读各最多 20 条（合计最多 40 条），保持原顺序合并下发。
 // 下面的字面量联合只是清单，外加 string 兜底：服务端以后新增类型时照样能显示。
 
 export type AttentionType =
@@ -131,6 +132,11 @@ export interface AttentionItem {
   target: { kind: string; id: number }
   /** RFC3339 时间 */
   at: string
+  /**
+   * v4.0.3（#186）：当前用户是否已读。老面板没有这个字段，按未读处理。
+   * 已读按「用户 + key + 版本」记在服务端，问题再次发生（at 变了）会自动回到未读。
+   */
+  read?: boolean
 }
 
 export interface SystemAttention {
@@ -145,6 +151,12 @@ export const systemApi = {
   badges: () => request.get('/system/badges') as Promise<{ data: SystemBadges }>,
   /** v4.0 F2：需要关注的条目（viewer+）。响应没有 data 包装，见 SystemAttention 上方说明 */
   attention: () => request.get('/system/attention') as Promise<SystemAttention>,
+  /**
+   * v4.0.3（#186）：把「需要关注」的条目标记为已读。回传客户端看到的 key / at / level，
+   * 服务端只记版本与当前一致的条目（其余保持未读）；返回 { marked } = 实际写入条数
+   */
+  attentionRead: (payload: { items: Array<Pick<AttentionItem, 'key' | 'at' | 'level'>> }) =>
+    request.post('/system/attention/read', payload) as Promise<{ marked: number }>,
   version: () => request.get('/system/version'),
   publicVersion: () => request.get('/system/public-version'),
   panelSettings: () => request.get('/system/panel-settings'),

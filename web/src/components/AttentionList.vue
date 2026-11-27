@@ -12,7 +12,9 @@
  *   订阅拉取失败 → 重新拉取（operator+）
  *   依赖安装失败 → 跳依赖管理并带上类型与名称（定位由依赖页读 query）
  *   新版本 / 磁盘 → 跳系统设置
- * 「重跑」「重新拉取」成功后条目折叠消失，并立即 refresh()；只是跳转的操作不算「已处理」，条目保留。
+ * 「重跑」「重新拉取」成功后条目折叠消失，并立即 refresh()。
+ * 只是跳转的操作（依赖 / 磁盘「查看」、任务「日志」、新版本「去更新」）跳转前把该条标记已读（#186，v4.0.3）：
+ * 服务端条目走 store.markRead（不等接口返回就跳转），前端合并的 update_available 走 markHandled（只在内存）。
  */
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -91,6 +93,16 @@ function go(to: Parameters<typeof router.push>[0]) {
   void router.push(to)
 }
 
+/** 只是跳转的操作：先把这一条标记已读，再跳转（不等接口返回） */
+function goAndRead(item: AttentionItem, to: Parameters<typeof router.push>[0]) {
+  if (item.type === 'update_available') {
+    store.markHandled(item)
+  } else {
+    void store.markRead([item])
+  }
+  go(to)
+}
+
 /** 处理成功：先折叠，动画播完再从 store 里压掉；同时立刻刷新一次 */
 function finishHandled(item: AttentionItem) {
   goneKeys.value = [...goneKeys.value, item.key]
@@ -139,7 +151,7 @@ function openDependency(item: AttentionItem) {
     query.keyword = match[1] || ''
     query.type = match[2] || ''
   }
-  go({ path: '/deps', query })
+  goAndRead(item, { path: '/deps', query })
 }
 </script>
 
@@ -178,7 +190,7 @@ function openDependency(item: AttentionItem) {
                 v-if="!compact || !canRun"
                 size="small"
                 text
-                @click="go({ path: '/logs', query: { task_id: String(item.target.id) } })"
+                @click="goAndRead(item, { path: '/logs', query: { task_id: String(item.target.id) } })"
               >日志</el-button>
             </template>
             <template v-else-if="item.type === 'subscription_failed'">
@@ -197,12 +209,12 @@ function openDependency(item: AttentionItem) {
             <el-button
               v-else-if="item.type === 'update_available'"
               size="small"
-              @click="go('/admin/settings')"
+              @click="goAndRead(item, '/admin/settings')"
             >去更新</el-button>
             <el-button
               v-else-if="item.type === 'disk_high'"
               size="small"
-              @click="go('/admin/settings')"
+              @click="goAndRead(item, '/admin/settings')"
             >查看</el-button>
           </span>
         </div>

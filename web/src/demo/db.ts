@@ -41,6 +41,13 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 let state: DemoDbState | null = null
 
+/**
+ * 「需要关注」已读记录（#186，v4.0.3）：key → 标记时的版本（条目 at 的 UTC 时间）。
+ * 对齐服务端 attention_reads（演示站只有一个访客账号，不分用户）。
+ * 不放进 DemoDbState：只有这一处读写，跟其它内存数据一样刷新即清空，resetDb 时一并清掉。
+ */
+let attentionReads: Record<string, string> = {}
+
 /** 取当前数据库。第一次调用时播种，之后一直复用同一个内存对象。 */
 export function db(): DemoDbState {
   if (!state) state = createSeedState()
@@ -56,6 +63,7 @@ export function db(): DemoDbState {
  */
 export function resetDb() {
   state = createSeedState()
+  attentionReads = {}
 }
 
 /** 各表共用的自增游标，保证新建对象不会和播种数据的 id 撞车 */
@@ -1373,9 +1381,63 @@ function pickAttentionDetail(text: string): string {
  *   - subscription_failed：订阅 status = 1；
  *   - dependency_failed：依赖 status = failed；
  *   - disk_high：演示站的健康检查报的是「已用 32.1%」，不到 85%，不出。
- * 排序 err → warn → info，同级按时间倒序，再按 key。update_available 由前端自己合并，这里不出。
+ * 排序 err → warn → info，同级按时间倒序，再按 key；按这个顺序未读、已读各留前 20 条，保持原顺序合并（#186）。
+ * 已读记录里 key 已不在当前清单的，读的时候顺手清掉（与服务端一致）。
+ * update_available 由前端自己合并，这里不出。
  */
 export function buildAttention(): { items: Array<Record<string, unknown>> } {
+  const current = collectAttention()
+  // 清掉过期记录：问题消失后再出现就是新的一轮
+  const currentKeys = new Set(current.map((item) => item.key))
+  for (const key of Object.keys(attentionReads)) {
+    if (!currentKeys.has(key)) delete attentionReads[key]
+  }
+  const items = current.map((item) => ({ ...item, read: attentionReads[item.key] === attentionVersion(item) }))
+
+  const levelRank: Record<string, number> = { err: 0, warn: 1, info: 2 }
+  items.sort((left, right) =>
+    (levelRank[left.level] ?? 9) - (levelRank[right.level] ?? 9)
+    || right.atMs - left.atMs
+    || (left.key < right.key ? -1 : left.key > right.key ? 1 : 0)
+  )
+
+  // 未读、已读各留前 20 条，保持原顺序
+  let unread = 0
+  let read = 0
+  const kept = items.filter((item) => (item.read ? ++read <= 20 : ++unread <= 20))
+  return {
+    items: kept.map(({ atMs, ...item }) => item),
+  }
+}
+
+/** 已读用的版本，口径同服务端：一般是 at 的 UTC 时间，disk_high 用 level（演示站不出 disk_high，照抄留着） */
+function attentionVersion(item: { key: string; at: string; level: string }): string {
+  if (item.key === 'disk_high') return item.level
+  const time = new Date(item.at).getTime()
+  // 解析失败返回空串，与任何当前版本都对不上
+  return Number.isNaN(time) ? '' : new Date(time).toISOString()
+}
+
+/**
+ * POST /system/attention/read，口径照抄服务端：对每个回传条目，当前清单里有同 key 的、
+ * 且客户端看到的版本等于当前版本才记已读，否则跳过（保持未读）。返回实际写入条数。
+ */
+export function markAttentionRead(seen: Array<{ key: string; at: string; level: string }>): number {
+  const versions = new Map(collectAttention().map((item) => [item.key, attentionVersion(item)]))
+  let marked = 0
+  for (const item of seen) {
+    const version = versions.get(item.key)
+    if (version === undefined || attentionVersion(item) !== version) continue
+    // 同一个 key 回传多次只记一次
+    versions.delete(item.key)
+    attentionReads[item.key] = version
+    marked += 1
+  }
+  return marked
+}
+
+/** 收集当前全部「需要关注」条目（未排序、未截断），buildAttention 与 markAttentionRead 共用 */
+function collectAttention() {
   const current = db()
   const items: Array<{ key: string; type: string; level: string; title: string; detail: string; target: { kind: string; id: number }; atMs: number }> = []
 
@@ -1432,16 +1494,7 @@ export function buildAttention(): { items: Array<Record<string, unknown>> } {
     })
   }
 
-  const levelRank: Record<string, number> = { err: 0, warn: 1, info: 2 }
-  items.sort((left, right) =>
-    (levelRank[left.level] ?? 9) - (levelRank[right.level] ?? 9)
-    || right.atMs - left.atMs
-    || (left.key < right.key ? -1 : left.key > right.key ? 1 : 0)
-  )
-
-  return {
-    items: items.slice(0, 20).map(({ atMs, ...item }) => ({ ...item, at: new Date(atMs).toISOString() })),
-  }
+  return items.map((item) => ({ ...item, at: new Date(item.atMs).toISOString() }))
 }
 
 /**

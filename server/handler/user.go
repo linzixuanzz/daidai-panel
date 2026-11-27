@@ -196,7 +196,11 @@ func (h *UserHandler) Delete(c *gin.Context) {
 		if err := tx.Delete(&user).Error; err != nil {
 			return err
 		}
-		return tx.Where("user_id = ?", user.ID).Delete(&model.Passkey{}).Error
+		if err := tx.Where("user_id = ?", user.ID).Delete(&model.Passkey{}).Error; err != nil {
+			return err
+		}
+		// 「需要关注」已读记录同理（#186）：id 被新用户复用时，不能让他继承被删用户的已读状态。
+		return tx.Where("user_id = ?", user.ID).Delete(&model.AttentionRead{}).Error
 	}); err != nil {
 		response.InternalError(c, "删除用户失败")
 		return

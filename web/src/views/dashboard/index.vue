@@ -400,10 +400,11 @@ const sevenDayRate = computed(() => {
   // 7 天里一次都没结束：没有失败就不扣分
   return ok + fail > 0 ? ok / (ok + fail) : 1;
 });
-const attentionErrCount = computed(() => attention.items.filter((i) => i.level === "err").length);
-const attentionWarnCount = computed(() => attention.items.filter((i) => i.level === "warn").length);
+// 用 activeItems（不滤已读，#186）：已读只是不再提醒，问题还在，健康分照扣、连续失败照数
+const attentionErrCount = computed(() => attention.activeItems.filter((i) => i.level === "err").length);
+const attentionWarnCount = computed(() => attention.activeItems.filter((i) => i.level === "warn").length);
 const failingTaskCount = computed(
-  () => attention.items.filter((i) => i.type === "task_failing").length,
+  () => attention.activeItems.filter((i) => i.type === "task_failing").length,
 );
 const healthScore = computed(() => {
   const raw =
@@ -1126,6 +1127,11 @@ onBeforeUnmount(() => {
           <header class="dash-card__head">
             <h3 class="dash-card__title"><el-icon class="dash-card__icon"><WarningFilled /></el-icon>需要关注</h3>
             <span class="dash-card__sub">{{ attention.count ? `${attention.count} 项` : "全部处理完了" }}</span>
+            <!-- 全部已读（#186）：有条目时才显示；大屏模式不可交互，跟其它卡片头部按钮一样隐藏 -->
+            <template v-if="attention.count">
+              <span class="dash-card__spacer"></span>
+              <el-button class="dash-hide-in-screen" link size="small" @click="attention.markAllRead()">全部已读</el-button>
+            </template>
           </header>
           <!-- 限制列表区最大高度并内部滚动，防止多条关注把同行「执行趋势」卡拉长留出大块空白 -->
           <div class="dash-attention-body">
