@@ -208,7 +208,11 @@ func apiError(status int, payload []byte) error {
 	case http.StatusForbidden:
 		hint = "（当前凭据无权执行此操作：应用令牌请在「开放 API」给应用勾选对应模块的权限范围，登录账号请检查角色）"
 	case http.StatusTooManyRequests:
-		hint = "（应用调用频率超限，可在「开放 API」调整速率限制）"
+		// v4.0.3 起面板的 429 文案自己就带了上限和「开放 API」的去处（APP #30），再追加一遍就重复了；
+		// 老面板只回「应用调用频率超限」，仍然补上这句提示。
+		if !strings.Contains(message, "开放 API") {
+			hint = "（应用调用频率超限，可在「开放 API」调整速率限制）"
+		}
 	}
 	return fmt.Errorf("面板接口返回 HTTP %d：%s%s", status, message, hint)
 }

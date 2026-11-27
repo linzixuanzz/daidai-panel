@@ -95,6 +95,13 @@ func RunCommandWithPlan(plan *CommandExecutionPlan, timeout int, envVars map[str
 
 	// 放在 desi 收窄之后：desi 只把选中的账号写回变量，按这里的口径统计才是子进程真实要背的量。
 	if onOutput != nil {
+		// #187：desi 只把选中的账号交给脚本，脚本按自己收到的列表从 1 编号，用户会以为「跑的都是账号 1」，
+		// 这里打一行说明。上面 applyCommandEnvOverrides 已经按同样的参数解析成功过，这里再解析一次不会出错。
+		if plan.Mode == commandModeDesi {
+			if selections, selectErr := resolveTaskAccountSelections(envVars, plan.EnvName, plan.AccountSpec); selectErr == nil {
+				onOutput(taskAccountModeNotice(plan, len(splitTaskEnvValues(envVars[plan.EnvName])), selections) + "\n")
+			}
+		}
 		emitRuntimeEnvLimitWarnings(resolvedEnv, plan.Interpreter, func(line string) {
 			onOutput(line + "\n")
 		})
@@ -938,6 +945,11 @@ func runConcurrentCommand(plan *CommandExecutionPlan, timeout int, envVars map[s
 		}
 	}
 
+	// #187：起各账号进程之前先打一行说明（只打一次）。每个进程只拿到自己那一个账号，
+	// 脚本日志里的「账号1」其实是该进程分到的账号，用户常误以为全跑成了账号 1。
+	// 这行没有 [EnvName#N] 前缀，开头就是登记在 panelMetaLinePrefixes 里的「[按账号并发]」。
+	appendLine(taskAccountModeNotice(plan, len(splitTaskEnvValues(envVars[plan.EnvName])), selections))
+
 	// conc 会为每个账号各起一个进程，环境只差 EnvName 这一条，
 	// 所以按第一个账号体检一次即可，避免同一段提示刷 N 遍。
 	emitRuntimeEnvLimitWarnings(
@@ -1006,6 +1018,37 @@ func runConcurrentCommand(plan *CommandExecutionPlan, timeout int, envVars map[s
 	return &ScriptResult{
 		ReturnCode: overallCode,
 	}, firstProcess, overallErr
+}
+
+// taskAccountNoticeMaxIndexes 是账号说明行里最多列出的序号个数，再多只写「等 N 个」，免得一行拖得太长。
+const taskAccountNoticeMaxIndexes = 20
+
+// taskAccountModeNotice 生成 conc / desi 模式打进任务日志的那行说明（#187），其它模式返回空串。
+// total 是变量里的账号总数，selections 是本次选中的账号。两种前缀都已登记到 panelMetaLinePrefixes。
+func taskAccountModeNotice(plan *CommandExecutionPlan, total int, selections []taskAccountSelection) string {
+	// 序号超过 20 个只列前 20 个，后面写「等 N 个」；不超过就是「1、2、3 个」
+	shown := selections
+	if len(shown) > taskAccountNoticeMaxIndexes {
+		shown = shown[:taskAccountNoticeMaxIndexes]
+	}
+	indexes := make([]string, 0, len(shown))
+	for _, selection := range shown {
+		indexes = append(indexes, strconv.Itoa(selection.Index))
+	}
+	indexText := strings.Join(indexes, "、") + " 个"
+	if len(selections) > taskAccountNoticeMaxIndexes {
+		indexText = fmt.Sprintf("%s 等 %d 个", strings.Join(indexes, "、"), len(selections))
+	}
+
+	switch plan.Mode {
+	case commandModeConc:
+		return fmt.Sprintf("[按账号并发] %s 共 %d 个账号（只算已启用的，按环境变量页顺序），本次运行第 %s，每个账号单独一个进程。每个进程只拿到自己那一个账号，脚本日志里的「账号1」指的是该进程分到的账号，以行首 [%s#序号] 为准",
+			plan.EnvName, total, indexText, plan.EnvName)
+	case commandModeDesi:
+		return fmt.Sprintf("[指定账号] 只把 %s 共 %d 个账号（只算已启用的，按环境变量页顺序）中的第 %s交给脚本，脚本自己的编号会从 1 开始",
+			plan.EnvName, total, indexText)
+	}
+	return ""
 }
 
 func resolveTaskAccountSelections(envVars map[string]string, envName, accountSpec string) ([]taskAccountSelection, error) {

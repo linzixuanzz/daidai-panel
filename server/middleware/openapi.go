@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -106,7 +107,9 @@ func OpenAPIAccess(scope string) gin.HandlerFunc {
 			var count int64
 			database.DB.Model(&model.ApiCallLog{}).Where("app_id = ? AND created_at >= ?", app.ID, since).Count(&count)
 			if count >= int64(app.RateLimit) {
-				c.JSON(http.StatusTooManyRequests, gin.H{"error": "应用调用频率超限"})
+				// APP #30：只说「超限」用户不知道上限是多少、去哪改。保留「应用调用频率超限」开头不变，
+				// 按文案前缀匹配的老调用方不受影响；rate_limit 的单位是「次/小时」，与上面按一小时窗口计数一致。
+				c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("应用调用频率超限（每小时最多 %d 次，可在面板「开放 API」里调整速率限制）", app.RateLimit)})
 				c.Abort()
 				return
 			}

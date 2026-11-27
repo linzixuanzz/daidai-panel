@@ -1407,6 +1407,11 @@ var panelMetaLinePrefixes = []string{
 	// #159 修复 A：主命令结束后清理了留在进程组里的后台进程（leftoverProcessCleanupNotice）。
 	// 成功的任务最容易出现这一行，不登记就会挤进成功通知那 30 行的日志摘录。
 	"[已结束残留的后台进程：",
+	// #187：conc / desi 模式开跑前打的账号说明行（taskAccountModeNotice）。
+	// conc 那行由 runConcurrentCommand 的 appendLine 打出，没有 [EnvName#N] 前缀，行首就是「[按账号并发]」；
+	// 每次 conc / desi 任务都会有这一行，成功的任务也一样，不登记就会挤进成功通知的日志摘录。
+	"[按账号并发]",
+	"[指定账号]",
 }
 
 func isPanelMetaLine(line string) bool {
@@ -1580,6 +1585,11 @@ func normalizeTaskFailureLines(output string) []string {
 		// 只丢这一种：别的面板行（例如「[脚本进程被信号终止：…]」）对失败诊断有用，失败摘要刻意不整体套 isPanelMetaLine。
 		// 成功摘要本来就靠 isPanelMetaLine 滤掉它，在这里先丢不改变成功摘要的结果。
 		if strings.HasPrefix(line, "[已结束残留的后台进程：") {
+			continue
+		}
+		// #187：conc / desi 开跑前打的账号说明行（taskAccountModeNotice）同理丢掉：
+		// 脚本没输出就失败时它是唯一一行，会被当成失败摘要；只有一行错误时它又会成为通用摘要的「上下文」。
+		if strings.HasPrefix(line, "[按账号并发]") || strings.HasPrefix(line, "[指定账号]") {
 			continue
 		}
 		if line == "Traceback (most recent call last):" {

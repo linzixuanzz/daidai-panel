@@ -846,3 +846,20 @@ func TestOutputIsCappedAt64KB(t *testing.T) {
 		t.Fatal("超长输出应当注明已截断")
 	}
 }
+
+// APP #30：v4.0.3 起面板的 429 文案自己带了「开放 API」的去处，MCP 不再重复追加提示；
+// 老面板只回「应用调用频率超限」时仍然补上提示。
+func TestAPIErrorRateLimitHintNotDuplicated(t *testing.T) {
+	newPanel := apiError(http.StatusTooManyRequests, []byte(`{"error":"应用调用频率超限（每小时最多 5 次，可在面板「开放 API」里调整速率限制）"}`)).Error()
+	if strings.Count(newPanel, "开放 API") != 1 {
+		t.Fatalf("新面板的 429 文案已含「开放 API」，不应再追加提示：%s", newPanel)
+	}
+	if !strings.Contains(newPanel, "每小时最多 5 次") {
+		t.Fatalf("应原样带上面板给的上限：%s", newPanel)
+	}
+
+	oldPanel := apiError(http.StatusTooManyRequests, []byte(`{"error":"应用调用频率超限"}`)).Error()
+	if !strings.Contains(oldPanel, "（应用调用频率超限，可在「开放 API」调整速率限制）") {
+		t.Fatalf("老面板的 429 仍应补上提示：%s", oldPanel)
+	}
+}

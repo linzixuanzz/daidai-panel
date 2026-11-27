@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -97,5 +98,45 @@ func TestOpenAPIAccessLogsCallsWithoutIncrementingPersistentCallCount(t *testing
 	}
 	if logCount != 1 {
 		t.Fatalf("expected 1 api call log, got %d", logCount)
+	}
+}
+
+// APP #30：应用超出 rate_limit 时回 429，文案要带上每小时上限和去哪改；
+// 开头保持「应用调用频率超限」不变，按文案前缀匹配的老调用方不受影响。
+func TestOpenAPIAccessRateLimitMessageShowsLimitAndWhereToChange(t *testing.T) {
+	testutil.SetupTestEnv(t)
+
+	app := testutil.MustCreateOpenApp(t, "rate-limit-app", "tasks")
+	if err := database.DB.Model(app).Update("rate_limit", 1).Error; err != nil {
+		t.Fatalf("set rate limit: %v", err)
+	}
+	token := testutil.MustCreateAccessToken(t, "app:"+app.AppKey, "app:"+app.Scopes)
+	engine := gin.New()
+	engine.GET("/tasks", middleware.JWTAuth(), middleware.OpenAPIAccess("tasks"), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	call := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := call(); rec.Code != http.StatusOK {
+		t.Fatalf("第一次调用应放行，实际 %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec := call()
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("超过每小时 1 次后应回 429，实际 %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v body=%s", err, rec.Body.String())
+	}
+	want := "应用调用频率超限（每小时最多 1 次，可在面板「开放 API」里调整速率限制）"
+	if body["error"] != want {
+		t.Fatalf("429 文案不对：\n got %q\nwant %q", body["error"], want)
 	}
 }

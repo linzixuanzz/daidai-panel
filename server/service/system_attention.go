@@ -91,6 +91,11 @@ func PickAttentionDetail(text string) string {
 		if line == "" || strings.HasPrefix(line, "=== ") {
 			continue
 		}
+		// #187：conc / desi 的账号说明行是面板自己打的，不是失败原因，不能当「需要关注」的详情。
+		// 只跳这两种，不整体套 isPanelMetaLine（其它面板行如「[脚本进程被信号终止：…]」对诊断有用）。
+		if strings.HasPrefix(line, "[按账号并发]") || strings.HasPrefix(line, "[指定账号]") {
+			continue
+		}
 		if lastNonEmpty == "" {
 			lastNonEmpty = line
 		}
