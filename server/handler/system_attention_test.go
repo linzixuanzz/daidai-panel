@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,9 +30,12 @@ func newInsightTestRouter() *gin.Engine {
 	return engine
 }
 
+// insightUserSeq 给测试用户名做后缀：Windows 时钟粒度粗，连续两次取时间戳会撞同名用户。
+var insightUserSeq atomic.Int64
+
 func insightGet(t *testing.T, engine *gin.Engine, path, role string) (*httptest.ResponseRecorder, map[string]interface{}) {
 	t.Helper()
-	user := testutil.MustCreateUser(t, "insight-"+role+"-"+time.Now().Format("150405.000000000"), role)
+	user := testutil.MustCreateUser(t, "insight-"+role+"-"+strconv.FormatInt(insightUserSeq.Add(1), 10), role)
 	token := testutil.MustCreateAccessToken(t, user.Username, user.Role)
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
